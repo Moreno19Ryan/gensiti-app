@@ -165,6 +165,9 @@ export default function KegiatanPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-semibold text-slate-800">{k.nama_kegiatan}</h3>
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusLabel[k.status]?.color}`}>{statusLabel[k.status]?.label}</span>
+                    {(k as any).kode_kegiatan && (
+                      <span className="px-2 py-0.5 rounded-full text-xs font-mono bg-slate-100 text-slate-500">{(k as any).kode_kegiatan}</span>
+                    )}
                   </div>
                   {k.deskripsi && <p className="text-slate-500 text-sm mt-1 line-clamp-2">{k.deskripsi}</p>}
                   <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
@@ -184,6 +187,13 @@ export default function KegiatanPage() {
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editTarget ? 'Edit Kegiatan' : 'Tambah Kegiatan'} size="lg">
         <div className="space-y-4">
+          {editTarget && (editTarget as any).kode_kegiatan && (
+            <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
+              <span className="text-xs text-slate-400">Kode Kegiatan</span>
+              <span className="font-mono text-sm font-semibold text-slate-600">{(editTarget as any).kode_kegiatan}</span>
+              <span className="text-xs text-slate-400 ml-auto">Auto-generate</span>
+            </div>
+          )}
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Nama Kegiatan *</label>
             <input value={form.nama_kegiatan} onChange={e => set('nama_kegiatan', e.target.value)}

@@ -175,6 +175,7 @@ export default function KeuanganPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-slate-500 border-b border-slate-100 bg-slate-50">
+                  <th className="px-4 py-3 font-medium">No. Transaksi</th>
                   <th className="px-4 py-3 font-medium">Tanggal</th>
                   <th className="px-4 py-3 font-medium">Jenis</th>
                   <th className="px-4 py-3 font-medium">Kategori</th>
@@ -186,6 +187,9 @@ export default function KeuanganPage() {
               <tbody>
                 {filtered.map(k => (
                   <tr key={k.id} className="border-b border-slate-50 hover:bg-slate-50 transition">
+                    <td className="px-4 py-3">
+                      <span className="font-mono text-xs text-slate-400">{(k as any).nomor_transaksi || '-'}</span>
+                    </td>
                     <td className="px-4 py-3 text-slate-500">
                       {new Date(k.tanggal).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </td>

@@ -71,7 +71,7 @@ export default function DokumenPage() {
     let query = supabase
       .from('dokumen')
       .select(`
-        id, judul, deskripsi, kategori, url_file, nama_file, ukuran_file, tipe_file, is_public, created_at,
+        id, judul, deskripsi, kategori, url_file, nama_file, ukuran_file, tipe_file, is_public, created_at, nomor_dokumen,
         desa_id, kelompok_id,
         desa:desa_id(nama_desa),
         kelompok:kelompok_id(nama_kelompok),
@@ -212,7 +212,12 @@ export default function DokumenPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h3 className="font-semibold text-slate-800">{d.judul}</h3>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-semibold text-slate-800">{d.judul}</h3>
+                      {(d as any).nomor_dokumen && (
+                        <span className="px-1.5 py-0.5 rounded text-xs font-mono bg-slate-100 text-slate-400">{(d as any).nomor_dokumen}</span>
+                      )}
+                    </div>
                     {d.deskripsi && <p className="text-slate-500 text-sm mt-0.5">{d.deskripsi}</p>}
                   </div>
                   <div className="flex gap-2 shrink-0">

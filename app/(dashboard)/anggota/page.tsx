@@ -120,7 +120,7 @@ export default function AnggotaPage() {
     setError('')
     setForm({
       ...emptyForm,
-      nomor_anggota: generateNomorAnggota(),
+      nomor_anggota: '', // auto-generate oleh DB trigger
       desa_id: user?.desa_id || '',
       kelompok_id: user?.kelompok_id || '',
     })
@@ -370,17 +370,24 @@ export default function AnggotaPage() {
 
           {activeTab === 'info' && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-4">
+                {editTarget?.anggota?.[0]?.nomor_anggota && (
+                  <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
+                    <span className="text-xs text-slate-400">No. Anggota</span>
+                    <span className="font-mono text-sm font-semibold text-slate-600">{editTarget.anggota[0].nomor_anggota}</span>
+                    <span className="text-xs text-slate-400 ml-auto">🔒 Auto-generate</span>
+                  </div>
+                )}
+                {!editTarget && (
+                  <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-xl border border-blue-100">
+                    <span className="text-xs text-blue-500">No. Anggota akan dibuat otomatis saat disimpan</span>
+                  </div>
+                )}
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Nama Lengkap *</label>
                   <input value={form.nama_lengkap} onChange={e => set('nama_lengkap', e.target.value)}
                     placeholder="Nama lengkap"
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">No. Anggota</label>
-                  <input value={form.nomor_anggota} onChange={e => set('nomor_anggota', e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono" />
                 </div>
               </div>
 

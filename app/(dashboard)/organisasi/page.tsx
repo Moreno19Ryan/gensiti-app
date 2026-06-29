@@ -223,17 +223,22 @@ export default function OrganisasiPage() {
           <Modal open={desaModal} onClose={() => setDesaModal(false)} title={editDesa ? 'Edit Desa' : 'Tambah Desa'} size="sm">
             <div className="space-y-4">
               {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
+              {editDesa?.kode_desa ? (
+                <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="text-xs text-slate-400">Kode Desa</span>
+                  <span className="font-mono text-sm font-semibold text-slate-600">{editDesa.kode_desa}</span>
+                  <span className="text-xs text-slate-400 ml-auto">🔒 Auto-generate</span>
+                </div>
+              ) : !editDesa && (
+                <div className="p-2 bg-blue-50 rounded-xl border border-blue-100">
+                  <span className="text-xs text-blue-500">Kode Desa (DSA-XXX) akan dibuat otomatis</span>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Nama Desa *</label>
                 <input value={desaForm.nama_desa} onChange={e => setDesaForm(f => ({ ...f, nama_desa: e.target.value }))}
                   placeholder="Nama desa"
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Kode Desa</label>
-                <input value={desaForm.kode_desa} onChange={e => setDesaForm(f => ({ ...f, kode_desa: e.target.value }))}
-                  placeholder="DSA-001"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Alamat</label>
@@ -315,17 +320,22 @@ export default function OrganisasiPage() {
           <Modal open={kelompokModal} onClose={() => setKelompokModal(false)} title={editKelompok ? 'Edit Kelompok' : 'Tambah Kelompok'} size="sm">
             <div className="space-y-4">
               {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
+              {editKelompok?.kode_kelompok ? (
+                <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="text-xs text-slate-400">Kode Kelompok</span>
+                  <span className="font-mono text-sm font-semibold text-slate-600">{editKelompok.kode_kelompok}</span>
+                  <span className="text-xs text-slate-400 ml-auto">🔒 Auto-generate</span>
+                </div>
+              ) : !editKelompok && (
+                <div className="p-2 bg-blue-50 rounded-xl border border-blue-100">
+                  <span className="text-xs text-blue-500">Kode Kelompok (KLP-XXX) akan dibuat otomatis</span>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Nama Kelompok *</label>
                 <input value={kelompokForm.nama_kelompok} onChange={e => setKelompokForm(f => ({ ...f, nama_kelompok: e.target.value }))}
                   placeholder="Nama kelompok"
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Kode Kelompok</label>
-                <input value={kelompokForm.kode_kelompok} onChange={e => setKelompokForm(f => ({ ...f, kode_kelompok: e.target.value }))}
-                  placeholder="KLP-001"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Desa</label>
