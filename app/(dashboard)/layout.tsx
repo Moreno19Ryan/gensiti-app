@@ -12,8 +12,9 @@ const navItems = [
   { href: '/kegiatan', label: 'Kegiatan', icon: '📅', roles: ['super_admin', 'daerah', 'desa', 'kelompok'] },
   { href: '/keuangan', label: 'Keuangan', icon: '💰', roles: ['super_admin', 'daerah', 'desa', 'kelompok'] },
   { href: '/pengumuman', label: 'Pengumuman', icon: '📢', roles: ['super_admin', 'daerah', 'desa', 'kelompok'] },
+  { href: '/dokumen', label: 'Dokumen', icon: '📁', roles: ['super_admin', 'daerah', 'desa', 'kelompok'] },
   { href: '/notifikasi', label: 'Notifikasi', icon: '🔔', roles: ['super_admin', 'daerah', 'desa', 'kelompok'] },
-  { href: '/users', label: 'Pengguna', icon: '⚙️', roles: ['super_admin'] },
+  { href: '/organisasi', label: 'Organisasi', icon: '🏛️', roles: ['super_admin'] },
   { href: '/audit-log', label: 'Audit Log', icon: '📋', roles: ['super_admin'] },
 ]
 
@@ -23,9 +24,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { user, loading } = useUser()
 
   useEffect(() => {
-    if (!loading && !user) {
-      router.replace('/login')
-    }
+    if (!loading && !user) router.replace('/login')
   }, [user, loading, router])
 
   const handleSignOut = async () => {
@@ -48,6 +47,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const tingkatan = user.role?.tingkatan
   const visibleNav = navItems.filter(item => tingkatan && item.roles.includes(tingkatan))
+  const currentLabel = visibleNav.find(n => pathname.startsWith(n.href))?.label || 'Dashboard'
 
   return (
     <div className="flex min-h-screen bg-slate-100">
@@ -67,8 +67,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
 
         {/* User Info */}
-        <div className="px-4 py-3 border-b border-blue-800 mx-3 mt-3 rounded-xl bg-blue-800/50">
-          <div className="flex items-center gap-2.5">
+        <div className="px-3 py-3 border-b border-blue-800">
+          <Link href="/profil" className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-blue-800/70 transition">
             <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold shrink-0">
               {user.nama_lengkap?.charAt(0).toUpperCase()}
             </div>
@@ -76,13 +76,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <div className="text-sm font-semibold truncate">{user.nama_lengkap}</div>
               <div className="text-blue-300 text-xs truncate">{user.role?.nama_role}</div>
             </div>
-          </div>
+          </Link>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-3 space-y-0.5">
+        <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
           {visibleNav.map((item) => {
-            const isActive = pathname === item.href
+            const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
             return (
               <Link
                 key={item.href}
@@ -117,9 +117,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* Topbar */}
         <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shrink-0">
           <div>
-            <h1 className="font-bold text-slate-800 text-lg capitalize">
-              {visibleNav.find(n => n.href === pathname)?.label || 'Dashboard'}
-            </h1>
+            <h1 className="font-bold text-slate-800 text-lg">{currentLabel}</h1>
             <p className="text-slate-400 text-xs mt-0.5">
               {user.desa ? user.desa.nama_desa : 'Tingkat Daerah'}
               {user.kelompok ? ` · ${user.kelompok.nama_kelompok}` : ''}

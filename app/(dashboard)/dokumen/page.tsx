@@ -1,0 +1,323 @@
+'use client'
+
+import { useEffect, useState, useCallback } from 'react'
+import { useUser } from '@/lib/user-context'
+import { supabase } from '@/lib/supabase'
+import Modal from '@/components/Modal'
+
+interface Dokumen {
+  id: string
+  judul: string
+  deskripsi: string | null
+  kategori: string | null
+  url_file: string
+  nama_file: string
+  ukuran_file: number | null
+  tipe_file: string | null
+  is_public: boolean
+  created_at: string
+  desa_id: string | null
+  kelompok_id: string | null
+  desa: { nama_desa: string } | null
+  kelompok: { nama_kelompok: string } | null
+  uploader: { nama_lengkap: string } | null
+}
+
+const KATEGORI = ['Administrasi', 'Keuangan', 'Kegiatan', 'Pengumuman', 'Laporan', 'Lainnya']
+
+const emptyForm = {
+  judul: '',
+  deskripsi: '',
+  kategori: '',
+  url_file: '',
+  nama_file: '',
+  is_public: true,
+  desa_id: '',
+  kelompok_id: '',
+}
+
+const iconFor = (tipe: string | null) => {
+  if (!tipe) return '📄'
+  if (tipe.includes('pdf')) return '📕'
+  if (tipe.includes('word') || tipe.includes('document')) return '📘'
+  if (tipe.includes('sheet') || tipe.includes('excel')) return '📗'
+  if (tipe.includes('image')) return '🖼️'
+  return '📄'
+}
+
+const formatSize = (bytes: number | null) => {
+  if (!bytes) return ''
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
+export default function DokumenPage() {
+  const { user } = useUser()
+  const [data, setData] = useState<Dokumen[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [filterKat, setFilterKat] = useState('')
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editTarget, setEditTarget] = useState<Dokumen | null>(null)
+  const [form, setForm] = useState(emptyForm)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [desaList, setDesaList] = useState<{ id: string; nama_desa: string }[]>([])
+  const [kelompokList, setKelompokList] = useState<{ id: string; nama_kelompok: string; desa_id: string }[]>([])
+
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    let query = supabase
+      .from('dokumen')
+      .select(`
+        id, judul, deskripsi, kategori, url_file, nama_file, ukuran_file, tipe_file, is_public, created_at,
+        desa_id, kelompok_id,
+        desa:desa_id(nama_desa),
+        kelompok:kelompok_id(nama_kelompok),
+        uploader:dibuat_oleh(nama_lengkap)
+      `)
+      .order('created_at', { ascending: false })
+
+    const t = user?.role?.tingkatan
+    if (t !== 'super_admin' && t !== 'daerah') {
+      if (user?.kelompok_id) query = query.eq('kelompok_id', user.kelompok_id)
+      else if (user?.desa_id) query = query.eq('desa_id', user.desa_id)
+    }
+
+    const { data: rows } = await query
+    setData((rows as unknown as Dokumen[]) || [])
+    setLoading(false)
+  }, [user])
+
+  useEffect(() => {
+    if (!user) return
+    loadData()
+    Promise.all([
+      supabase.from('desa').select('id, nama_desa').eq('is_active', true).order('nama_desa'),
+      supabase.from('kelompok').select('id, nama_kelompok, desa_id').eq('is_active', true).order('nama_kelompok'),
+    ]).then(([{ data: d }, { data: k }]) => {
+      setDesaList(d || [])
+      setKelompokList((k as unknown as { id: string; nama_kelompok: string; desa_id: string }[]) || [])
+    })
+  }, [user, loadData])
+
+  const openAdd = () => {
+    setEditTarget(null)
+    setError('')
+    setForm({ ...emptyForm, desa_id: user?.desa_id || '', kelompok_id: user?.kelompok_id || '' })
+    setModalOpen(true)
+  }
+
+  const openEdit = (d: Dokumen) => {
+    setEditTarget(d)
+    setError('')
+    setForm({
+      judul: d.judul,
+      deskripsi: d.deskripsi || '',
+      kategori: d.kategori || '',
+      url_file: d.url_file,
+      nama_file: d.nama_file,
+      is_public: d.is_public,
+      desa_id: d.desa_id || '',
+      kelompok_id: d.kelompok_id || '',
+    })
+    setModalOpen(true)
+  }
+
+  const handleSave = async () => {
+    setError('')
+    if (!form.judul || !form.url_file) { setError('Judul dan URL file wajib diisi'); return }
+    setSaving(true)
+    const payload = {
+      judul: form.judul,
+      deskripsi: form.deskripsi || null,
+      kategori: form.kategori || null,
+      url_file: form.url_file,
+      nama_file: form.nama_file || form.judul,
+      is_public: form.is_public,
+      desa_id: form.desa_id || null,
+      kelompok_id: form.kelompok_id || null,
+      dibuat_oleh: user?.id,
+    }
+    if (editTarget) {
+      await supabase.from('dokumen').update(payload).eq('id', editTarget.id)
+    } else {
+      await supabase.from('dokumen').insert(payload)
+    }
+    setSaving(false)
+    setModalOpen(false)
+    loadData()
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Hapus dokumen ini?')) return
+    await supabase.from('dokumen').delete().eq('id', id)
+    loadData()
+  }
+
+  const set = (key: string, val: string | boolean) => setForm(f => ({ ...f, [key]: val }))
+
+  const filtered = data.filter(d => {
+    const matchSearch = d.judul?.toLowerCase().includes(search.toLowerCase()) ||
+      d.deskripsi?.toLowerCase().includes(search.toLowerCase())
+    const matchKat = !filterKat || d.kategori === filterKat
+    return matchSearch && matchKat
+  })
+
+  const canManage = ['super_admin', 'daerah', 'desa'].includes(user?.role?.tingkatan || '')
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-bold text-slate-800">Dokumen</h2>
+          <p className="text-slate-400 text-sm">{data.length} dokumen tersimpan</p>
+        </div>
+        {canManage && (
+          <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
+            + Tambah Dokumen
+          </button>
+        )}
+      </div>
+
+      <div className="flex gap-3">
+        <input type="text" placeholder="Cari dokumen..."
+          value={search} onChange={e => setSearch(e.target.value)}
+          className="flex-1 px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm" />
+        <select value={filterKat} onChange={e => setFilterKat(e.target.value)}
+          className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
+          <option value="">Semua Kategori</option>
+          {KATEGORI.map(k => <option key={k} value={k}>{k}</option>)}
+        </select>
+      </div>
+
+      {loading ? (
+        <div className="bg-white rounded-2xl p-12 text-center">
+          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
+          <div className="text-4xl mb-2">📁</div>
+          <p>Belum ada dokumen</p>
+          {canManage && <button onClick={openAdd} className="mt-3 text-blue-600 text-sm font-medium hover:underline">+ Upload sekarang</button>}
+        </div>
+      ) : (
+        <div className="grid gap-3">
+          {filtered.map(d => (
+            <div key={d.id} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-start gap-4">
+              <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-2xl shrink-0">
+                {iconFor(d.tipe_file)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-semibold text-slate-800">{d.judul}</h3>
+                    {d.deskripsi && <p className="text-slate-500 text-sm mt-0.5">{d.deskripsi}</p>}
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <a href={d.url_file} target="_blank" rel="noreferrer"
+                      className="px-3 py-1.5 bg-blue-50 text-blue-600 text-xs font-medium rounded-lg hover:bg-blue-100 transition">
+                      Buka
+                    </a>
+                    {canManage && (
+                      <>
+                        <button onClick={() => openEdit(d)} className="px-3 py-1.5 bg-slate-50 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-100 transition">Edit</button>
+                        <button onClick={() => handleDelete(d.id)} className="px-3 py-1.5 bg-red-50 text-red-600 text-xs font-medium rounded-lg hover:bg-red-100 transition">Hapus</button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 mt-2 flex-wrap">
+                  {d.kategori && (
+                    <span className="px-2 py-0.5 bg-blue-50 text-blue-600 text-xs rounded-full">{d.kategori}</span>
+                  )}
+                  {d.desa && <span className="text-slate-400 text-xs">{d.desa.nama_desa}</span>}
+                  {d.kelompok && <span className="text-slate-400 text-xs">· {d.kelompok.nama_kelompok}</span>}
+                  {d.ukuran_file && <span className="text-slate-400 text-xs">{formatSize(d.ukuran_file)}</span>}
+                  <span className="text-slate-400 text-xs">{new Date(d.created_at).toLocaleDateString('id-ID')}</span>
+                  {!d.is_public && <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 text-xs rounded">🔒 Privat</span>}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editTarget ? 'Edit Dokumen' : 'Tambah Dokumen'} size="md">
+        <div className="space-y-4">
+          {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
+
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Judul Dokumen *</label>
+            <input value={form.judul} onChange={e => set('judul', e.target.value)} placeholder="Judul dokumen"
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">URL / Link File *</label>
+            <input value={form.url_file} onChange={e => set('url_file', e.target.value)} placeholder="https://drive.google.com/..."
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <p className="text-xs text-slate-400 mt-1">Paste link dari Google Drive, OneDrive, atau storage lainnya</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Nama File</label>
+            <input value={form.nama_file} onChange={e => set('nama_file', e.target.value)} placeholder="contoh.pdf"
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Kategori</label>
+            <select value={form.kategori} onChange={e => set('kategori', e.target.value)}
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">-- Pilih Kategori --</option>
+              {KATEGORI.map(k => <option key={k} value={k}>{k}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Deskripsi</label>
+            <textarea value={form.deskripsi} onChange={e => set('deskripsi', e.target.value)} rows={2} placeholder="Keterangan singkat..."
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Desa</label>
+              <select value={form.desa_id} onChange={e => { set('desa_id', e.target.value); set('kelompok_id', '') }}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">Semua Desa</option>
+                {desaList.map(d => <option key={d.id} value={d.id}>{d.nama_desa}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Kelompok</label>
+              <select value={form.kelompok_id} onChange={e => set('kelompok_id', e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">Semua Kelompok</option>
+                {kelompokList.filter(k => !form.desa_id || k.desa_id === form.desa_id).map(k => (
+                  <option key={k.id} value={k.id}>{k.nama_kelompok}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={form.is_public} onChange={e => set('is_public', e.target.checked)}
+              className="w-4 h-4 rounded accent-blue-600" />
+            <span className="text-sm text-slate-600">Publik (dapat dilihat semua anggota)</span>
+          </label>
+
+          <div className="flex gap-3 pt-2 border-t border-slate-100">
+            <button onClick={() => setModalOpen(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">Batal</button>
+            <button onClick={handleSave} disabled={saving}
+              className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition flex items-center justify-center gap-2">
+              {saving ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Menyimpan...</> : 'Simpan'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  )
+}
