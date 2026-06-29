@@ -5,6 +5,7 @@ import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { Keuangan } from '@/lib/types'
 import Modal from '@/components/Modal'
+import { logAudit } from '@/lib/audit'
 
 interface DesaOpt { id: string; nama_desa: string }
 interface KelompokOpt { id: string; nama_kelompok: string; desa_id: string }
@@ -96,8 +97,10 @@ export default function KeuanganPage() {
       }
       if (editTarget) {
         await supabase.from('keuangan').update(payload).eq('id', editTarget.id)
+        if (user) await logAudit(user, 'UPDATE', 'Keuangan', `${form.jenis} - ${form.kategori}`, payload, editTarget.id)
       } else {
-        await supabase.from('keuangan').insert(payload)
+        const { data: ins } = await supabase.from('keuangan').insert(payload).select('id').single()
+        if (user) await logAudit(user, 'CREATE', 'Keuangan', `${form.jenis} - ${form.kategori} - Rp${form.jumlah}`, payload, ins?.id)
       }
       setModalOpen(false)
       loadData()
@@ -106,9 +109,10 @@ export default function KeuanganPage() {
     }
   }
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, desc?: string) => {
     if (!confirm('Hapus transaksi ini?')) return
     await supabase.from('keuangan').delete().eq('id', id)
+    if (user) await logAudit(user, 'DELETE', 'Keuangan', desc || id, {}, id)
     loadData()
   }
 
@@ -205,7 +209,7 @@ export default function KeuanganPage() {
                     </td>
                     <td className="px-4 py-3 flex gap-3">
                       <button onClick={() => openEdit(k)} className="text-blue-600 hover:text-blue-800 font-medium text-xs">Edit</button>
-                      <button onClick={() => handleDelete(k.id)} className="text-red-400 hover:text-red-600 font-medium text-xs">Hapus</button>
+                      <button onClick={() => handleDelete(k.id, `${k.jenis} - ${k.kategori}`)} className="text-red-400 hover:text-red-600 font-medium text-xs">Hapus</button>
                     </td>
                   </tr>
                 ))}

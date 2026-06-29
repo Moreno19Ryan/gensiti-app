@@ -5,6 +5,7 @@ import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { Pengumuman } from '@/lib/types'
 import Modal from '@/components/Modal'
+import { logAudit } from '@/lib/audit'
 
 interface DesaOpt { id: string; nama_desa: string }
 interface KelompokOpt { id: string; nama_kelompok: string; desa_id: string }
@@ -89,8 +90,10 @@ export default function PengumumanPage() {
       }
       if (editTarget) {
         await supabase.from('pengumuman').update(payload).eq('id', editTarget.id)
+        if (user) await logAudit(user, 'UPDATE', 'Pengumuman', form.judul, payload, editTarget.id)
       } else {
-        await supabase.from('pengumuman').insert(payload)
+        const { data: ins } = await supabase.from('pengumuman').insert(payload).select('id').single()
+        if (user) await logAudit(user, 'CREATE', 'Pengumuman', form.judul, payload, ins?.id)
       }
       setModalOpen(false)
       loadData()

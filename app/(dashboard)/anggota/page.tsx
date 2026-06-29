@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
+import { logAudit } from '@/lib/audit'
 import Modal from '@/components/Modal'
 
 interface Member {
@@ -24,6 +25,8 @@ interface Member {
     tanggal_lahir: string | null
     jenis_kelamin: string | null
     alamat: string | null
+    nama_orang_tua: string | null
+    no_hp_orang_tua: string | null
     status: string
   }[] | null
 }
@@ -41,11 +44,12 @@ const emptyForm = {
   desa_id: '',
   kelompok_id: '',
   is_active: true,
-  nomor_anggota: '',
   tanggal_lahir: '',
   jenis_kelamin: '',
   alamat: '',
   status_anggota: 'aktif',
+  nama_orang_tua: '',
+  no_hp_orang_tua: '',
 }
 
 const tingkatanColor: Record<string, string> = {
@@ -55,6 +59,10 @@ const tingkatanColor: Record<string, string> = {
   kelompok: 'bg-green-100 text-green-700',
 }
 
+// Auto-uppercase setiap kata
+const toUpperWords = (str: string) =>
+  str.toUpperCase()
+
 export default function AnggotaPage() {
   const { user } = useUser()
   const [data, setData] = useState<Member[]>([])
@@ -62,6 +70,7 @@ export default function AnggotaPage() {
   const [search, setSearch] = useState('')
   const [filterRole, setFilterRole] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
+  const [detailModal, setDetailModal] = useState<Member | null>(null)
   const [editTarget, setEditTarget] = useState<Member | null>(null)
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
@@ -80,7 +89,7 @@ export default function AnggotaPage() {
         roles:role_id(id, nama_role, tingkatan),
         desa:desa_id(id, nama_desa),
         kelompok:kelompok_id(id, nama_kelompok),
-        anggota!anggota_user_id_fkey(id, nomor_anggota, tanggal_lahir, jenis_kelamin, alamat, status)
+        anggota(id, nomor_anggota, tanggal_lahir, jenis_kelamin, alamat, nama_orang_tua, no_hp_orang_tua, status)
       `)
       .order('nama_lengkap')
 
@@ -90,7 +99,8 @@ export default function AnggotaPage() {
       else if (user?.desa_id) query = query.eq('desa_id', user.desa_id)
     }
 
-    const { data: rows } = await query
+    const { data: rows, error: err } = await query
+    if (err) console.error('Anggota load error:', err)
     setData((rows as unknown as Member[]) || [])
     setLoading(false)
   }, [user])
@@ -109,21 +119,11 @@ export default function AnggotaPage() {
     })
   }, [user, loadData])
 
-  const generateNomorAnggota = () => {
-    const num = String(data.length + 1).padStart(4, '0')
-    return `ANG-${num}`
-  }
-
   const openAdd = () => {
     setEditTarget(null)
     setActiveTab('info')
     setError('')
-    setForm({
-      ...emptyForm,
-      nomor_anggota: '', // auto-generate oleh DB trigger
-      desa_id: user?.desa_id || '',
-      kelompok_id: user?.kelompok_id || '',
-    })
+    setForm({ ...emptyForm, desa_id: user?.desa_id || '', kelompok_id: user?.kelompok_id || '' })
     setModalOpen(true)
   }
 
@@ -141,11 +141,12 @@ export default function AnggotaPage() {
       desa_id: m.desa?.id || '',
       kelompok_id: m.kelompok?.id || '',
       is_active: m.is_active,
-      nomor_anggota: a?.nomor_anggota || '',
       tanggal_lahir: a?.tanggal_lahir || '',
       jenis_kelamin: a?.jenis_kelamin || '',
       alamat: a?.alamat || '',
       status_anggota: a?.status || 'aktif',
+      nama_orang_tua: a?.nama_orang_tua || '',
+      no_hp_orang_tua: a?.no_hp_orang_tua || '',
     })
     setModalOpen(true)
   }
@@ -154,13 +155,14 @@ export default function AnggotaPage() {
     setError('')
     if (!form.nama_lengkap) { setError('Nama lengkap wajib diisi'); return }
     if (!editTarget && (!form.email || !form.password)) { setError('Email dan password wajib untuk anggota baru'); return }
+    if (!form.nama_orang_tua) { setError('Nama orang tua wajib diisi'); return }
+    if (!form.no_hp_orang_tua) { setError('No. HP orang tua wajib diisi'); return }
 
     setSaving(true)
     try {
       let userId = editTarget?.id
 
       if (!editTarget) {
-        // Buat user baru via API
         const res = await fetch('/api/users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -178,8 +180,7 @@ export default function AnggotaPage() {
         if (json.error) { setError(json.error); return }
         userId = json.userId
       } else {
-        // Update user
-        await fetch('/api/users', {
+        const res = await fetch('/api/users', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -193,12 +194,13 @@ export default function AnggotaPage() {
             password: form.password || undefined,
           }),
         })
+        const json = await res.json()
+        if (json.error) { setError(json.error); return }
       }
 
       // Upsert data anggota
       const anggotaPayload = {
         user_id: userId,
-        nomor_anggota: form.nomor_anggota || generateNomorAnggota(),
         nama_lengkap: form.nama_lengkap,
         tanggal_lahir: form.tanggal_lahir || null,
         jenis_kelamin: form.jenis_kelamin || null,
@@ -206,6 +208,8 @@ export default function AnggotaPage() {
         desa_id: form.desa_id || null,
         kelompok_id: form.kelompok_id || null,
         status: form.status_anggota,
+        nama_orang_tua: form.nama_orang_tua,
+        no_hp_orang_tua: form.no_hp_orang_tua,
       }
 
       const existingAnggota = editTarget?.anggota?.[0]
@@ -213,6 +217,18 @@ export default function AnggotaPage() {
         await supabase.from('anggota').update(anggotaPayload).eq('id', existingAnggota.id)
       } else {
         await supabase.from('anggota').insert(anggotaPayload)
+      }
+
+      // Audit log
+      if (user) {
+        await logAudit(
+          user,
+          editTarget ? 'UPDATE' : 'CREATE',
+          'Anggota',
+          form.nama_lengkap,
+          { email: form.email, role_id: form.role_id, desa_id: form.desa_id },
+          userId
+        )
       }
 
       setModalOpen(false)
@@ -228,10 +244,14 @@ export default function AnggotaPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: m.id, nama_lengkap: m.nama_lengkap, is_active: !m.is_active }),
     })
+    if (user) {
+      await logAudit(user, m.is_active ? 'DEACTIVATE' : 'ACTIVATE', 'Anggota', m.nama_lengkap, {}, m.id)
+    }
     loadData()
   }
 
   const set = (key: string, val: string | boolean) => setForm(f => ({ ...f, [key]: val }))
+  const setUpper = (key: string, val: string) => setForm(f => ({ ...f, [key]: toUpperWords(val) }))
 
   const filtered = data.filter(m => {
     const matchSearch = m.nama_lengkap?.toLowerCase().includes(search.toLowerCase()) ||
@@ -300,7 +320,8 @@ export default function AnggotaPage() {
                 {filtered.map(m => {
                   const a = m.anggota?.[0]
                   return (
-                    <tr key={m.id} className="border-b border-slate-50 hover:bg-slate-50 transition">
+                    <tr key={m.id} className="border-b border-slate-50 hover:bg-slate-50 transition cursor-pointer"
+                      onClick={() => setDetailModal(m)}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm shrink-0">
@@ -312,14 +333,14 @@ export default function AnggotaPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3 font-mono text-slate-500 text-xs">{a?.nomor_anggota || '-'}</td>
+                      <td className="px-4 py-3 font-mono text-slate-500 text-xs">{a?.nomor_anggota || '—'}</td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${tingkatanColor[m.roles?.tingkatan || ''] || 'bg-slate-100 text-slate-500'}`}>
-                          {m.roles?.nama_role || '-'}
+                          {m.roles?.nama_role || '—'}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-slate-600 text-xs">
-                        <div>{m.desa?.nama_desa || '-'}</div>
+                        <div>{m.desa?.nama_desa || '—'}</div>
                         {m.kelompok && <div className="text-slate-400">{m.kelompok.nama_kelompok}</div>}
                       </td>
                       <td className="px-4 py-3">
@@ -327,15 +348,10 @@ export default function AnggotaPage() {
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium w-fit ${m.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                             {m.is_active ? 'Aktif' : 'Non-aktif'}
                           </span>
-                          {a && (
-                            <span className={`px-2 py-0.5 rounded-full text-xs w-fit ${a.status === 'aktif' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                              {a.status === 'aktif' ? 'Anggota aktif' : 'Anggota non-aktif'}
-                            </span>
-                          )}
                         </div>
                       </td>
                       {canManage && (
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                           <div className="flex gap-3">
                             <button onClick={() => openEdit(m)} className="text-blue-600 hover:text-blue-800 font-medium text-xs">Edit</button>
                             <button onClick={() => toggleActive(m)} className={`text-xs font-medium ${m.is_active ? 'text-slate-400 hover:text-slate-600' : 'text-green-600 hover:text-green-800'}`}>
@@ -353,7 +369,66 @@ export default function AnggotaPage() {
         </div>
       )}
 
-      {/* Modal */}
+      {/* Detail Modal */}
+      {detailModal && (
+        <Modal open={!!detailModal} onClose={() => setDetailModal(null)} title="Detail Anggota" size="md">
+          <div className="space-y-4">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center text-blue-700 text-2xl font-black shrink-0">
+                {detailModal.nama_lengkap?.charAt(0)}
+              </div>
+              <div>
+                <div className="font-bold text-slate-800 text-lg">{detailModal.nama_lengkap}</div>
+                <div className="text-slate-400 text-sm">{detailModal.email}</div>
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${tingkatanColor[detailModal.roles?.tingkatan || ''] || 'bg-slate-100 text-slate-500'}`}>
+                  {detailModal.roles?.nama_role || '—'}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-100">
+              {[
+                { label: 'No. Anggota', val: detailModal.anggota?.[0]?.nomor_anggota },
+                { label: 'Status', val: detailModal.anggota?.[0]?.status },
+                { label: 'No. HP', val: detailModal.no_hp },
+                { label: 'Tanggal Lahir', val: detailModal.anggota?.[0]?.tanggal_lahir ? new Date(detailModal.anggota[0].tanggal_lahir).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : null },
+                { label: 'Jenis Kelamin', val: detailModal.anggota?.[0]?.jenis_kelamin },
+                { label: 'Desa', val: detailModal.desa?.nama_desa },
+                { label: 'Kelompok', val: detailModal.kelompok?.nama_kelompok },
+                { label: 'Nama Orang Tua', val: detailModal.anggota?.[0]?.nama_orang_tua },
+                { label: 'HP Orang Tua', val: detailModal.anggota?.[0]?.no_hp_orang_tua },
+              ].map(({ label, val }) => val ? (
+                <div key={label}>
+                  <p className="text-xs text-slate-400">{label}</p>
+                  <p className="text-sm font-medium text-slate-700 capitalize">{val}</p>
+                </div>
+              ) : null)}
+            </div>
+
+            {detailModal.anggota?.[0]?.alamat && (
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-xs text-slate-400">Alamat</p>
+                <p className="text-sm text-slate-700">{detailModal.anggota[0].alamat}</p>
+              </div>
+            )}
+
+            {canManage && (
+              <div className="flex gap-3 pt-2 border-t border-slate-100">
+                <button onClick={() => { setDetailModal(null); openEdit(detailModal) }}
+                  className="flex-1 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition">
+                  Edit
+                </button>
+                <button onClick={() => setDetailModal(null)}
+                  className="flex-1 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
+                  Tutup
+                </button>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {/* Add/Edit Modal */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editTarget ? `Edit — ${editTarget.nama_lengkap}` : 'Tambah Anggota'} size="lg">
         <div className="space-y-4">
           {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
@@ -362,7 +437,7 @@ export default function AnggotaPage() {
           <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
             {(['info', 'akun'] as const).map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab)}
-                className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition capitalize ${activeTab === tab ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
+                className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition ${activeTab === tab ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
                 {tab === 'info' ? '👤 Data Diri' : '🔐 Akun & Akses'}
               </button>
             ))}
@@ -370,25 +445,25 @@ export default function AnggotaPage() {
 
           {activeTab === 'info' && (
             <div className="space-y-4">
-              <div className="space-y-4">
-                {editTarget?.anggota?.[0]?.nomor_anggota && (
-                  <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
-                    <span className="text-xs text-slate-400">No. Anggota</span>
-                    <span className="font-mono text-sm font-semibold text-slate-600">{editTarget.anggota[0].nomor_anggota}</span>
-                    <span className="text-xs text-slate-400 ml-auto">🔒 Auto-generate</span>
-                  </div>
-                )}
-                {!editTarget && (
-                  <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-xl border border-blue-100">
-                    <span className="text-xs text-blue-500">No. Anggota akan dibuat otomatis saat disimpan</span>
-                  </div>
-                )}
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Nama Lengkap *</label>
-                  <input value={form.nama_lengkap} onChange={e => set('nama_lengkap', e.target.value)}
-                    placeholder="Nama lengkap"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              {/* Nomor anggota display */}
+              {editTarget?.anggota?.[0]?.nomor_anggota ? (
+                <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="text-xs text-slate-400">No. Anggota</span>
+                  <span className="font-mono text-sm font-semibold text-slate-600">{editTarget.anggota[0].nomor_anggota}</span>
+                  <span className="text-xs text-slate-400 ml-auto">🔒 Auto-generate</span>
                 </div>
+              ) : !editTarget && (
+                <div className="p-2 bg-blue-50 rounded-xl border border-blue-100">
+                  <span className="text-xs text-blue-500">✨ No. Anggota akan dibuat otomatis (ANG-XXXX)</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Nama Lengkap * <span className="text-slate-400">(huruf kapital)</span></label>
+                <input value={form.nama_lengkap}
+                  onChange={e => setUpper('nama_lengkap', e.target.value)}
+                  placeholder="NAMA LENGKAP"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -419,6 +494,26 @@ export default function AnggotaPage() {
                 <textarea value={form.alamat} onChange={e => set('alamat', e.target.value)}
                   rows={2} placeholder="Alamat lengkap"
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+              </div>
+
+              {/* Orang Tua Section */}
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-xs font-semibold text-slate-500 mb-3">Data Orang Tua</p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Nama Orang Tua * <span className="text-slate-400">(huruf kapital)</span></label>
+                    <input value={form.nama_orang_tua}
+                      onChange={e => setUpper('nama_orang_tua', e.target.value)}
+                      placeholder="NAMA ORANG TUA"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">No. HP Orang Tua *</label>
+                    <input value={form.no_hp_orang_tua} onChange={e => set('no_hp_orang_tua', e.target.value)}
+                      placeholder="08xx-xxxx-xxxx"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                </div>
               </div>
 
               <div>

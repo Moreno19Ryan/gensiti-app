@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
+import { logAudit } from '@/lib/audit'
 import Modal from '@/components/Modal'
 
 interface Dokumen {
@@ -142,17 +143,20 @@ export default function DokumenPage() {
     }
     if (editTarget) {
       await supabase.from('dokumen').update(payload).eq('id', editTarget.id)
+      if (user) await logAudit(user, 'UPDATE', 'Dokumen', form.judul, payload, editTarget.id)
     } else {
-      await supabase.from('dokumen').insert(payload)
+      const { data: ins } = await supabase.from('dokumen').insert(payload).select('id').single()
+      if (user) await logAudit(user, 'CREATE', 'Dokumen', form.judul, payload, ins?.id)
     }
     setSaving(false)
     setModalOpen(false)
     loadData()
   }
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, judul?: string) => {
     if (!confirm('Hapus dokumen ini?')) return
     await supabase.from('dokumen').delete().eq('id', id)
+    if (user) await logAudit(user, 'DELETE', 'Dokumen', judul || id, {}, id)
     loadData()
   }
 
@@ -228,7 +232,7 @@ export default function DokumenPage() {
                     {canManage && (
                       <>
                         <button onClick={() => openEdit(d)} className="px-3 py-1.5 bg-slate-50 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-100 transition">Edit</button>
-                        <button onClick={() => handleDelete(d.id)} className="px-3 py-1.5 bg-red-50 text-red-600 text-xs font-medium rounded-lg hover:bg-red-100 transition">Hapus</button>
+                        <button onClick={() => handleDelete(d.id, d.judul)} className="px-3 py-1.5 bg-red-50 text-red-600 text-xs font-medium rounded-lg hover:bg-red-100 transition">Hapus</button>
                       </>
                     )}
                   </div>

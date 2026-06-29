@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { Kegiatan } from '@/lib/types'
+import { logAudit } from '@/lib/audit'
 import Modal from '@/components/Modal'
 
 interface DesaOpt { id: string; nama_desa: string }
@@ -105,8 +106,10 @@ export default function KegiatanPage() {
       }
       if (editTarget) {
         await supabase.from('kegiatan').update(payload).eq('id', editTarget.id)
+        if (user) await logAudit(user, 'UPDATE', 'Kegiatan', form.nama_kegiatan, payload, editTarget.id)
       } else {
-        await supabase.from('kegiatan').insert(payload)
+        const { data: inserted } = await supabase.from('kegiatan').insert(payload).select('id').single()
+        if (user) await logAudit(user, 'CREATE', 'Kegiatan', form.nama_kegiatan, payload, inserted?.id)
       }
       setModalOpen(false)
       loadData()
