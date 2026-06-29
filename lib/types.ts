@@ -7,6 +7,9 @@ export interface UserProfile {
   no_hp: string | null
   foto_url: string | null
   is_active: boolean
+  desa_id: string | null
+  kelompok_id: string | null
+  role_id: string | null
   role: {
     id: string
     nama_role: string
