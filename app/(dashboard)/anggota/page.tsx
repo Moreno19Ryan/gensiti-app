@@ -404,8 +404,23 @@ export default function PenggunaPage() {
       return 0
     })
 
-  const canManage = ['super_admin', 'daerah'].includes(user?.role?.tingkatan || '')
   const isSuperAdmin = user?.role?.tingkatan === 'super_admin'
+
+  // Ketua / Wakil / Sekretaris di semua tingkatan bisa edit + lihat detail
+  const isKvs = isSuperAdmin || /Ketua|Wakil|Sekretaris/i.test(user?.role?.nama_role || '')
+
+  // Cek apakah user punya hak edit/detail pada member tertentu (berdasarkan scope)
+  const canActOn = (m: Member): boolean => {
+    if (!isKvs) return false
+    if (isSuperAdmin || user?.role?.tingkatan === 'daerah') return true
+    if (user?.role?.tingkatan === 'desa') return m.desa_id === user?.desa_id
+    if (user?.role?.tingkatan === 'kelompok') return m.kelompok_id === user?.kelompok_id
+    return false
+  }
+
+  // Semua pengurus bisa lihat list (sudah difilter loadData by scope)
+  // tapi hanya isKvs dalam scope yang bisa lihat detail dan edit
+  const canManage = isKvs  // untuk tombol Tambah Pengguna di header
 
   return (
     <div className="space-y-4">
@@ -463,7 +478,7 @@ export default function PenggunaPage() {
                   <th className="px-4 py-3 font-medium">Role</th>
                   <th className="px-4 py-3 font-medium">Desa / Kelompok</th>
                   <th className="px-4 py-3 font-medium">Status</th>
-                  {canManage && <th className="px-4 py-3 font-medium">Aksi</th>}
+                  <th className="px-4 py-3 font-medium">Aksi</th>
                 </tr>
               </thead>
               <tbody>
@@ -471,8 +486,8 @@ export default function PenggunaPage() {
                   const a = m.anggota?.[0]
                   const sp = a?.status_pengguna || 'lajang'
                   return (
-                    <tr key={m.id} className="border-b border-slate-50 hover:bg-slate-50 transition cursor-pointer"
-                      onClick={() => setDetailModal(m)}>
+                    <tr key={m.id} className={`border-b border-slate-50 hover:bg-slate-50 transition ${canActOn(m) ? 'cursor-pointer' : ''}`}
+                      onClick={() => canActOn(m) && setDetailModal(m)}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm shrink-0">
@@ -504,7 +519,7 @@ export default function PenggunaPage() {
                           </span>
                         </div>
                       </td>
-                      {canManage && (
+                      {canActOn(m) && (
                         <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                           <div className="flex gap-3">
                             <button onClick={() => openEdit(m)} className="text-blue-600 hover:text-blue-800 font-medium text-xs">Edit</button>
@@ -598,7 +613,7 @@ export default function PenggunaPage() {
             )}
 
             <div className="flex gap-3 pt-2 border-t border-slate-100">
-              {canManage && (
+              {canActOn(detailModal) && (
                 <button onClick={() => { setDetailModal(null); openEdit(detailModal) }}
                   className="flex-1 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition">
                   Edit
@@ -922,12 +937,12 @@ export default function PenggunaPage() {
               {confirmStep === 1 ? (
                 <button onClick={() => setConfirmStep(2)}
                   className="flex-1 py-2.5 bg-amber-500 text-white rounded-xl text-sm font-medium hover:bg-amber-600 transition">
-                  Lanjutkan
+                  Lanjut
                 </button>
               ) : (
-                <button onClick={doActualSave} disabled={saving}
-                  className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:bg-red-300 transition">
-                  {saving ? 'Menyimpan...' : 'Ya, Lanjutkan'}
+                <button onClick={doActualSave}
+                  className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 transition">
+                  Ya, Konfirmasi
                 </button>
               )}
             </div>

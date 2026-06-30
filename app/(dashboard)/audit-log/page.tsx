@@ -13,21 +13,33 @@ export default function AuditLogPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
 
+  const isKvsOrAdmin = user?.role?.tingkatan === 'super_admin' || /Ketua|Wakil/i.test(user?.role?.nama_role || '')
+
   useEffect(() => {
     if (!user) return
-    if (user.role?.tingkatan !== 'super_admin') {
+    if (!isKvsOrAdmin) {
       router.replace('/dashboard')
       return
     }
     loadData()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
   const loadData = async () => {
-    const { data: rows } = await supabase
-      .from('audit_log')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(200)
+    if (!user) return
+    const t = user.role?.tingkatan
+
+    let q = supabase.from('audit_log').select('*').order('created_at', { ascending: false }).limit(300)
+
+    // Scope filter: daerah/super admin lihat semua, desa filter by desa, kelompok filter by kelompok
+    if (t === 'desa' && user.desa_id) {
+      q = q.eq('desa_id', user.desa_id)
+    } else if (t === 'kelompok' && user.kelompok_id) {
+      q = q.eq('kelompok_id', user.kelompok_id)
+    }
+    // daerah & super_admin: no filter
+
+    const { data: rows } = await q
     setData(rows || [])
     setLoading(false)
   }
@@ -48,7 +60,9 @@ export default function AuditLogPage() {
     <div className="space-y-4">
       <div>
         <h2 className="font-bold text-slate-800">Audit Log</h2>
-        <p className="text-slate-400 text-sm">Rekam jejak aktivitas sistem</p>
+        <p className="text-slate-400 text-sm">
+          Rekam jejak aktivitas{user?.desa ? ` — ${user.desa.nama_desa}` : ''}{user?.kelompok ? ` · ${user.kelompok.nama_kelompok}` : ''}
+        </p>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100">

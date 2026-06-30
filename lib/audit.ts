@@ -7,6 +7,7 @@ type AuditAction =
   | 'ACTIVATE' | 'DEACTIVATE'
   | 'UPLOAD' | 'DOWNLOAD'
   | 'EXPORT' | 'IMPORT'
+  | 'VIEW'
 
 export async function logAudit(
   user: UserProfile,
@@ -27,8 +28,11 @@ export async function logAudit(
       target_desc: targetDesc || null,
       detail: detail || {},
       status: 'success',
+      // Scope: untuk filter audit log per tingkatan
+      desa_id: user.desa_id || null,
+      kelompok_id: user.kelompok_id || null,
     })
-  } catch {
+    } catch {
     // Audit log gagal tidak boleh menghentikan operasi utama
     console.warn('[RYZA] Audit log gagal:', { action, module, targetDesc })
   }

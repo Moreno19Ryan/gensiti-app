@@ -4,26 +4,36 @@ import { useState, useEffect, useRef } from 'react'
 import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 
+interface AnggotaRecord {
+  id: string
+  nomor_anggota: string | null
+  tempat_lahir: string | null
+  tanggal_lahir: string | null
+  jenis_kelamin: string | null
+  alamat: string | null
+  status: string | null
+  nama_ayah: string | null
+  nama_ibu: string | null
+  nama_wali: string | null
+  no_hp_orangtua_wali: string | null
+  anak_ke: number | null
+  jumlah_saudara: number | null
+}
+
 export default function ProfilPage() {
   const { user, refresh } = useUser()
-  const [tab, setTab] = useState<'profil' | 'password'>('profil')
+  const [tab, setTab] = useState<'profil' | 'datadiri' | 'password'>('profil')
   const [form, setForm] = useState({ nama_lengkap: '', no_hp: '' })
+  const [diriForm, setDiriForm] = useState({
+    tempat_lahir: '', tanggal_lahir: '', jenis_kelamin: '',
+    alamat: '', anak_ke: '', jumlah_saudara: '',
+    nama_ayah: '', nama_ibu: '', nama_wali: '', no_hp_orangtua_wali: '',
+  })
   const [pwForm, setPwForm] = useState({ lama: '', baru: '', konfirmasi: '' })
   const [saving, setSaving] = useState(false)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
-  const [anggotaData, setAnggotaData] = useState<{
-    nomor_anggota: string | null
-    tempat_lahir: string | null
-    tanggal_lahir: string | null
-    jenis_kelamin: string | null
-    alamat: string | null
-    status: string | null
-    nama_ayah: string | null
-    nama_ibu: string | null
-    nama_wali: string | null
-    no_hp_orangtua_wali: string | null
-  } | null>(null)
+  const [anggotaData, setAnggotaData] = useState<AnggotaRecord | null>(null)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -34,10 +44,26 @@ export default function ProfilPage() {
 
     supabase
       .from('anggota')
-      .select('nomor_anggota, tempat_lahir, tanggal_lahir, jenis_kelamin, alamat, status, nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali, nama_orang_tua')
+      .select('id, nomor_anggota, tempat_lahir, tanggal_lahir, jenis_kelamin, alamat, status, nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali, nama_orang_tua, anak_ke, jumlah_saudara')
       .eq('user_id', user.id)
       .single()
-      .then(({ data }) => setAnggotaData(data))
+      .then(({ data }) => {
+        if (data) {
+          setAnggotaData(data as AnggotaRecord)
+          setDiriForm({
+            tempat_lahir: data.tempat_lahir || '',
+            tanggal_lahir: data.tanggal_lahir || '',
+            jenis_kelamin: data.jenis_kelamin || '',
+            alamat: data.alamat || '',
+            anak_ke: data.anak_ke?.toString() || '',
+            jumlah_saudara: data.jumlah_saudara?.toString() || '',
+            nama_ayah: data.nama_ayah || (data as any).nama_orang_tua || '',
+            nama_ibu: data.nama_ibu || '',
+            nama_wali: data.nama_wali || '',
+            no_hp_orangtua_wali: data.no_hp_orangtua_wali || '',
+          })
+        }
+      })
   }, [user])
 
   const saveProfile = async () => {
@@ -58,6 +84,47 @@ export default function ProfilPage() {
     setSaving(false)
   }
 
+  const saveDataDiri = async () => {
+    if (!user) return
+    setSaving(true)
+    setMsg(null)
+    try {
+      const res = await fetch('/api/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: user.id,
+          anggota_id: anggotaData?.id,
+          nama_lengkap: user.nama_lengkap,
+          tempat_lahir: diriForm.tempat_lahir.toUpperCase(),
+          tanggal_lahir: diriForm.tanggal_lahir || null,
+          jenis_kelamin: diriForm.jenis_kelamin.toUpperCase(),
+          alamat: diriForm.alamat.toUpperCase(),
+          anak_ke: diriForm.anak_ke ? parseInt(diriForm.anak_ke) : null,
+          jumlah_saudara: diriForm.jumlah_saudara ? parseInt(diriForm.jumlah_saudara) : null,
+          nama_ayah: diriForm.nama_ayah.toUpperCase(),
+          nama_ibu: diriForm.nama_ibu.toUpperCase(),
+          nama_wali: diriForm.nama_wali.toUpperCase() || null,
+          no_hp_orangtua_wali: diriForm.no_hp_orangtua_wali,
+        }),
+      })
+      const json = await res.json()
+      if (json.error) {
+        setMsg({ type: 'err', text: json.error })
+      } else {
+        setMsg({ type: 'ok', text: 'Data diri berhasil diperbarui!' })
+        const { data } = await supabase.from('anggota')
+          .select('id, nomor_anggota, tempat_lahir, tanggal_lahir, jenis_kelamin, alamat, status, nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali, anak_ke, jumlah_saudara')
+          .eq('user_id', user.id).single()
+        if (data) setAnggotaData(data as AnggotaRecord)
+      }
+    } catch (e) {
+      setMsg({ type: 'err', text: String(e) })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const savePassword = async () => {
     if (!user) return
     if (!pwForm.lama) { setMsg({ type: 'err', text: 'Password lama wajib diisi' }); return }
@@ -68,7 +135,6 @@ export default function ProfilPage() {
     setSaving(true)
     setMsg(null)
 
-    // Verifikasi password lama
     const { error: verifyErr } = await supabase.auth.signInWithPassword({
       email: user.email,
       password: pwForm.lama,
@@ -79,7 +145,6 @@ export default function ProfilPage() {
       return
     }
 
-    // Ganti password baru
     const { error } = await supabase.auth.updateUser({ password: pwForm.baru })
     if (error) {
       setMsg({ type: 'err', text: error.message })
@@ -94,12 +159,10 @@ export default function ProfilPage() {
     const file = e.target.files?.[0]
     if (!file || !user) return
 
-    // Validasi ukuran (maks 5 MB)
     if (file.size > 5 * 1024 * 1024) {
       setMsg({ type: 'err', text: 'Ukuran foto maksimal 5 MB.' })
       return
     }
-    // Validasi tipe
     if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
       setMsg({ type: 'err', text: 'Format foto harus JPG, PNG, WebP, atau GIF.' })
       return
@@ -146,7 +209,6 @@ export default function ProfilPage() {
       {/* Avatar + Info */}
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
         <div className="flex items-center gap-5">
-          {/* Avatar dengan tombol ganti foto */}
           <div className="relative shrink-0">
             {avatarUrl ? (
               <img src={avatarUrl} alt="Foto profil"
@@ -156,7 +218,6 @@ export default function ProfilPage() {
                 {user.nama_lengkap?.charAt(0).toUpperCase()}
               </div>
             )}
-            {/* Tombol ganti foto */}
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={uploadingPhoto}
@@ -203,7 +264,7 @@ export default function ProfilPage() {
           </div>
         </div>
 
-        {/* Data anggota */}
+        {/* Data anggota ringkas */}
         {anggotaData && (
           <div className="mt-5 pt-5 border-t border-slate-100 grid grid-cols-2 gap-3">
             {[
@@ -235,10 +296,14 @@ export default function ProfilPage() {
       {/* Tabs Edit */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="flex border-b border-slate-100">
-          {(['profil', 'password'] as const).map(t => (
-            <button key={t} onClick={() => { setTab(t); setMsg(null) }}
-              className={`flex-1 py-3 text-sm font-medium transition ${tab === t ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
-              {t === 'profil' ? 'Edit Profil' : 'Ganti Password'}
+          {([
+            { key: 'profil', label: 'Akun' },
+            { key: 'datadiri', label: 'Data Diri' },
+            { key: 'password', label: 'Password' },
+          ] as const).map(({ key, label }) => (
+            <button key={key} onClick={() => { setTab(key); setMsg(null) }}
+              className={`flex-1 py-3 text-sm font-medium transition ${tab === key ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
+              {label}
             </button>
           ))}
         </div>
@@ -272,6 +337,97 @@ export default function ProfilPage() {
               <button onClick={saveProfile} disabled={saving}
                 className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition flex items-center justify-center gap-2">
                 {saving ? 'Menyimpan...' : 'Simpan Perubahan'}
+              </button>
+            </div>
+          )}
+
+          {tab === 'datadiri' && (
+            <div className="space-y-4">
+              <p className="text-xs text-slate-500 bg-blue-50 p-3 rounded-xl border border-blue-100">
+                Data diri Anda. Perubahan akan tersimpan ke profil anggota.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Tempat Lahir *</label>
+                  <input value={diriForm.tempat_lahir}
+                    onChange={e => setDiriForm(f => ({ ...f, tempat_lahir: e.target.value.toUpperCase() }))}
+                    placeholder="BEKASI"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Tanggal Lahir *</label>
+                  <input type="date" value={diriForm.tanggal_lahir}
+                    onChange={e => setDiriForm(f => ({ ...f, tanggal_lahir: e.target.value }))}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Jenis Kelamin *</label>
+                <select value={diriForm.jenis_kelamin}
+                  onChange={e => setDiriForm(f => ({ ...f, jenis_kelamin: e.target.value }))}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="">Pilih jenis kelamin</option>
+                  <option value="LAKI-LAKI">LAKI-LAKI</option>
+                  <option value="PEREMPUAN">PEREMPUAN</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Alamat *</label>
+                <textarea value={diriForm.alamat}
+                  onChange={e => setDiriForm(f => ({ ...f, alamat: e.target.value.toUpperCase() }))}
+                  rows={2} placeholder="ALAMAT LENGKAP"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none uppercase" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Anak Ke-</label>
+                  <input type="number" min={1} value={diriForm.anak_ke}
+                    onChange={e => setDiriForm(f => ({ ...f, anak_ke: e.target.value }))}
+                    placeholder="1"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Dari ... Bersaudara</label>
+                  <input type="number" min={1} value={diriForm.jumlah_saudara}
+                    onChange={e => setDiriForm(f => ({ ...f, jumlah_saudara: e.target.value }))}
+                    placeholder="3"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+              <div className="border-t border-slate-100 pt-3 space-y-3">
+                <p className="text-xs font-medium text-slate-500">Data Orang Tua / Wali</p>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Nama Ayah Kandung *</label>
+                  <input value={diriForm.nama_ayah}
+                    onChange={e => setDiriForm(f => ({ ...f, nama_ayah: e.target.value.toUpperCase() }))}
+                    placeholder="NAMA AYAH KANDUNG"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Nama Ibu Kandung *</label>
+                  <input value={diriForm.nama_ibu}
+                    onChange={e => setDiriForm(f => ({ ...f, nama_ibu: e.target.value.toUpperCase() }))}
+                    placeholder="NAMA IBU KANDUNG"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Nama Wali (opsional)</label>
+                  <input value={diriForm.nama_wali}
+                    onChange={e => setDiriForm(f => ({ ...f, nama_wali: e.target.value.toUpperCase() }))}
+                    placeholder="NAMA WALI (jika ada)"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">No. HP Orang Tua / Wali *</label>
+                  <input value={diriForm.no_hp_orangtua_wali}
+                    onChange={e => setDiriForm(f => ({ ...f, no_hp_orangtua_wali: e.target.value }))}
+                    placeholder="08xx-xxxx-xxxx"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+              <button onClick={saveDataDiri} disabled={saving}
+                className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition">
+                {saving ? 'Menyimpan...' : 'Simpan Data Diri'}
               </button>
             </div>
           )}

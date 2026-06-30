@@ -124,6 +124,9 @@ export default function DashboardPage() {
 
   const isSuper = user?.role?.tingkatan === 'super_admin'
 
+  // Tampilkan Health Score untuk ketua/wakil/bendahara di semua tingkatan
+  const showHealthScore = isSuper || /Ketua|Wakil|Bendahara/i.test(user?.role?.nama_role || '')
+
   const statCards = [
     {
       label: 'Pengguna Online',
@@ -140,18 +143,18 @@ export default function DashboardPage() {
       color: 'bg-indigo-500',
     },
     {
-      label: isSuper ? 'Health Score' : 'Total Pemasukan',
-      value: loading ? '...' : isSuper ? `${healthScore}%` : formatRupiah(stats.pemasukan),
-      sub: isSuper ? healthLabel : 'Semua kelompok',
-      icon: isSuper ? '❤️' : '💰',
-      color: isSuper ? healthBg : 'bg-emerald-500',
+      label: showHealthScore ? 'Health Score' : 'Total Pemasukan',
+      value: loading ? '...' : showHealthScore ? `${healthScore}%` : formatRupiah(stats.pemasukan),
+      sub: showHealthScore ? healthLabel : 'Total masuk',
+      icon: showHealthScore ? '❤️' : '💰',
+      color: showHealthScore ? healthBg : 'bg-emerald-500',
     },
     {
-      label: isSuper ? 'Anggota Aktif' : 'Total Pengeluaran',
-      value: loading ? '...' : isSuper ? stats.anggota.toLocaleString('id-ID') : formatRupiah(stats.pengeluaran),
-      sub: isSuper ? 'Terdaftar & aktif' : 'Total keluar',
-      icon: isSuper ? '👥' : '💸',
-      color: isSuper ? 'bg-violet-500' : 'bg-red-500',
+      label: showHealthScore ? 'Anggota Aktif' : 'Total Pengeluaran',
+      value: loading ? '...' : showHealthScore ? stats.anggota.toLocaleString('id-ID') : formatRupiah(stats.pengeluaran),
+      sub: showHealthScore ? 'Terdaftar & aktif' : 'Total keluar',
+      icon: showHealthScore ? '👥' : '💸',
+      color: showHealthScore ? 'bg-violet-500' : 'bg-red-500',
     },
   ]
 
@@ -202,7 +205,7 @@ export default function DashboardPage() {
               className={`flex flex-col items-center gap-2 p-3 sm:p-4 rounded-xl border border-slate-100 transition-colors ${item.color}`}
             >
               <span className="text-2xl">{item.icon}</span>
-              <span className="text-xs sm:text-sm font-medium text-slate-600 text-center">{item.label}</span>
+              <span className="text-xs font-medium text-slate-600">{item.label}</span>
             </a>
           ))}
         </div>
