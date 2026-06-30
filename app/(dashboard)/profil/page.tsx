@@ -22,7 +22,9 @@ interface AnggotaRecord {
 
 export default function ProfilPage() {
   const { user, refresh } = useUser()
-  const [tab, setTab] = useState<'profil' | 'datadiri' | 'password'>('profil')
+  const isSuperAdmin = user?.role?.tingkatan === 'super_admin'
+
+  const [tab, setTab] = useState<'akun' | 'datadiri' | 'password'>('akun')
   const [form, setForm] = useState({ nama_lengkap: '', no_hp: '' })
   const [diriForm, setDiriForm] = useState({
     tempat_lahir: '', tanggal_lahir: '', jenis_kelamin: '',
@@ -37,51 +39,62 @@ export default function ProfilPage() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const loadAnggota = async (userId: string) => {
+    const res = await fetch(`/api/users?userId=\${userId}`)
+    const json = await res.json()
+    if (json.data) {
+      const data = json.data as AnggotaRecord & { nama_orang_tua?: string }
+      setAnggotaData(data)
+      setDiriForm({
+        tempat_lahir: data.tempat_lahir || '',
+        tanggal_lahir: data.tanggal_lahir || '',
+        jenis_kelamin: data.jenis_kelamin || '',
+        alamat: data.alamat || '',
+        anak_ke: data.anak_ke?.toString() || '',
+        jumlah_saudara: data.jumlah_saudara?.toString() || '',
+        nama_ayah: data.nama_ayah || data.nama_orang_tua || '',
+        nama_ibu: data.nama_ibu || '',
+        nama_wali: data.nama_wali || '',
+        no_hp_orangtua_wali: data.no_hp_orangtua_wali || '',
+      })
+    }
+  }
+
   useEffect(() => {
     if (!user) return
     setForm({ nama_lengkap: user.nama_lengkap || '', no_hp: user.no_hp || '' })
-    setAvatarUrl((user as any).avatar_url || null)
+    const url = (user as any).avatar_url || (user as any).foto_url || null
+    setAvatarUrl(url)
 
-    supabase
-      .from('anggota')
-      .select('id, nomor_anggota, tempat_lahir, tanggal_lahir, jenis_kelamin, alamat, status, nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali, nama_orang_tua, anak_ke, jumlah_saudara')
-      .eq('user_id', user.id)
-      .single()
-      .then(({ data }) => {
-        if (data) {
-          setAnggotaData(data as AnggotaRecord)
-          setDiriForm({
-            tempat_lahir: data.tempat_lahir || '',
-            tanggal_lahir: data.tanggal_lahir || '',
-            jenis_kelamin: data.jenis_kelamin || '',
-            alamat: data.alamat || '',
-            anak_ke: data.anak_ke?.toString() || '',
-            jumlah_saudara: data.jumlah_saudara?.toString() || '',
-            nama_ayah: data.nama_ayah || (data as any).nama_orang_tua || '',
-            nama_ibu: data.nama_ibu || '',
-            nama_wali: data.nama_wali || '',
-            no_hp_orangtua_wali: data.no_hp_orangtua_wali || '',
-          })
-        }
-      })
+    if (!isSuperAdmin) {
+      loadAnggota(user.id)
+    }
   }, [user])
 
-  const saveProfile = async () => {
+  const saveAkun = async () => {
     if (!user) return
     setSaving(true)
     setMsg(null)
-    const { error } = await supabase.from('users').update({
-      nama_lengkap: form.nama_lengkap,
-      no_hp: form.no_hp,
-    }).eq('id', user.id)
-
-    if (error) {
-      setMsg({ type: 'err', text: error.message })
-    } else {
-      await refresh()
-      setMsg({ type: 'ok', text: 'Profil berhasil diperbarui!' })
+    try {
+      const body: Record<string, unknown> = { id: user.id, no_hp: form.no_hp }
+      if (!isSuperAdmin) body.nama_lengkap = form.nama_lengkap
+      const res = await fetch('/api/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const json = await res.json()
+      if (json.error) {
+        setMsg({ type: 'err', text: json.error })
+      } else {
+        await refresh()
+        setMsg({ type: 'ok', text: 'Profil berhasil diperbarui!' })
+      }
+    } catch (e) {
+      setMsg({ type: 'err', text: String(e) })
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   const saveDataDiri = async () => {
@@ -94,17 +107,16 @@ export default function ProfilPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: user.id,
-          anggota_id: anggotaData?.id,
           nama_lengkap: user.nama_lengkap,
           tempat_lahir: diriForm.tempat_lahir.toUpperCase(),
           tanggal_lahir: diriForm.tanggal_lahir || null,
-          jenis_kelamin: diriForm.jenis_kelamin.toUpperCase(),
+          jenis_kelamin: diriForm.jenis_kelamin,
           alamat: diriForm.alamat.toUpperCase(),
           anak_ke: diriForm.anak_ke ? parseInt(diriForm.anak_ke) : null,
           jumlah_saudara: diriForm.jumlah_saudara ? parseInt(diriForm.jumlah_saudara) : null,
           nama_ayah: diriForm.nama_ayah.toUpperCase(),
           nama_ibu: diriForm.nama_ibu.toUpperCase(),
-          nama_wali: diriForm.nama_wali.toUpperCase() || null,
+          nama_wali: diriForm.nama_wali ? diriForm.nama_wali.toUpperCase() : null,
           no_hp_orangtua_wali: diriForm.no_hp_orangtua_wali,
         }),
       })
@@ -113,10 +125,7 @@ export default function ProfilPage() {
         setMsg({ type: 'err', text: json.error })
       } else {
         setMsg({ type: 'ok', text: 'Data diri berhasil diperbarui!' })
-        const { data } = await supabase.from('anggota')
-          .select('id, nomor_anggota, tempat_lahir, tanggal_lahir, jenis_kelamin, alamat, status, nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali, anak_ke, jumlah_saudara')
-          .eq('user_id', user.id).single()
-        if (data) setAnggotaData(data as AnggotaRecord)
+        await loadAnggota(user.id)
       }
     } catch (e) {
       setMsg({ type: 'err', text: String(e) })
@@ -137,7 +146,6 @@ export default function ProfilPage() {
 
     setSaving(true)
     setMsg(null)
-
     const { error: verifyErr } = await supabase.auth.signInWithPassword({
       email: user.email,
       password: pwForm.lama,
@@ -147,7 +155,6 @@ export default function ProfilPage() {
       setSaving(false)
       return
     }
-
     const { error } = await supabase.auth.updateUser({ password: pwForm.baru })
     if (error) {
       setMsg({ type: 'err', text: error.message })
@@ -161,7 +168,6 @@ export default function ProfilPage() {
   const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file || !user) return
-
     if (file.size > 5 * 1024 * 1024) {
       setMsg({ type: 'err', text: 'Ukuran foto maksimal 5 MB.' })
       return
@@ -170,12 +176,11 @@ export default function ProfilPage() {
       setMsg({ type: 'err', text: 'Format foto harus JPG, PNG, WebP, atau GIF.' })
       return
     }
-
     setUploadingPhoto(true)
     setMsg(null)
 
     const ext = file.name.split('.').pop()
-    const filePath = `${user.id}/avatar.${ext}`
+    const filePath = `\${user.id}/avatar.\${ext}`
 
     const { error: uploadErr } = await supabase.storage
       .from('profile-photos')
@@ -193,10 +198,20 @@ export default function ProfilPage() {
 
     const publicUrl = urlData.publicUrl + '?t=' + Date.now()
 
-    await supabase.from('users').update({ avatar_url: publicUrl }).eq('id', user.id)
-    setAvatarUrl(publicUrl)
-    await refresh()
-    setMsg({ type: 'ok', text: 'Foto profil berhasil diperbarui!' })
+    // Simpan ke DB via API (service role, bypass RLS)
+    const res = await fetch('/api/users', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: user.id, avatar_url: publicUrl }),
+    })
+    const json = await res.json()
+    if (json.error) {
+      setMsg({ type: 'err', text: 'Foto terupload tapi gagal simpan: ' + json.error })
+    } else {
+      setAvatarUrl(publicUrl)
+      await refresh()
+      setMsg({ type: 'ok', text: 'Foto profil berhasil diperbarui!' })
+    }
     setUploadingPhoto(false)
   }
 
@@ -207,10 +222,16 @@ export default function ProfilPage() {
 
   if (!user) return null
 
+  const tabs = [
+    { key: 'akun' as const, label: 'Akun' },
+    ...(!isSuperAdmin ? [{ key: 'datadiri' as const, label: 'Data Diri' }] : []),
+    { key: 'password' as const, label: 'Password' },
+  ]
+
   return (
     <div className="max-w-2xl space-y-6">
       {/* Avatar + Info */}
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-sm border border-slate-100 dark:border-slate-700">
         <div className="flex items-center gap-5">
           <div className="relative shrink-0">
             {avatarUrl ? (
@@ -246,7 +267,7 @@ export default function ProfilPage() {
           </div>
 
           <div>
-            <h2 className="text-xl font-bold text-slate-800">{user.nama_lengkap}</h2>
+            <h2 className="text-xl font-bold text-slate-800 dark:text-white">{user.nama_lengkap}</h2>
             <p className="text-slate-500 text-sm">{user.email}</p>
             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
               <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
@@ -267,9 +288,9 @@ export default function ProfilPage() {
           </div>
         </div>
 
-        {/* Data anggota ringkas */}
-        {anggotaData && (
-          <div className="mt-5 pt-5 border-t border-slate-100 grid grid-cols-2 gap-3">
+        {/* Data anggota ringkas - hanya non-super admin */}
+        {!isSuperAdmin && anggotaData && (
+          <div className="mt-5 pt-5 border-t border-slate-100 dark:border-slate-700 grid grid-cols-2 gap-3">
             {[
               { label: 'No. Anggota', val: anggotaData.nomor_anggota },
               { label: 'Status Anggota', val: anggotaData.status },
@@ -283,13 +304,13 @@ export default function ProfilPage() {
             ].filter(x => x.val).map(({ label, val }) => (
               <div key={label}>
                 <p className="text-xs text-slate-400">{label}</p>
-                <p className="text-sm text-slate-700">{val}</p>
+                <p className="text-sm text-slate-700 dark:text-slate-200">{val}</p>
               </div>
             ))}
             {anggotaData.alamat && (
               <div className="col-span-2">
                 <p className="text-xs text-slate-400">Alamat</p>
-                <p className="text-sm text-slate-700">{anggotaData.alamat}</p>
+                <p className="text-sm text-slate-700 dark:text-slate-200">{anggotaData.alamat}</p>
               </div>
             )}
           </div>
@@ -297,15 +318,11 @@ export default function ProfilPage() {
       </div>
 
       {/* Tabs Edit */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="flex border-b border-slate-100">
-          {([
-            { key: 'profil', label: 'Akun' },
-            { key: 'datadiri', label: 'Data Diri' },
-            { key: 'password', label: 'Password' },
-          ] as const).map(({ key, label }) => (
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
+        <div className="flex border-b border-slate-100 dark:border-slate-700">
+          {tabs.map(({ key, label }) => (
             <button key={key} onClick={() => { setTab(key); setMsg(null) }}
-              className={`flex-1 py-3 text-sm font-medium transition ${tab === key ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
+              className={`flex-1 py-3 text-sm font-medium transition \${tab === key ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
               {label}
             </button>
           ))}
@@ -313,18 +330,21 @@ export default function ProfilPage() {
 
         <div className="p-6">
           {msg && (
-            <div className={`mb-4 p-3 rounded-xl text-sm ${msg.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+            <div className={`mb-4 p-3 rounded-xl text-sm \${msg.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
               {msg.text}
             </div>
           )}
 
-          {tab === 'profil' && (
+          {tab === 'akun' && (
             <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Nama Lengkap</label>
-                <input value={form.nama_lengkap} onChange={e => setForm(f => ({ ...f, nama_lengkap: e.target.value }))}
-                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
+              {/* Nama hanya bisa diubah oleh non-super admin */}
+              {!isSuperAdmin && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Nama Lengkap</label>
+                  <input value={form.nama_lengkap} onChange={e => setForm(f => ({ ...f, nama_lengkap: e.target.value }))}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">No. HP</label>
                 <input value={form.no_hp} onChange={e => setForm(f => ({ ...f, no_hp: e.target.value }))}
@@ -337,14 +357,14 @@ export default function ProfilPage() {
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-sm text-slate-400 cursor-not-allowed" />
                 <p className="text-xs text-slate-400 mt-1">Email tidak dapat diubah</p>
               </div>
-              <button onClick={saveProfile} disabled={saving}
+              <button onClick={saveAkun} disabled={saving}
                 className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition flex items-center justify-center gap-2">
                 {saving ? 'Menyimpan...' : 'Simpan Perubahan'}
               </button>
             </div>
           )}
 
-          {tab === 'datadiri' && (
+          {tab === 'datadiri' && !isSuperAdmin && (
             <div className="space-y-4">
               <p className="text-xs text-slate-500 bg-blue-50 p-3 rounded-xl border border-blue-100">
                 Data diri Anda. Perubahan akan tersimpan ke profil anggota.
@@ -370,8 +390,8 @@ export default function ProfilPage() {
                   onChange={e => setDiriForm(f => ({ ...f, jenis_kelamin: e.target.value }))}
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                   <option value="">Pilih jenis kelamin</option>
-                  <option value="LAKI-LAKI">LAKI-LAKI</option>
-                  <option value="PEREMPUAN">PEREMPUAN</option>
+                  <option value="laki-laki">Laki-laki</option>
+                  <option value="perempuan">Perempuan</option>
                 </select>
               </div>
               <div>
@@ -446,7 +466,7 @@ export default function ProfilPage() {
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Password Baru *</label>
                 <input type="password" value={pwForm.baru} onChange={e => setPwForm(f => ({ ...f, baru: e.target.value }))}
-                  placeholder="Min. 6 karakter"
+                  placeholder="Min. 6 karakter, huruf kapital, hanya huruf & angka"
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div>

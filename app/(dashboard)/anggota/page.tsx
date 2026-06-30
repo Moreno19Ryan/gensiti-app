@@ -880,7 +880,7 @@ export default function PenggunaPage() {
                 <select value={form.role_id} onChange={e => set('role_id', e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                   <option value="">-- Pilih Role --</option>
-                  {roleList.map(r => <option key={r.id} value={r.id}>{r.nama_role} ({r.tingkatan})</option>)}
+                  {roleList.filter(r => r.tingkatan !== 'super_admin').map(r => <option key={r.id} value={r.id}>{r.nama_role}</option>)}
                 </select>
               </div>
 

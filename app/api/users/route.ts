@@ -9,6 +9,29 @@ function adminClient() {
   )
 }
 
+// GET: Ambil data anggota by userId (server-side, bypass RLS)
+export async function GET(req: NextRequest) {
+  try {
+    const supabaseAdmin = adminClient()
+    const { searchParams } = new URL(req.url)
+    const userId = searchParams.get('userId')
+    if (!userId) return NextResponse.json({ error: 'userId wajib diisi' }, { status: 400 })
+
+    const { data, error } = await supabaseAdmin
+      .from('anggota')
+      .select('*')
+      .eq('user_id', userId)
+      .single()
+
+    if (error && error.code !== 'PGRST116') {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    return NextResponse.json({ data: data || null })
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 })
+  }
+}
+
 // POST: Buat user baru + anggota record
 export async function POST(req: NextRequest) {
   try {
@@ -16,13 +39,10 @@ export async function POST(req: NextRequest) {
     const {
       email, password, nama_lengkap, no_hp,
       role_id, desa_id, kelompok_id,
-      // Data anggota
       tempat_lahir, tanggal_lahir, jenis_kelamin, alamat,
       nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali,
-      // backward compat
       nama_orang_tua, no_hp_orang_tua,
       status_anggota,
-      // Status pengguna (baru)
       status_pengguna,
       anak_ke,
       jumlah_saudara,
@@ -32,7 +52,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Email, password, dan nama wajib diisi' }, { status: 400 })
     }
 
-    // 1. Buat Supabase Auth user
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
@@ -42,7 +61,6 @@ export async function POST(req: NextRequest) {
 
     const userId = authData.user.id
 
-    // 2. Insert ke public.users
     const { error: profileError } = await supabaseAdmin.from('users').insert({
       id: userId,
       email,
@@ -56,11 +74,10 @@ export async function POST(req: NextRequest) {
     })
 
     if (profileError) {
-      await supabaseAdmin.auth.admin.deleteUser(userId) // rollback
+      await supabaseAdmin.auth.admin.deleteUser(userId)
       return NextResponse.json({ error: profileError.message }, { status: 500 })
     }
 
-    // 3. Insert ke anggota (server-side pakai service role agar tidak kena permission issue)
     const { error: anggotaError } = await supabaseAdmin.from('anggota').insert({
       user_id: userId,
       nama_lengkap,
@@ -75,10 +92,8 @@ export async function POST(req: NextRequest) {
       nama_ibu: nama_ibu || null,
       nama_wali: nama_wali || null,
       no_hp_orangtua_wali: no_hp_orangtua_wali || null,
-      // backward compat kolom lama
       nama_orang_tua: nama_ayah || nama_orang_tua || null,
       no_hp_orang_tua: no_hp_orangtua_wali || no_hp_orang_tua || null,
-      // Status pengguna baru - default lajang
       status_pengguna: status_pengguna || 'lajang',
       pindah_ke_daerah_lain: false,
       anak_ke: anak_ke || null,
@@ -101,6 +116,7 @@ export async function PATCH(req: NextRequest) {
     const supabaseAdmin = adminClient()
     const {
       id, nama_lengkap, no_hp, role_id, desa_id, kelompok_id, is_active, password,
+      avatar_url,
       anggota_id, tempat_lahir, tanggal_lahir, jenis_kelamin, alamat,
       nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali,
       nama_orang_tua, no_hp_orang_tua,
@@ -134,6 +150,10 @@ export async function PATCH(req: NextRequest) {
     if (desa_id !== undefined) userPayload.desa_id = desa_id || null
     if (kelompok_id !== undefined) userPayload.kelompok_id = kelompok_id || null
     if (is_active !== undefined) userPayload.is_active = is_active
+    if (avatar_url !== undefined) {
+      userPayload.avatar_url = avatar_url || null
+      userPayload.foto_url = avatar_url || null
+    }
 
     if (archive === true) {
       userPayload.is_active = false
@@ -147,7 +167,6 @@ export async function PATCH(req: NextRequest) {
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // Cek apakah ada field anggota yang dikirim
     const hasAnggotaFields = anggota_id != null
       || tempat_lahir !== undefined
       || tanggal_lahir !== undefined
@@ -162,12 +181,9 @@ export async function PATCH(req: NextRequest) {
       || status_pengguna !== undefined
       || status_anggota !== undefined
       || nama_orang_tua !== undefined
-      || desa_id !== undefined
-      || kelompok_id !== undefined
       || pindah_ke_daerah_lain !== undefined
 
     if (hasAnggotaFields) {
-      // Hanya update field yang benar-benar dikirim - jangan overwrite field lain
       const anggotaPayload: Record<string, unknown> = {}
       if (nama_lengkap !== undefined) anggotaPayload.nama_lengkap = nama_lengkap || null
       if (tempat_lahir !== undefined) anggotaPayload.tempat_lahir = tempat_lahir || null
@@ -197,16 +213,25 @@ export async function PATCH(req: NextRequest) {
       if (jumlah_saudara !== undefined) anggotaPayload.jumlah_saudara = jumlah_saudara || null
 
       if (Object.keys(anggotaPayload).length > 0) {
-        if (anggota_id) {
-          const { error: anggotaErr } = await supabaseAdmin.from('anggota').update(anggotaPayload).eq('id', anggota_id)
+        // Selalu cari anggota by user_id dulu (lebih reliable daripada upsert tanpa constraint)
+        const { data: existingAnggota } = await supabaseAdmin
+          .from('anggota')
+          .select('id')
+          .eq('user_id', id)
+          .single()
+
+        if (existingAnggota?.id) {
+          const { error: anggotaErr } = await supabaseAdmin
+            .from('anggota')
+            .update(anggotaPayload)
+            .eq('id', existingAnggota.id)
           if (anggotaErr) console.error('Anggota update error:', anggotaErr.message)
         } else {
-          // Upsert by user_id sebagai fallback
-          const { error: anggotaErr } = await supabaseAdmin.from('anggota').upsert(
-            { ...anggotaPayload, user_id: id },
-            { onConflict: 'user_id' }
-          )
-          if (anggotaErr) console.error('Anggota upsert error:', anggotaErr.message)
+          // Buat record anggota baru jika belum ada
+          const { error: anggotaErr } = await supabaseAdmin
+            .from('anggota')
+            .insert({ ...anggotaPayload, user_id: id, status: 'aktif', status_pengguna: 'lajang' })
+          if (anggotaErr) console.error('Anggota insert error:', anggotaErr.message)
         }
       }
     }
