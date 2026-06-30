@@ -8,7 +8,7 @@ import { signOut } from '@/lib/auth'
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: '🏠', roles: ['super_admin', 'daerah', 'desa', 'kelompok'] },
-  { href: '/anggota', label: 'Anggota', icon: '👥', roles: ['super_admin', 'daerah', 'desa', 'kelompok'] },
+  { href: '/anggota', label: 'Pengguna', icon: '👥', roles: ['super_admin', 'daerah', 'desa', 'kelompok'] },
   { href: '/kegiatan', label: 'Kegiatan', icon: '📅', roles: ['super_admin', 'daerah', 'desa', 'kelompok'] },
   { href: '/keuangan', label: 'Keuangan', icon: '💰', roles: ['super_admin', 'daerah', 'desa', 'kelompok'] },
   { href: '/pengumuman', label: 'Pengumuman', icon: '📢', roles: ['super_admin', 'daerah', 'desa', 'kelompok'] },

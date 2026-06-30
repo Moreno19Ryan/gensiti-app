@@ -288,7 +288,7 @@ export default function PengumumanPage() {
             </button>
             <button onClick={handleSave} disabled={saving || !form.judul || !form.isi}
               className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition flex items-center justify-center gap-2">
-              {saving ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Menyimpan...</> : 'Publikasikan'}
+              {saving ? 'Menyimpan...' : 'Publikasikan'}
             </button>
           </div>
         </div>

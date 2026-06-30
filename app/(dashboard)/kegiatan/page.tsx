@@ -258,9 +258,10 @@ export default function KegiatanPage() {
               <label className="block text-xs font-medium text-slate-600 mb-1">Status *</label>
               <select value={form.status} onChange={e => set('status', e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="upcoming">Akan Datang</option>
-                <option value="ongoing">Berlangsung</option>
+                <option value="terjadwal">Terjadwal</option>
+                <option value="berlangsung">Berlangsung</option>
                 <option value="selesai">Selesai</option>
+                <option value="dibatalkan">Dibatalkan</option>
               </select>
             </div>
           </div>
@@ -268,7 +269,7 @@ export default function KegiatanPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Desa *</label>
-              <select value={form.desa_id} onChange={e => set('desa_id', e.target.value)}
+              <select value={form.desa_id} onChange={e => { set('desa_id', e.target.value); set('kelompok_id', '') }}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="">-- Pilih Desa --</option>
                 {desaList.map(d => <option key={d.id} value={d.id}>{d.nama_desa}</option>)}
@@ -286,14 +287,14 @@ export default function KegiatanPage() {
             </div>
           </div>
 
-          <div className="flex gap-3 pt-2">
-            <button onClick={() => setModalOpen(false)}
-              className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
+
+          <div className="flex gap-3 pt-2 border-t border-slate-100">
+            <button onClick={() => setModalOpen(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
               Batal
             </button>
-            <button onClick={handleSave} disabled={saving || !form.nama_kegiatan || !form.deskripsi || !form.tanggal_mulai || !form.tanggal_selesai || !form.lokasi || !form.desa_id || !form.kelompok_id}
+            <button onClick={handleSave} disabled={saving}
               className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition flex items-center justify-center gap-2">
-              {saving ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Menyimpan...</> : 'Simpan'}
+              {saving ? 'Menyimpan...' : 'Simpan'}
             </button>
           </div>
         </div>

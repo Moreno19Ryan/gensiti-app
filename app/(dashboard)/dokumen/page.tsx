@@ -322,7 +322,7 @@ export default function DokumenPage() {
               <label className="block text-xs font-medium text-slate-600 mb-1">Kelompok</label>
               <select value={form.kelompok_id} onChange={e => set('kelompok_id', e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">-- Pilih Kelompok --</option>
+                <option value="">-- Semua --</option>
                 {kelompokList.filter(k => !form.desa_id || k.desa_id === form.desa_id).map(k => (
                   <option key={k.id} value={k.id}>{k.nama_kelompok}</option>
                 ))}
@@ -330,17 +330,15 @@ export default function DokumenPage() {
             </div>
           </div>
 
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={form.is_public} onChange={e => set('is_public', e.target.checked)}
-              className="w-4 h-4 rounded accent-blue-600" />
-            <span className="text-sm text-slate-600">Publik (dapat dilihat semua anggota)</span>
-          </label>
+          {error && <p className="text-red-600 text-sm">{error}</p>}
 
           <div className="flex gap-3 pt-2 border-t border-slate-100">
-            <button onClick={() => setModalOpen(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">Batal</button>
-            <button onClick={handleSave} disabled={saving || !form.judul || !form.url_file || !form.kategori || !form.deskripsi || !form.desa_id}
+            <button onClick={() => setModalOpen(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
+              Batal
+            </button>
+            <button onClick={handleSave} disabled={saving}
               className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition flex items-center justify-center gap-2">
-              {saving ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Menyimpan...</> : 'Simpan'}
+              {saving ? 'Menyimpan...' : 'Simpan'}
             </button>
           </div>
         </div>

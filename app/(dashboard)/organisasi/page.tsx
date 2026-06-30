@@ -356,7 +356,7 @@ export default function OrganisasiPage() {
                 <button onClick={() => setKelompokModal(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">Batal</button>
                 <button onClick={saveKelompok} disabled={saving}
                   className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition flex items-center justify-center gap-2">
-                  {saving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'Simpan'}
+                  {saving ? 'Menyimpan...' : 'Simpan'}
                 </button>
               </div>
             </div>

@@ -22,6 +22,8 @@ export async function POST(req: NextRequest) {
       // backward compat
       nama_orang_tua, no_hp_orang_tua,
       status_anggota,
+      // Status pengguna (baru)
+      status_pengguna,
     } = await req.json()
 
     if (!email || !password || !nama_lengkap) {
@@ -48,6 +50,7 @@ export async function POST(req: NextRequest) {
       desa_id: desa_id || null,
       kelompok_id: kelompok_id || null,
       is_active: true,
+      is_archived: false,
     })
 
     if (profileError) {
@@ -71,12 +74,14 @@ export async function POST(req: NextRequest) {
       nama_wali: nama_wali || null,
       no_hp_orangtua_wali: no_hp_orangtua_wali || null,
       // backward compat kolom lama
-      nama_orang_tua: nama_ayah || null,
-      no_hp_orang_tua: no_hp_orangtua_wali || null,
+      nama_orang_tua: nama_ayah || nama_orang_tua || null,
+      no_hp_orang_tua: no_hp_orangtua_wali || no_hp_orang_tua || null,
+      // Status pengguna baru - default lajang
+      status_pengguna: status_pengguna || 'lajang',
+      pindah_ke_daerah_lain: false,
     })
 
     if (anggotaError) {
-      // anggota gagal tapi user sudah terbuat — log saja, jangan rollback
       console.error('Anggota insert error:', anggotaError.message)
     }
 
@@ -92,15 +97,15 @@ export async function PATCH(req: NextRequest) {
     const supabaseAdmin = adminClient()
     const {
       id, nama_lengkap, no_hp, role_id, desa_id, kelompok_id, is_active, password,
-      // Data anggota (opsional)
       anggota_id, tempat_lahir, tanggal_lahir, jenis_kelamin, alamat,
       nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali,
-      // backward compat
       nama_orang_tua, no_hp_orang_tua,
       status_anggota,
+      status_pengguna,
+      pindah_desa_id, pindah_kelompok_id, pindah_ke_daerah_lain,
+      archive, alasan_arsip,
     } = await req.json()
 
-    // Proteksi: Super Admin tidak boleh dinonaktifkan melalui API
     if (is_active === false && id) {
       const { data: targetUser } = await supabaseAdmin.from('users')
         .select('role_id, roles:role_id(tingkatan)')
@@ -113,12 +118,10 @@ export async function PATCH(req: NextRequest) {
 
     if (!id) return NextResponse.json({ error: 'ID wajib diisi' }, { status: 400 })
 
-    // Update password jika ada
     if (password) {
       await supabaseAdmin.auth.admin.updateUserById(id, { password })
     }
 
-    // Update public.users
     const userPayload: Record<string, unknown> = {}
     if (nama_lengkap !== undefined) userPayload.nama_lengkap = nama_lengkap
     if (no_hp !== undefined) userPayload.no_hp = no_hp || null
@@ -127,13 +130,19 @@ export async function PATCH(req: NextRequest) {
     if (kelompok_id !== undefined) userPayload.kelompok_id = kelompok_id || null
     if (is_active !== undefined) userPayload.is_active = is_active
 
+    if (archive === true) {
+      userPayload.is_active = false
+      userPayload.is_archived = true
+      userPayload.alasan_arsip = alasan_arsip || 'Tidak diketahui'
+      userPayload.tanggal_arsip = new Date().toISOString()
+    }
+
     if (Object.keys(userPayload).length > 0) {
       const { error } = await supabaseAdmin.from('users').update(userPayload).eq('id', id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // Update anggota jika ada data
-    if (anggota_id || nama_ayah !== undefined || nama_orang_tua !== undefined) {
+    if (anggota_id || nama_ayah !== undefined || nama_orang_tua !== undefined || status_pengguna !== undefined) {
       const anggotaPayload: Record<string, unknown> = {
         nama_lengkap: nama_lengkap || null,
         tempat_lahir: tempat_lahir || null,
@@ -147,10 +156,14 @@ export async function PATCH(req: NextRequest) {
         nama_ibu: nama_ibu || null,
         nama_wali: nama_wali || null,
         no_hp_orangtua_wali: no_hp_orangtua_wali || null,
-        // backward compat
         nama_orang_tua: nama_ayah || nama_orang_tua || null,
         no_hp_orang_tua: no_hp_orangtua_wali || no_hp_orang_tua || null,
+        status_pengguna: status_pengguna || 'lajang',
+        pindah_desa_id: pindah_desa_id || null,
+        pindah_kelompok_id: pindah_kelompok_id || null,
+        pindah_ke_daerah_lain: pindah_ke_daerah_lain === true,
       }
+
       if (anggota_id) {
         await supabaseAdmin.from('anggota').update(anggotaPayload).eq('id', anggota_id)
       } else {

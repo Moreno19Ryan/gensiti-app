@@ -307,40 +307,28 @@ export default function KeuanganPage() {
 
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Deskripsi *</label>
-            <textarea value={form.deskripsi} onChange={e => set('deskripsi', e.target.value)}
-              rows={2} placeholder="Keterangan transaksi..."
+            <textarea value={form.deskripsi} onChange={e => set('deskripsi', e.target.value)} rows={2}
+              placeholder="Keterangan transaksi..."
               className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Desa *</label>
-              <select value={form.desa_id} onChange={e => set('desa_id', e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">-- Pilih Desa --</option>
-                {desaList.map(d => <option key={d.id} value={d.id}>{d.nama_desa}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Kelompok *</label>
-              <select value={form.kelompok_id} onChange={e => set('kelompok_id', e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">-- Pilih Kelompok --</option>
-                {kelompokList.filter(k => !form.desa_id || k.desa_id === form.desa_id).map(k => (
-                  <option key={k.id} value={k.id}>{k.nama_kelompok}</option>
-                ))}
-              </select>
-            </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Desa *</label>
+            <select value={form.desa_id} onChange={e => set('desa_id', e.target.value)}
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">-- Pilih Desa --</option>
+              {desaList.map(d => <option key={d.id} value={d.id}>{d.nama_desa}</option>)}
+            </select>
           </div>
 
-          <div className="flex gap-3 pt-2">
-            <button onClick={() => setModalOpen(false)}
-              className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
+
+          <div className="flex gap-3 pt-2 border-t border-slate-100">
+            <button onClick={() => setModalOpen(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
               Batal
             </button>
-            <button onClick={handleSave} disabled={saving || !form.jumlah || !form.kategori || !form.deskripsi || !form.desa_id}
+            <button onClick={handleSave} disabled={saving}
               className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition flex items-center justify-center gap-2">
-              {saving ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Menyimpan...</> : 'Simpan'}
+              {saving ? 'Menyimpan...' : 'Simpan'}
             </button>
           </div>
         </div>

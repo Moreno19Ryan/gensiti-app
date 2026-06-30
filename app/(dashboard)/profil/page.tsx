@@ -238,7 +238,7 @@ export default function ProfilPage() {
           {(['profil', 'password'] as const).map(t => (
             <button key={t} onClick={() => { setTab(t); setMsg(null) }}
               className={`flex-1 py-3 text-sm font-medium transition ${tab === t ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
-              {t === 'profil' ? '👤 Edit Profil' : '🔐 Ganti Password'}
+              {t === 'profil' ? 'Edit Profil' : 'Ganti Password'}
             </button>
           ))}
         </div>
@@ -271,7 +271,7 @@ export default function ProfilPage() {
               </div>
               <button onClick={saveProfile} disabled={saving}
                 className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition flex items-center justify-center gap-2">
-                {saving ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Menyimpan...</> : 'Simpan Perubahan'}
+                {saving ? 'Menyimpan...' : 'Simpan Perubahan'}
               </button>
             </div>
           )}
@@ -298,7 +298,7 @@ export default function ProfilPage() {
               </div>
               <button onClick={savePassword} disabled={saving}
                 className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition flex items-center justify-center gap-2">
-                {saving ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Memverifikasi...</> : 'Ubah Password'}
+                {saving ? 'Memverifikasi...' : 'Ubah Password'}
               </button>
             </div>
           )}
