@@ -39,6 +39,8 @@ interface Member {
     pindah_desa_id: string | null
     pindah_kelompok_id: string | null
     pindah_ke_daerah_lain: boolean | null
+    anak_ke: number | null
+    jumlah_saudara: number | null
   }[] | null
 }
 
@@ -68,6 +70,8 @@ const emptyForm = {
   pindah_jenis: 'bekasi_timur',
   pindah_desa_id: '',
   pindah_kelompok_id: '',
+  anak_ke: '',
+  jumlah_saudara: '',
 }
 
 const statusPenggunaBadge: Record<string, string> = {
@@ -144,7 +148,7 @@ export default function PenggunaPage() {
         roles:role_id(id, nama_role, tingkatan),
         desa:desa_id(id, nama_desa),
         kelompok:kelompok_id(id, nama_kelompok),
-        anggota(id, nomor_anggota, tanggal_lahir, tempat_lahir, jenis_kelamin, alamat, nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali, nama_orang_tua, no_hp_orang_tua, status, status_pengguna, pindah_desa_id, pindah_kelompok_id, pindah_ke_daerah_lain)
+        anggota(id, nomor_anggota, tanggal_lahir, tempat_lahir, jenis_kelamin, alamat, nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali, nama_orang_tua, no_hp_orang_tua, status, status_pengguna, pindah_desa_id, pindah_kelompok_id, pindah_ke_daerah_lain, anak_ke, jumlah_saudara)
       `)
       .order('nama_lengkap')
 
@@ -209,6 +213,8 @@ export default function PenggunaPage() {
       pindah_jenis: a?.pindah_ke_daerah_lain ? 'daerah_lain' : 'bekasi_timur',
       pindah_desa_id: a?.pindah_desa_id || '',
       pindah_kelompok_id: a?.pindah_kelompok_id || '',
+      anak_ke: a?.anak_ke?.toString() || '',
+      jumlah_saudara: a?.jumlah_saudara?.toString() || '',
     })
     setModalOpen(true)
   }
@@ -236,6 +242,8 @@ export default function PenggunaPage() {
         pindah_desa_id: (form.status_pengguna === 'pindah_sambung' && form.pindah_jenis === 'bekasi_timur') ? form.pindah_desa_id || null : null,
         pindah_kelompok_id: (form.status_pengguna === 'pindah_sambung' && form.pindah_jenis === 'bekasi_timur') ? form.pindah_kelompok_id || null : null,
         pindah_ke_daerah_lain: form.status_pengguna === 'pindah_sambung' && form.pindah_jenis === 'daerah_lain',
+        anak_ke: form.anak_ke ? parseInt(form.anak_ke) : null,
+        jumlah_saudara: form.jumlah_saudara ? parseInt(form.jumlah_saudara) : null,
       }
 
       let userId = editTarget?.id
@@ -565,6 +573,7 @@ export default function PenggunaPage() {
                 { label: 'Jenis Kelamin', val: detailModal.anggota?.[0]?.jenis_kelamin },
                 { label: 'Desa', val: detailModal.desa?.nama_desa },
                 { label: 'Kelompok', val: detailModal.kelompok?.nama_kelompok },
+                { label: 'Anak Ke-', val: (detailModal.anggota?.[0]?.anak_ke != null && detailModal.anggota?.[0]?.jumlah_saudara != null) ? `${detailModal.anggota[0].anak_ke} dari ${detailModal.anggota[0].jumlah_saudara} bersaudara` : detailModal.anggota?.[0]?.anak_ke != null ? `Anak ke-${detailModal.anggota[0].anak_ke}` : null },
                 { label: 'Nama Ayah Kandung', val: detailModal.anggota?.[0]?.nama_ayah || detailModal.anggota?.[0]?.nama_orang_tua },
                 { label: 'Nama Ibu Kandung', val: detailModal.anggota?.[0]?.nama_ibu },
                 { label: 'Nama Wali', val: detailModal.anggota?.[0]?.nama_wali },
@@ -658,8 +667,8 @@ export default function PenggunaPage() {
                   <select value={form.jenis_kelamin} onChange={e => set('jenis_kelamin', e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="">-- Pilih --</option>
-                    <option value="laki-laki">Laki-laki</option>
-                    <option value="perempuan">Perempuan</option>
+                    <option value="LAKI-LAKI">LAKI-LAKI</option>
+                    <option value="PEREMPUAN">PEREMPUAN</option>
                   </select>
                 </div>
                 <div>
@@ -670,10 +679,25 @@ export default function PenggunaPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Alamat *</label>
-                <textarea value={form.alamat} onChange={e => set('alamat', e.target.value)}
-                  rows={2} placeholder="Alamat lengkap"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+                <label className="block text-xs font-medium text-slate-600 mb-1">Alamat * (huruf kapital)</label>
+                <textarea value={form.alamat} onChange={e => setUpper('alamat', e.target.value)}
+                  rows={2} placeholder="ALAMAT LENGKAP"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none uppercase" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Anak Ke-</label>
+                  <input type="number" min="1" max="20" value={form.anak_ke} onChange={e => set('anak_ke', e.target.value)}
+                    placeholder="1"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Dari ... Bersaudara</label>
+                  <input type="number" min="1" max="20" value={form.jumlah_saudara} onChange={e => set('jumlah_saudara', e.target.value)}
+                    placeholder="3"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
               </div>
 
               <div className="pt-2 border-t border-slate-100">
@@ -877,44 +901,31 @@ export default function PenggunaPage() {
         </div>
       </Modal>
 
-      {confirmType && (
-        <Modal
-          open={confirmOpen}
-          onClose={() => setConfirmOpen(false)}
-          title={confirmMessages[confirmType].title}
-          size="sm"
-        >
+      {/* Confirmation Modal */}
+      {confirmOpen && confirmType && (
+        <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title={confirmMessages[confirmType].title} size="sm">
           <div className="space-y-4">
-            <p className="text-sm text-slate-700 leading-relaxed">
+            <p className="text-slate-700 text-sm leading-relaxed">
               {confirmStep === 1
                 ? confirmMessages[confirmType].step1
                 : confirmMessages[confirmType].step2(editTarget?.nama_lengkap || '')}
             </p>
-
-            {confirmStep === 2 && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs leading-relaxed">
-                Tindakan ini tidak dapat dibatalkan. Akun akan dipindahkan ke arsip dan dinonaktifkan.
-              </div>
-            )}
-
-            <div className="flex gap-3 pt-1">
-              <button
-                onClick={() => setConfirmOpen(false)}
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmOpen(false)}
                 className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
                 Batal
               </button>
-              <button
-                onClick={async () => {
-                  if (confirmStep === 1) {
-                    setConfirmStep(2)
-                  } else {
-                    await doActualSave()
-                  }
-                }}
-                disabled={saving}
-                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:bg-red-300 transition">
-                {saving ? 'Memproses...' : confirmStep === 1 ? 'Ya, Lanjutkan' : 'Ya, Saya Yakin'}
-              </button>
+              {confirmStep === 1 ? (
+                <button onClick={() => setConfirmStep(2)}
+                  className="flex-1 py-2.5 bg-amber-500 text-white rounded-xl text-sm font-medium hover:bg-amber-600 transition">
+                  Lanjutkan
+                </button>
+              ) : (
+                <button onClick={doActualSave} disabled={saving}
+                  className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:bg-red-300 transition">
+                  {saving ? 'Menyimpan...' : 'Ya, Konfirmasi'}
+                </button>
+              )}
             </div>
           </div>
         </Modal>

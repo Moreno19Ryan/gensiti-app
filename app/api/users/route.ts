@@ -24,6 +24,8 @@ export async function POST(req: NextRequest) {
       status_anggota,
       // Status pengguna (baru)
       status_pengguna,
+      anak_ke,
+      jumlah_saudara,
     } = await req.json()
 
     if (!email || !password || !nama_lengkap) {
@@ -79,6 +81,8 @@ export async function POST(req: NextRequest) {
       // Status pengguna baru - default lajang
       status_pengguna: status_pengguna || 'lajang',
       pindah_ke_daerah_lain: false,
+      anak_ke: anak_ke || null,
+      jumlah_saudara: jumlah_saudara || null,
     })
 
     if (anggotaError) {
@@ -104,6 +108,7 @@ export async function PATCH(req: NextRequest) {
       status_pengguna,
       pindah_desa_id, pindah_kelompok_id, pindah_ke_daerah_lain,
       archive, alasan_arsip,
+      anak_ke, jumlah_saudara,
     } = await req.json()
 
     if (is_active === false && id) {
@@ -162,6 +167,8 @@ export async function PATCH(req: NextRequest) {
         pindah_desa_id: pindah_desa_id || null,
         pindah_kelompok_id: pindah_kelompok_id || null,
         pindah_ke_daerah_lain: pindah_ke_daerah_lain === true,
+        anak_ke: anak_ke || null,
+        jumlah_saudara: jumlah_saudara || null,
       }
 
       if (anggota_id) {
