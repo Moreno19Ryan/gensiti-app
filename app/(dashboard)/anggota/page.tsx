@@ -405,6 +405,7 @@ export default function PenggunaPage() {
     })
 
   const canManage = ['super_admin', 'daerah'].includes(user?.role?.tingkatan || '')
+  const isSuperAdmin = user?.role?.tingkatan === 'super_admin'
 
   return (
     <div className="space-y-4">
@@ -507,7 +508,7 @@ export default function PenggunaPage() {
                         <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                           <div className="flex gap-3">
                             <button onClick={() => openEdit(m)} className="text-blue-600 hover:text-blue-800 font-medium text-xs">Edit</button>
-                            {m.roles?.tingkatan !== 'super_admin' && !m.is_archived && (
+                            {isSuperAdmin && m.roles?.tingkatan !== 'super_admin' && !m.is_archived && (
                               <button onClick={() => toggleActive(m)} className={`text-xs font-medium ${m.is_active ? 'text-slate-400 hover:text-slate-600' : 'text-green-600 hover:text-green-800'}`}>
                                 {m.is_active ? 'Nonaktifkan' : 'Aktifkan'}
                               </button>
@@ -532,7 +533,7 @@ export default function PenggunaPage() {
 
       {/* Detail Modal */}
       {detailModal && (
-        <Modal open={!!detailModal} onClose={() => setDetailModal(null)} title="Detail Pengguna" size="md">
+        <Modal open={!!detailModal} onClose={() => setDetailModal(null)} title="Detail Pengguna" size="lg">
           <div className="space-y-4">
             <div className="flex items-center gap-4">
               <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center text-blue-700 text-2xl font-black shrink-0">
@@ -566,8 +567,10 @@ export default function PenggunaPage() {
             <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-100">
               {[
                 { label: 'No. Anggota', val: detailModal.anggota?.[0]?.nomor_anggota },
-                { label: 'Status Akun', val: detailModal.anggota?.[0]?.status },
+                { label: 'Email', val: detailModal.email },
                 { label: 'No. HP', val: detailModal.no_hp },
+                { label: 'Status Anggota', val: detailModal.anggota?.[0]?.status },
+                { label: 'Status Akun', val: detailModal.is_archived ? 'Diarsipkan' : detailModal.is_active ? 'Aktif' : 'Non-aktif' },
                 { label: 'Tempat Lahir', val: detailModal.anggota?.[0]?.tempat_lahir },
                 { label: 'Tanggal Lahir', val: detailModal.anggota?.[0]?.tanggal_lahir ? new Date(detailModal.anggota[0].tanggal_lahir).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : null },
                 { label: 'Jenis Kelamin', val: detailModal.anggota?.[0]?.jenis_kelamin },
@@ -578,10 +581,11 @@ export default function PenggunaPage() {
                 { label: 'Nama Ibu Kandung', val: detailModal.anggota?.[0]?.nama_ibu },
                 { label: 'Nama Wali', val: detailModal.anggota?.[0]?.nama_wali },
                 { label: 'HP Orang Tua/Wali', val: detailModal.anggota?.[0]?.no_hp_orangtua_wali || detailModal.anggota?.[0]?.no_hp_orang_tua },
+                { label: 'Bergabung Sejak', val: new Date(detailModal.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) },
               ].map(({ label, val }) => val ? (
                 <div key={label}>
                   <p className="text-xs text-slate-400">{label}</p>
-                  <p className="text-sm font-medium text-slate-700 capitalize">{val}</p>
+                  <p className="text-sm font-medium text-slate-700">{val}</p>
                 </div>
               ) : null)}
             </div>
@@ -593,18 +597,18 @@ export default function PenggunaPage() {
               </div>
             )}
 
-            {canManage && (
-              <div className="flex gap-3 pt-2 border-t border-slate-100">
+            <div className="flex gap-3 pt-2 border-t border-slate-100">
+              {canManage && (
                 <button onClick={() => { setDetailModal(null); openEdit(detailModal) }}
                   className="flex-1 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition">
                   Edit
                 </button>
-                <button onClick={() => setDetailModal(null)}
-                  className="flex-1 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
-                  Tutup
-                </button>
-              </div>
-            )}
+              )}
+              <button onClick={() => setDetailModal(null)}
+                className="flex-1 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
+                Tutup
+              </button>
+            </div>
           </div>
         </Modal>
       )}
@@ -923,7 +927,7 @@ export default function PenggunaPage() {
               ) : (
                 <button onClick={doActualSave} disabled={saving}
                   className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:bg-red-300 transition">
-                  {saving ? 'Menyimpan...' : 'Ya, Konfirmasi'}
+                  {saving ? 'Menyimpan...' : 'Ya, Lanjutkan'}
                 </button>
               )}
             </div>
