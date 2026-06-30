@@ -23,6 +23,9 @@ export default function PengumumanPage() {
   const { user } = useUser()
   const [data, setData] = useState<Pengumuman[]>([])
   const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [filterTingkatan, setFilterTingkatan] = useState('')
+  const [sortBy, setSortBy] = useState<'terbaru' | 'terlama'>('terbaru')
   const [modalOpen, setModalOpen] = useState(false)
   const [detailOpen, setDetailOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Pengumuman | null>(null)
@@ -123,6 +126,18 @@ export default function PengumumanPage() {
     kelompok: 'bg-orange-100 text-orange-700',
   }
 
+  const filteredData = data
+    .filter(p => {
+      if (!search) return true
+      const q = search.toLowerCase()
+      return p.judul?.toLowerCase().includes(q) || p.isi?.toLowerCase().includes(q)
+    })
+    .filter(p => !filterTingkatan || p.tingkatan === filterTingkatan)
+    .sort((a, b) => {
+      if (sortBy === 'terbaru') return new Date(b.tanggal_publish).getTime() - new Date(a.tanggal_publish).getTime()
+      return new Date(a.tanggal_publish).getTime() - new Date(b.tanggal_publish).getTime()
+    })
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -137,19 +152,39 @@ export default function PengumumanPage() {
         )}
       </div>
 
+      {/* Search + filter */}
+      <div className="flex flex-wrap gap-2">
+        <input type="text" placeholder="Cari judul atau isi pengumuman..."
+          value={search} onChange={e => setSearch(e.target.value)}
+          className="flex-1 min-w-[200px] px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <select value={filterTingkatan} onChange={e => setFilterTingkatan(e.target.value)}
+          className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="">Semua Tingkatan</option>
+          <option value="semua">Semua</option>
+          <option value="daerah">Daerah</option>
+          <option value="desa">Desa</option>
+          <option value="kelompok">Kelompok</option>
+        </select>
+        <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)}
+          className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="terbaru">Terbaru</option>
+          <option value="terlama">Terlama</option>
+        </select>
+      </div>
+
       {loading ? (
         <div className="text-center py-12 text-slate-400">
           <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
         </div>
-      ) : data.length === 0 ? (
+      ) : filteredData.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
           <div className="text-4xl mb-2">📢</div>
-          <p>Belum ada pengumuman</p>
-          {canCreate && <button onClick={openAdd} className="mt-3 text-blue-600 text-sm font-medium hover:underline">+ Buat sekarang</button>}
+          <p>{search || filterTingkatan ? 'Tidak ada pengumuman yang cocok' : 'Belum ada pengumuman'}</p>
+          {canCreate && !search && <button onClick={openAdd} className="mt-3 text-blue-600 text-sm font-medium hover:underline">+ Buat sekarang</button>}
         </div>
       ) : (
         <div className="space-y-3">
-          {data.map(p => (
+          {filteredData.map(p => (
             <div key={p.id} className={`bg-white rounded-2xl p-5 shadow-sm border transition ${p.is_active ? 'border-slate-100 hover:shadow-md' : 'border-slate-100 opacity-60'}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { setDetailItem(p); setDetailOpen(true) }}>

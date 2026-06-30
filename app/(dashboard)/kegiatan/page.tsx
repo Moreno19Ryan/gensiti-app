@@ -33,6 +33,8 @@ export default function KegiatanPage() {
   const [data, setData] = useState<Kegiatan[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
+  const [search, setSearch] = useState('')
+  const [sortBy, setSortBy] = useState<'terbaru' | 'terlama' | 'nama_asc'>('terbaru')
   const [modalOpen, setModalOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Kegiatan | null>(null)
   const [form, setForm] = useState(emptyForm)
@@ -89,18 +91,18 @@ export default function KegiatanPage() {
   }
 
   const handleSave = async () => {
-    if (!form.nama_kegiatan) return
+    if (!form.nama_kegiatan || !form.deskripsi || !form.tanggal_mulai || !form.tanggal_selesai || !form.lokasi || !form.desa_id || !form.kelompok_id) return
     setSaving(true)
     try {
       const payload = {
         nama_kegiatan: form.nama_kegiatan,
-        deskripsi: form.deskripsi || null,
-        tanggal_mulai: form.tanggal_mulai || null,
-        tanggal_selesai: form.tanggal_selesai || null,
-        lokasi: form.lokasi || null,
+        deskripsi: form.deskripsi,
+        tanggal_mulai: form.tanggal_mulai,
+        tanggal_selesai: form.tanggal_selesai,
+        lokasi: form.lokasi,
         tingkatan: form.tingkatan || null,
-        desa_id: form.desa_id || null,
-        kelompok_id: form.kelompok_id || null,
+        desa_id: form.desa_id,
+        kelompok_id: form.kelompok_id,
         status: form.status,
         dibuat_oleh: user?.id,
       }
@@ -126,7 +128,19 @@ export default function KegiatanPage() {
 
   const set = (key: string, val: string) => setForm(f => ({ ...f, [key]: val }))
   const fmt = (t: string | null) => t ? new Date(t).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'
-  const filtered = filter === 'all' ? data : data.filter(k => k.status === filter)
+  const filtered = data
+    .filter(k => filter === 'all' || k.status === filter)
+    .filter(k => {
+      if (!search) return true
+      const q = search.toLowerCase()
+      return k.nama_kegiatan?.toLowerCase().includes(q) || k.lokasi?.toLowerCase().includes(q) || k.deskripsi?.toLowerCase().includes(q)
+    })
+    .sort((a, b) => {
+      if (sortBy === 'terbaru') return new Date(b.tanggal_mulai || '').getTime() - new Date(a.tanggal_mulai || '').getTime()
+      if (sortBy === 'terlama') return new Date(a.tanggal_mulai || '').getTime() - new Date(b.tanggal_mulai || '').getTime()
+      if (sortBy === 'nama_asc') return a.nama_kegiatan.localeCompare(b.nama_kegiatan)
+      return 0
+    })
 
   return (
     <div className="space-y-4">
@@ -140,7 +154,16 @@ export default function KegiatanPage() {
         </button>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2 items-center">
+        <input type="text" placeholder="Cari nama, lokasi, atau deskripsi..."
+          value={search} onChange={e => setSearch(e.target.value)}
+          className="flex-1 min-w-[200px] px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)}
+          className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="terbaru">Terbaru</option>
+          <option value="terlama">Terlama</option>
+          <option value="nama_asc">Nama A–Z</option>
+        </select>
         {['all', 'upcoming', 'ongoing', 'selesai'].map(s => (
           <button key={s} onClick={() => setFilter(s)}
             className={`px-4 py-1.5 rounded-xl text-sm font-medium transition ${filter === s ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'}`}>
@@ -205,7 +228,7 @@ export default function KegiatanPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Deskripsi</label>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Deskripsi *</label>
             <textarea value={form.deskripsi} onChange={e => set('deskripsi', e.target.value)}
               rows={3} placeholder="Deskripsi kegiatan..."
               className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
@@ -213,12 +236,12 @@ export default function KegiatanPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Tanggal Mulai</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Tanggal Mulai *</label>
               <input type="datetime-local" value={form.tanggal_mulai} onChange={e => set('tanggal_mulai', e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Tanggal Selesai</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Tanggal Selesai *</label>
               <input type="datetime-local" value={form.tanggal_selesai} onChange={e => set('tanggal_selesai', e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
@@ -226,13 +249,13 @@ export default function KegiatanPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Lokasi</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Lokasi *</label>
               <input value={form.lokasi} onChange={e => set('lokasi', e.target.value)}
                 placeholder="Lokasi kegiatan"
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Status *</label>
               <select value={form.status} onChange={e => set('status', e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="upcoming">Akan Datang</option>
@@ -244,18 +267,18 @@ export default function KegiatanPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Desa</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Desa *</label>
               <select value={form.desa_id} onChange={e => set('desa_id', e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">-- Semua Desa --</option>
+                <option value="">-- Pilih Desa --</option>
                 {desaList.map(d => <option key={d.id} value={d.id}>{d.nama_desa}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Kelompok</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Kelompok *</label>
               <select value={form.kelompok_id} onChange={e => set('kelompok_id', e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">-- Semua Kelompok --</option>
+                <option value="">-- Pilih Kelompok --</option>
                 {kelompokList.filter(k => !form.desa_id || k.desa_id === form.desa_id).map(k => (
                   <option key={k.id} value={k.id}>{k.nama_kelompok}</option>
                 ))}
@@ -268,7 +291,7 @@ export default function KegiatanPage() {
               className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
               Batal
             </button>
-            <button onClick={handleSave} disabled={saving || !form.nama_kegiatan}
+            <button onClick={handleSave} disabled={saving || !form.nama_kegiatan || !form.deskripsi || !form.tanggal_mulai || !form.tanggal_selesai || !form.lokasi || !form.desa_id || !form.kelompok_id}
               className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition flex items-center justify-center gap-2">
               {saving ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Menyimpan...</> : 'Simpan'}
             </button>

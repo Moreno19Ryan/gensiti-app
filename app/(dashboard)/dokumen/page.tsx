@@ -59,6 +59,7 @@ export default function DokumenPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filterKat, setFilterKat] = useState('')
+  const [sortBy, setSortBy] = useState<'terbaru' | 'terlama' | 'judul_asc'>('terbaru')
   const [modalOpen, setModalOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Dokumen | null>(null)
   const [form, setForm] = useState(emptyForm)
@@ -128,16 +129,20 @@ export default function DokumenPage() {
 
   const handleSave = async () => {
     setError('')
-    if (!form.judul || !form.url_file) { setError('Judul dan URL file wajib diisi'); return }
+    if (!form.judul) { setError('Judul dokumen wajib diisi'); return }
+    if (!form.url_file) { setError('URL file wajib diisi'); return }
+    if (!form.kategori) { setError('Kategori wajib dipilih'); return }
+    if (!form.deskripsi) { setError('Deskripsi wajib diisi'); return }
+    if (!form.desa_id) { setError('Desa wajib dipilih'); return }
     setSaving(true)
     const payload = {
       judul: form.judul,
-      deskripsi: form.deskripsi || null,
-      kategori: form.kategori || null,
+      deskripsi: form.deskripsi,
+      kategori: form.kategori,
       url_file: form.url_file,
       nama_file: form.nama_file || form.judul,
       is_public: form.is_public,
-      desa_id: form.desa_id || null,
+      desa_id: form.desa_id,
       kelompok_id: form.kelompok_id || null,
       dibuat_oleh: user?.id,
     }
@@ -162,12 +167,19 @@ export default function DokumenPage() {
 
   const set = (key: string, val: string | boolean) => setForm(f => ({ ...f, [key]: val }))
 
-  const filtered = data.filter(d => {
-    const matchSearch = d.judul?.toLowerCase().includes(search.toLowerCase()) ||
-      d.deskripsi?.toLowerCase().includes(search.toLowerCase())
-    const matchKat = !filterKat || d.kategori === filterKat
-    return matchSearch && matchKat
-  })
+  const filtered = data
+    .filter(d => {
+      const q = search.toLowerCase()
+      const matchSearch = !search || d.judul?.toLowerCase().includes(q) || d.deskripsi?.toLowerCase().includes(q)
+      const matchKat = !filterKat || d.kategori === filterKat
+      return matchSearch && matchKat
+    })
+    .sort((a, b) => {
+      if (sortBy === 'terbaru') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      if (sortBy === 'terlama') return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      if (sortBy === 'judul_asc') return a.judul.localeCompare(b.judul)
+      return 0
+    })
 
   const canManage = ['super_admin', 'daerah', 'desa'].includes(user?.role?.tingkatan || '')
 
@@ -185,10 +197,16 @@ export default function DokumenPage() {
         )}
       </div>
 
-      <div className="flex gap-3">
-        <input type="text" placeholder="Cari dokumen..."
+      <div className="flex flex-wrap gap-2">
+        <input type="text" placeholder="Cari judul atau deskripsi dokumen..."
           value={search} onChange={e => setSearch(e.target.value)}
-          className="flex-1 px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm" />
+          className="flex-1 min-w-[200px] px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm" />
+        <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)}
+          className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
+          <option value="terbaru">Terbaru</option>
+          <option value="terlama">Terlama</option>
+          <option value="judul_asc">Judul A–Z</option>
+        </select>
         <select value={filterKat} onChange={e => setFilterKat(e.target.value)}
           className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
           <option value="">Semua Kategori</option>
@@ -277,7 +295,7 @@ export default function DokumenPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Kategori</label>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Kategori *</label>
             <select value={form.kategori} onChange={e => set('kategori', e.target.value)}
               className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="">-- Pilih Kategori --</option>
@@ -286,17 +304,17 @@ export default function DokumenPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Deskripsi</label>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Deskripsi *</label>
             <textarea value={form.deskripsi} onChange={e => set('deskripsi', e.target.value)} rows={2} placeholder="Keterangan singkat..."
               className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Desa</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Desa *</label>
               <select value={form.desa_id} onChange={e => { set('desa_id', e.target.value); set('kelompok_id', '') }}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">Semua Desa</option>
+                <option value="">-- Pilih Desa --</option>
                 {desaList.map(d => <option key={d.id} value={d.id}>{d.nama_desa}</option>)}
               </select>
             </div>
@@ -304,7 +322,7 @@ export default function DokumenPage() {
               <label className="block text-xs font-medium text-slate-600 mb-1">Kelompok</label>
               <select value={form.kelompok_id} onChange={e => set('kelompok_id', e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">Semua Kelompok</option>
+                <option value="">-- Pilih Kelompok --</option>
                 {kelompokList.filter(k => !form.desa_id || k.desa_id === form.desa_id).map(k => (
                   <option key={k.id} value={k.id}>{k.nama_kelompok}</option>
                 ))}
@@ -320,7 +338,7 @@ export default function DokumenPage() {
 
           <div className="flex gap-3 pt-2 border-t border-slate-100">
             <button onClick={() => setModalOpen(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">Batal</button>
-            <button onClick={handleSave} disabled={saving}
+            <button onClick={handleSave} disabled={saving || !form.judul || !form.url_file || !form.kategori || !form.deskripsi || !form.desa_id}
               className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition flex items-center justify-center gap-2">
               {saving ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Menyimpan...</> : 'Simpan'}
             </button>

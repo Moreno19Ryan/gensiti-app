@@ -23,8 +23,14 @@ interface Member {
     id: string
     nomor_anggota: string
     tanggal_lahir: string | null
+    tempat_lahir: string | null
     jenis_kelamin: string | null
     alamat: string | null
+    nama_ayah: string | null
+    nama_ibu: string | null
+    nama_wali: string | null
+    no_hp_orangtua_wali: string | null
+    // kolom lama (backward compat)
     nama_orang_tua: string | null
     no_hp_orang_tua: string | null
     status: string
@@ -44,12 +50,15 @@ const emptyForm = {
   desa_id: '',
   kelompok_id: '',
   is_active: true,
+  tempat_lahir: '',
   tanggal_lahir: '',
   jenis_kelamin: '',
   alamat: '',
   status_anggota: 'aktif',
-  nama_orang_tua: '',
-  no_hp_orang_tua: '',
+  nama_ayah: '',
+  nama_ibu: '',
+  nama_wali: '',
+  no_hp_orangtua_wali: '',
 }
 
 const tingkatanColor: Record<string, string> = {
@@ -69,6 +78,7 @@ export default function AnggotaPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filterRole, setFilterRole] = useState('')
+  const [sortBy, setSortBy] = useState<'nama_asc' | 'nama_desc' | 'terbaru'>('nama_asc')
   const [modalOpen, setModalOpen] = useState(false)
   const [detailModal, setDetailModal] = useState<Member | null>(null)
   const [editTarget, setEditTarget] = useState<Member | null>(null)
@@ -89,7 +99,7 @@ export default function AnggotaPage() {
         roles:role_id(id, nama_role, tingkatan),
         desa:desa_id(id, nama_desa),
         kelompok:kelompok_id(id, nama_kelompok),
-        anggota(id, nomor_anggota, tanggal_lahir, jenis_kelamin, alamat, nama_orang_tua, no_hp_orang_tua, status)
+        anggota(id, nomor_anggota, tanggal_lahir, tempat_lahir, jenis_kelamin, alamat, nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali, nama_orang_tua, no_hp_orang_tua, status)
       `)
       .order('nama_lengkap')
 
@@ -141,12 +151,15 @@ export default function AnggotaPage() {
       desa_id: m.desa?.id || '',
       kelompok_id: m.kelompok?.id || '',
       is_active: m.is_active,
+      tempat_lahir: a?.tempat_lahir || '',
       tanggal_lahir: a?.tanggal_lahir || '',
       jenis_kelamin: a?.jenis_kelamin || '',
       alamat: a?.alamat || '',
       status_anggota: a?.status || 'aktif',
-      nama_orang_tua: a?.nama_orang_tua || '',
-      no_hp_orang_tua: a?.no_hp_orang_tua || '',
+      nama_ayah: a?.nama_ayah || a?.nama_orang_tua || '', // fallback ke kolom lama
+      nama_ibu: a?.nama_ibu || '',
+      nama_wali: a?.nama_wali || '',
+      no_hp_orangtua_wali: a?.no_hp_orangtua_wali || a?.no_hp_orang_tua || '',
     })
     setModalOpen(true)
   }
@@ -155,8 +168,13 @@ export default function AnggotaPage() {
     setError('')
     if (!form.nama_lengkap) { setError('Nama lengkap wajib diisi'); return }
     if (!editTarget && (!form.email || !form.password)) { setError('Email dan password wajib untuk anggota baru'); return }
-    if (!form.nama_orang_tua) { setError('Nama orang tua wajib diisi'); return }
-    if (!form.no_hp_orang_tua) { setError('No. HP orang tua wajib diisi'); return }
+    if (!form.tempat_lahir) { setError('Tempat lahir wajib diisi'); return }
+    if (!form.tanggal_lahir) { setError('Tanggal lahir wajib diisi'); return }
+    if (!form.jenis_kelamin) { setError('Jenis kelamin wajib diisi'); return }
+    if (!form.alamat) { setError('Alamat wajib diisi'); return }
+    if (!form.nama_ayah) { setError('Nama ayah kandung wajib diisi'); return }
+    if (!form.nama_ibu) { setError('Nama ibu kandung wajib diisi'); return }
+    if (!form.no_hp_orangtua_wali) { setError('No. HP orang tua/wali wajib diisi'); return }
 
     setSaving(true)
     try {
@@ -164,12 +182,15 @@ export default function AnggotaPage() {
 
       // Semua operasi ke API server-side (pakai service role, bebas permission issue)
       const anggotaFields = {
+        tempat_lahir: form.tempat_lahir,
         tanggal_lahir: form.tanggal_lahir,
         jenis_kelamin: form.jenis_kelamin,
         alamat: form.alamat,
         status_anggota: form.status_anggota,
-        nama_orang_tua: form.nama_orang_tua,
-        no_hp_orang_tua: form.no_hp_orang_tua,
+        nama_ayah: form.nama_ayah,
+        nama_ibu: form.nama_ibu,
+        nama_wali: form.nama_wali || null,
+        no_hp_orangtua_wali: form.no_hp_orangtua_wali,
       }
 
       if (!editTarget) {
@@ -232,6 +253,11 @@ export default function AnggotaPage() {
   }
 
   const toggleActive = async (m: Member) => {
+    // Super Admin tidak bisa dinonaktifkan
+    if (m.roles?.tingkatan === 'super_admin') {
+      alert('Akun Super Admin tidak dapat dinonaktifkan.')
+      return
+    }
     await fetch('/api/users', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -246,13 +272,24 @@ export default function AnggotaPage() {
   const set = (key: string, val: string | boolean) => setForm(f => ({ ...f, [key]: val }))
   const setUpper = (key: string, val: string) => setForm(f => ({ ...f, [key]: toUpperWords(val) }))
 
-  const filtered = data.filter(m => {
-    const matchSearch = m.nama_lengkap?.toLowerCase().includes(search.toLowerCase()) ||
-      m.email?.toLowerCase().includes(search.toLowerCase()) ||
-      m.anggota?.[0]?.nomor_anggota?.toLowerCase().includes(search.toLowerCase())
-    const matchRole = !filterRole || m.roles?.tingkatan === filterRole
-    return matchSearch && matchRole
-  })
+  const filtered = data
+    .filter(m => {
+      const q = search.toLowerCase()
+      const matchSearch = !search ||
+        m.nama_lengkap?.toLowerCase().includes(q) ||
+        m.email?.toLowerCase().includes(q) ||
+        m.anggota?.[0]?.nomor_anggota?.toLowerCase().includes(q) ||
+        m.desa?.nama_desa?.toLowerCase().includes(q) ||
+        m.kelompok?.nama_kelompok?.toLowerCase().includes(q)
+      const matchRole = !filterRole || m.roles?.tingkatan === filterRole
+      return matchSearch && matchRole
+    })
+    .sort((a, b) => {
+      if (sortBy === 'nama_asc') return (a.nama_lengkap || '').localeCompare(b.nama_lengkap || '')
+      if (sortBy === 'nama_desc') return (b.nama_lengkap || '').localeCompare(a.nama_lengkap || '')
+      if (sortBy === 'terbaru') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      return 0
+    })
 
   const canManage = ['super_admin', 'daerah'].includes(user?.role?.tingkatan || '')
 
@@ -271,10 +308,10 @@ export default function AnggotaPage() {
       </div>
 
       {/* Filter bar */}
-      <div className="flex gap-3">
-        <input type="text" placeholder="Cari nama, email, atau nomor anggota..."
+      <div className="flex flex-wrap gap-2">
+        <input type="text" placeholder="Cari nama, email, nomor anggota, desa..."
           value={search} onChange={e => setSearch(e.target.value)}
-          className="flex-1 px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm" />
+          className="flex-1 min-w-[200px] px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm" />
         <select value={filterRole} onChange={e => setFilterRole(e.target.value)}
           className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
           <option value="">Semua Role</option>
@@ -282,6 +319,12 @@ export default function AnggotaPage() {
           <option value="daerah">Daerah</option>
           <option value="desa">Desa</option>
           <option value="kelompok">Kelompok</option>
+        </select>
+        <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)}
+          className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
+          <option value="nama_asc">Nama A–Z</option>
+          <option value="nama_desc">Nama Z–A</option>
+          <option value="terbaru">Terbaru</option>
         </select>
       </div>
 
@@ -347,9 +390,14 @@ export default function AnggotaPage() {
                         <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                           <div className="flex gap-3">
                             <button onClick={() => openEdit(m)} className="text-blue-600 hover:text-blue-800 font-medium text-xs">Edit</button>
-                            <button onClick={() => toggleActive(m)} className={`text-xs font-medium ${m.is_active ? 'text-slate-400 hover:text-slate-600' : 'text-green-600 hover:text-green-800'}`}>
-                              {m.is_active ? 'Nonaktifkan' : 'Aktifkan'}
-                            </button>
+                            {m.roles?.tingkatan !== 'super_admin' && (
+                              <button onClick={() => toggleActive(m)} className={`text-xs font-medium ${m.is_active ? 'text-slate-400 hover:text-slate-600' : 'text-green-600 hover:text-green-800'}`}>
+                                {m.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                              </button>
+                            )}
+                            {m.roles?.tingkatan === 'super_admin' && (
+                              <span className="text-xs text-slate-300 italic">Permanen</span>
+                            )}
                           </div>
                         </td>
                       )}
@@ -384,12 +432,15 @@ export default function AnggotaPage() {
                 { label: 'No. Anggota', val: detailModal.anggota?.[0]?.nomor_anggota },
                 { label: 'Status', val: detailModal.anggota?.[0]?.status },
                 { label: 'No. HP', val: detailModal.no_hp },
+                { label: 'Tempat Lahir', val: detailModal.anggota?.[0]?.tempat_lahir },
                 { label: 'Tanggal Lahir', val: detailModal.anggota?.[0]?.tanggal_lahir ? new Date(detailModal.anggota[0].tanggal_lahir).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : null },
                 { label: 'Jenis Kelamin', val: detailModal.anggota?.[0]?.jenis_kelamin },
                 { label: 'Desa', val: detailModal.desa?.nama_desa },
                 { label: 'Kelompok', val: detailModal.kelompok?.nama_kelompok },
-                { label: 'Nama Orang Tua', val: detailModal.anggota?.[0]?.nama_orang_tua },
-                { label: 'HP Orang Tua', val: detailModal.anggota?.[0]?.no_hp_orang_tua },
+                { label: 'Nama Ayah Kandung', val: detailModal.anggota?.[0]?.nama_ayah || detailModal.anggota?.[0]?.nama_orang_tua },
+                { label: 'Nama Ibu Kandung', val: detailModal.anggota?.[0]?.nama_ibu },
+                { label: 'Nama Wali', val: detailModal.anggota?.[0]?.nama_wali },
+                { label: 'HP Orang Tua/Wali', val: detailModal.anggota?.[0]?.no_hp_orangtua_wali || detailModal.anggota?.[0]?.no_hp_orang_tua },
               ].map(({ label, val }) => val ? (
                 <div key={label}>
                   <p className="text-xs text-slate-400">{label}</p>
@@ -461,12 +512,21 @@ export default function AnggotaPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Tanggal Lahir</label>
-                  <input type="date" value={form.tanggal_lahir} onChange={e => set('tanggal_lahir', e.target.value)}
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Tempat Lahir *</label>
+                  <input value={form.tempat_lahir} onChange={e => set('tempat_lahir', e.target.value)}
+                    placeholder="Kota/Kabupaten"
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Jenis Kelamin</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Tanggal Lahir *</label>
+                  <input type="date" value={form.tanggal_lahir} onChange={e => set('tanggal_lahir', e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Jenis Kelamin *</label>
                   <select value={form.jenis_kelamin} onChange={e => set('jenis_kelamin', e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="">-- Pilih --</option>
@@ -474,16 +534,15 @@ export default function AnggotaPage() {
                     <option value="perempuan">Perempuan</option>
                   </select>
                 </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">No. HP</label>
+                  <input value={form.no_hp} onChange={e => set('no_hp', e.target.value)} placeholder="08xx-xxxx-xxxx"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">No. HP</label>
-                <input value={form.no_hp} onChange={e => set('no_hp', e.target.value)} placeholder="08xx-xxxx-xxxx"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Alamat</label>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Alamat *</label>
                 <textarea value={form.alamat} onChange={e => set('alamat', e.target.value)}
                   rows={2} placeholder="Alamat lengkap"
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
@@ -491,18 +550,32 @@ export default function AnggotaPage() {
 
               {/* Orang Tua Section */}
               <div className="pt-2 border-t border-slate-100">
-                <p className="text-xs font-semibold text-slate-500 mb-3">Data Orang Tua</p>
+                <p className="text-xs font-semibold text-slate-500 mb-3">Data Orang Tua / Wali</p>
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Nama Orang Tua * <span className="text-slate-400">(huruf kapital)</span></label>
-                    <input value={form.nama_orang_tua}
-                      onChange={e => setUpper('nama_orang_tua', e.target.value)}
-                      placeholder="NAMA ORANG TUA"
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Nama Ayah Kandung * <span className="text-slate-400">(huruf kapital)</span></label>
+                    <input value={form.nama_ayah}
+                      onChange={e => setUpper('nama_ayah', e.target.value)}
+                      placeholder="NAMA AYAH"
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">No. HP Orang Tua *</label>
-                    <input value={form.no_hp_orang_tua} onChange={e => set('no_hp_orang_tua', e.target.value)}
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Nama Ibu Kandung * <span className="text-slate-400">(huruf kapital)</span></label>
+                    <input value={form.nama_ibu}
+                      onChange={e => setUpper('nama_ibu', e.target.value)}
+                      placeholder="NAMA IBU"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Nama Wali <span className="text-slate-400">(jika ada, huruf kapital)</span></label>
+                    <input value={form.nama_wali}
+                      onChange={e => setUpper('nama_wali', e.target.value)}
+                      placeholder="NAMA WALI (opsional)"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">No. HP Orang Tua/Wali *</label>
+                    <input value={form.no_hp_orangtua_wali} onChange={e => set('no_hp_orangtua_wali', e.target.value)}
                       placeholder="08xx-xxxx-xxxx"
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>

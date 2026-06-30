@@ -16,9 +16,12 @@ export async function POST(req: NextRequest) {
     const {
       email, password, nama_lengkap, no_hp,
       role_id, desa_id, kelompok_id,
-      // Data anggota (opsional)
-      tanggal_lahir, jenis_kelamin, alamat,
-      nama_orang_tua, no_hp_orang_tua, status_anggota,
+      // Data anggota
+      tempat_lahir, tanggal_lahir, jenis_kelamin, alamat,
+      nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali,
+      // backward compat
+      nama_orang_tua, no_hp_orang_tua,
+      status_anggota,
     } = await req.json()
 
     if (!email || !password || !nama_lengkap) {
@@ -56,14 +59,20 @@ export async function POST(req: NextRequest) {
     const { error: anggotaError } = await supabaseAdmin.from('anggota').insert({
       user_id: userId,
       nama_lengkap,
+      tempat_lahir: tempat_lahir || null,
       tanggal_lahir: tanggal_lahir || null,
       jenis_kelamin: jenis_kelamin || null,
       alamat: alamat || null,
       desa_id: desa_id || null,
       kelompok_id: kelompok_id || null,
       status: status_anggota || 'aktif',
-      nama_orang_tua: nama_orang_tua || null,
-      no_hp_orang_tua: no_hp_orang_tua || null,
+      nama_ayah: nama_ayah || null,
+      nama_ibu: nama_ibu || null,
+      nama_wali: nama_wali || null,
+      no_hp_orangtua_wali: no_hp_orangtua_wali || null,
+      // backward compat kolom lama
+      nama_orang_tua: nama_ayah || null,
+      no_hp_orang_tua: no_hp_orangtua_wali || null,
     })
 
     if (anggotaError) {
@@ -84,9 +93,23 @@ export async function PATCH(req: NextRequest) {
     const {
       id, nama_lengkap, no_hp, role_id, desa_id, kelompok_id, is_active, password,
       // Data anggota (opsional)
-      anggota_id, tanggal_lahir, jenis_kelamin, alamat,
-      nama_orang_tua, no_hp_orang_tua, status_anggota,
+      anggota_id, tempat_lahir, tanggal_lahir, jenis_kelamin, alamat,
+      nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali,
+      // backward compat
+      nama_orang_tua, no_hp_orang_tua,
+      status_anggota,
     } = await req.json()
+
+    // Proteksi: Super Admin tidak boleh dinonaktifkan melalui API
+    if (is_active === false && id) {
+      const { data: targetUser } = await supabaseAdmin.from('users')
+        .select('role_id, roles:role_id(tingkatan)')
+        .eq('id', id)
+        .single()
+      if (targetUser && (targetUser.roles as any)?.tingkatan === 'super_admin') {
+        return NextResponse.json({ error: 'Akun Super Admin tidak dapat dinonaktifkan.' }, { status: 403 })
+      }
+    }
 
     if (!id) return NextResponse.json({ error: 'ID wajib diisi' }, { status: 400 })
 
@@ -110,33 +133,32 @@ export async function PATCH(req: NextRequest) {
     }
 
     // Update anggota jika ada data
-    if (anggota_id) {
+    if (anggota_id || nama_ayah !== undefined || nama_orang_tua !== undefined) {
       const anggotaPayload: Record<string, unknown> = {
         nama_lengkap: nama_lengkap || null,
+        tempat_lahir: tempat_lahir || null,
         tanggal_lahir: tanggal_lahir || null,
         jenis_kelamin: jenis_kelamin || null,
         alamat: alamat || null,
         desa_id: desa_id || null,
         kelompok_id: kelompok_id || null,
         status: status_anggota || 'aktif',
-        nama_orang_tua: nama_orang_tua || null,
-        no_hp_orang_tua: no_hp_orang_tua || null,
+        nama_ayah: nama_ayah || null,
+        nama_ibu: nama_ibu || null,
+        nama_wali: nama_wali || null,
+        no_hp_orangtua_wali: no_hp_orangtua_wali || null,
+        // backward compat
+        nama_orang_tua: nama_ayah || nama_orang_tua || null,
+        no_hp_orang_tua: no_hp_orangtua_wali || no_hp_orang_tua || null,
       }
-      await supabaseAdmin.from('anggota').update(anggotaPayload).eq('id', anggota_id)
-    } else if (nama_orang_tua !== undefined) {
-      // Tidak ada anggota_id tapi ada data anggota → upsert by user_id
-      await supabaseAdmin.from('anggota').upsert({
-        user_id: id,
-        nama_lengkap: nama_lengkap || null,
-        tanggal_lahir: tanggal_lahir || null,
-        jenis_kelamin: jenis_kelamin || null,
-        alamat: alamat || null,
-        desa_id: desa_id || null,
-        kelompok_id: kelompok_id || null,
-        status: status_anggota || 'aktif',
-        nama_orang_tua: nama_orang_tua || null,
-        no_hp_orang_tua: no_hp_orang_tua || null,
-      }, { onConflict: 'user_id' })
+      if (anggota_id) {
+        await supabaseAdmin.from('anggota').update(anggotaPayload).eq('id', anggota_id)
+      } else {
+        await supabaseAdmin.from('anggota').upsert(
+          { ...anggotaPayload, user_id: id },
+          { onConflict: 'user_id' }
+        )
+      }
     }
 
     return NextResponse.json({ success: true })

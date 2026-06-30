@@ -23,9 +23,16 @@ const emptyForm = {
 
 export default function KeuanganPage() {
   const { user } = useUser()
+
+  // Super Admin tidak punya akses ke keuangan
+  const tingkatan = user?.role?.tingkatan
+  const hasAccess = tingkatan && ['daerah', 'desa', 'kelompok'].includes(tingkatan)
+
   const [data, setData] = useState<Keuangan[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'all' | 'pemasukan' | 'pengeluaran'>('all')
+  const [search, setSearch] = useState('')
+  const [sortBy, setSortBy] = useState<'tanggal_desc' | 'tanggal_asc' | 'jumlah_desc' | 'jumlah_asc'>('tanggal_desc')
   const [modalOpen, setModalOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Keuangan | null>(null)
   const [form, setForm] = useState(emptyForm)
@@ -34,17 +41,20 @@ export default function KeuanganPage() {
   const [kelompokList, setKelompokList] = useState<KelompokOpt[]>([])
 
   const loadData = useCallback(async () => {
+    if (!hasAccess) return
     setLoading(true)
-    let query = supabase.from('keuangan').select('*').order('tanggal', { ascending: false })
+    let query = supabase.from('keuangan').select('*')
     const t = user?.role?.tingkatan
-    if (t !== 'super_admin' && t !== 'daerah') {
+    if (t === 'kelompok') {
       if (user?.kelompok_id) query = query.eq('kelompok_id', user.kelompok_id)
-      else if (user?.desa_id) query = query.eq('desa_id', user.desa_id)
+    } else if (t === 'desa') {
+      if (user?.desa_id) query = query.eq('desa_id', user.desa_id)
     }
+    // daerah: lihat semua
     const { data: rows } = await query
     setData(rows || [])
     setLoading(false)
-  }, [user])
+  }, [user, hasAccess])
 
   useEffect(() => {
     if (user) {
@@ -81,7 +91,7 @@ export default function KeuanganPage() {
   }
 
   const handleSave = async () => {
-    if (!form.jumlah || !form.tanggal) return
+    if (!form.jumlah || !form.tanggal || !form.kategori || !form.deskripsi || !form.desa_id) return
     setSaving(true)
     try {
       const payload = {
@@ -119,16 +129,45 @@ export default function KeuanganPage() {
   const set = (key: string, val: string) => setForm(f => ({ ...f, [key]: val }))
   const fmt = (n: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
 
-  const filtered = filter === 'all' ? data : data.filter(k => k.jenis === filter)
   const total = {
     pemasukan: data.filter(k => k.jenis === 'pemasukan').reduce((s, k) => s + Number(k.jumlah), 0),
     pengeluaran: data.filter(k => k.jenis === 'pengeluaran').reduce((s, k) => s + Number(k.jumlah), 0),
   }
   const saldo = total.pemasukan - total.pengeluaran
 
+  const filtered = data
+    .filter(k => filter === 'all' || k.jenis === filter)
+    .filter(k => {
+      if (!search) return true
+      const q = search.toLowerCase()
+      return (
+        k.kategori?.toLowerCase().includes(q) ||
+        k.deskripsi?.toLowerCase().includes(q) ||
+        (k as any).nomor_transaksi?.toLowerCase().includes(q)
+      )
+    })
+    .sort((a, b) => {
+      if (sortBy === 'tanggal_desc') return new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime()
+      if (sortBy === 'tanggal_asc') return new Date(a.tanggal).getTime() - new Date(b.tanggal).getTime()
+      if (sortBy === 'jumlah_desc') return Number(b.jumlah) - Number(a.jumlah)
+      if (sortBy === 'jumlah_asc') return Number(a.jumlah) - Number(b.jumlah)
+      return 0
+    })
+
   const kategoriOptions = form.jenis === 'pemasukan'
     ? ['Iuran', 'Donasi', 'Bantuan', 'Lainnya']
     : ['Operasional', 'Konsumsi', 'Transport', 'Perlengkapan', 'Lainnya']
+
+  // Blokir akses Super Admin
+  if (!hasAccess) {
+    return (
+      <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
+        <div className="text-4xl mb-3">🔒</div>
+        <p className="font-semibold text-slate-600">Akses Dibatasi</p>
+        <p className="text-sm mt-1">Menu Keuangan hanya tersedia untuk role Daerah, Desa, dan Kelompok.</p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -154,7 +193,19 @@ export default function KeuanganPage() {
         </div>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2 items-center">
+        <input
+          type="text" value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="Cari kategori, deskripsi, no. transaksi..."
+          className="flex-1 min-w-[200px] px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)}
+          className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="tanggal_desc">Terbaru</option>
+          <option value="tanggal_asc">Terlama</option>
+          <option value="jumlah_desc">Jumlah Terbesar</option>
+          <option value="jumlah_asc">Jumlah Terkecil</option>
+        </select>
         {(['all', 'pemasukan', 'pengeluaran'] as const).map(f => (
           <button key={f} onClick={() => setFilter(f)}
             className={`px-4 py-1.5 rounded-xl text-sm font-medium transition capitalize ${filter === f ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'}`}>
@@ -255,7 +306,7 @@ export default function KeuanganPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Deskripsi</label>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Deskripsi *</label>
             <textarea value={form.deskripsi} onChange={e => set('deskripsi', e.target.value)}
               rows={2} placeholder="Keterangan transaksi..."
               className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
@@ -263,18 +314,18 @@ export default function KeuanganPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Desa</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Desa *</label>
               <select value={form.desa_id} onChange={e => set('desa_id', e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">-- Semua --</option>
+                <option value="">-- Pilih Desa --</option>
                 {desaList.map(d => <option key={d.id} value={d.id}>{d.nama_desa}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Kelompok</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Kelompok *</label>
               <select value={form.kelompok_id} onChange={e => set('kelompok_id', e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">-- Semua --</option>
+                <option value="">-- Pilih Kelompok --</option>
                 {kelompokList.filter(k => !form.desa_id || k.desa_id === form.desa_id).map(k => (
                   <option key={k.id} value={k.id}>{k.nama_kelompok}</option>
                 ))}
@@ -287,7 +338,7 @@ export default function KeuanganPage() {
               className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
               Batal
             </button>
-            <button onClick={handleSave} disabled={saving || !form.jumlah}
+            <button onClick={handleSave} disabled={saving || !form.jumlah || !form.kategori || !form.deskripsi || !form.desa_id}
               className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition flex items-center justify-center gap-2">
               {saving ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Menyimpan...</> : 'Simpan'}
             </button>
