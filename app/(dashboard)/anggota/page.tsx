@@ -162,6 +162,16 @@ export default function AnggotaPage() {
     try {
       let userId = editTarget?.id
 
+      // Semua operasi ke API server-side (pakai service role, bebas permission issue)
+      const anggotaFields = {
+        tanggal_lahir: form.tanggal_lahir,
+        jenis_kelamin: form.jenis_kelamin,
+        alamat: form.alamat,
+        status_anggota: form.status_anggota,
+        nama_orang_tua: form.nama_orang_tua,
+        no_hp_orang_tua: form.no_hp_orang_tua,
+      }
+
       if (!editTarget) {
         const res = await fetch('/api/users', {
           method: 'POST',
@@ -174,12 +184,14 @@ export default function AnggotaPage() {
             role_id: form.role_id,
             desa_id: form.desa_id,
             kelompok_id: form.kelompok_id,
+            ...anggotaFields,
           }),
         })
         const json = await res.json()
         if (json.error) { setError(json.error); return }
         userId = json.userId
       } else {
+        const existingAnggota = editTarget.anggota?.[0]
         const res = await fetch('/api/users', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -192,31 +204,12 @@ export default function AnggotaPage() {
             kelompok_id: form.kelompok_id,
             is_active: form.is_active,
             password: form.password || undefined,
+            anggota_id: existingAnggota?.id,
+            ...anggotaFields,
           }),
         })
         const json = await res.json()
         if (json.error) { setError(json.error); return }
-      }
-
-      // Upsert data anggota
-      const anggotaPayload = {
-        user_id: userId,
-        nama_lengkap: form.nama_lengkap,
-        tanggal_lahir: form.tanggal_lahir || null,
-        jenis_kelamin: form.jenis_kelamin || null,
-        alamat: form.alamat || null,
-        desa_id: form.desa_id || null,
-        kelompok_id: form.kelompok_id || null,
-        status: form.status_anggota,
-        nama_orang_tua: form.nama_orang_tua,
-        no_hp_orang_tua: form.no_hp_orang_tua,
-      }
-
-      const existingAnggota = editTarget?.anggota?.[0]
-      if (existingAnggota) {
-        await supabase.from('anggota').update(anggotaPayload).eq('id', existingAnggota.id)
-      } else {
-        await supabase.from('anggota').insert(anggotaPayload)
       }
 
       // Audit log
