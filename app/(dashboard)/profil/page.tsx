@@ -40,7 +40,7 @@ export default function ProfilPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const loadAnggota = async (userId: string) => {
-    const res = await fetch(`/api/users?userId=\${userId}`)
+    const res = await fetch(`/api/users?userId=${userId}`)
     const json = await res.json()
     if (json.data) {
       const data = json.data as AnggotaRecord & { nama_orang_tua?: string }
@@ -180,7 +180,7 @@ export default function ProfilPage() {
     setMsg(null)
 
     const ext = file.name.split('.').pop()
-    const filePath = `\${user.id}/avatar.\${ext}`
+    const filePath = `${user.id}/avatar.${ext}`
 
     const { error: uploadErr } = await supabase.storage
       .from('profile-photos')
@@ -322,7 +322,7 @@ export default function ProfilPage() {
         <div className="flex border-b border-slate-100 dark:border-slate-700">
           {tabs.map(({ key, label }) => (
             <button key={key} onClick={() => { setTab(key); setMsg(null) }}
-              className={`flex-1 py-3 text-sm font-medium transition \${tab === key ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
+              className={`flex-1 py-3 text-sm font-medium transition -mb-px border-b-2 ${tab === key ? 'text-blue-600 border-blue-600 bg-blue-50' : 'text-slate-500 border-transparent hover:text-slate-700 hover:bg-slate-50'}`}>
               {label}
             </button>
           ))}
@@ -330,7 +330,7 @@ export default function ProfilPage() {
 
         <div className="p-6">
           {msg && (
-            <div className={`mb-4 p-3 rounded-xl text-sm \${msg.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+            <div className={`mb-4 p-3 rounded-xl text-sm ${msg.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
               {msg.text}
             </div>
           )}

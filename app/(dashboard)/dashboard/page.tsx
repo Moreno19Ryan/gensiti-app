@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useUser } from '@/lib/user-context'
-import { supabase } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase' // dipakai untuk stats queries
 
 interface Stats {
   anggota: number
@@ -12,40 +12,15 @@ interface Stats {
 }
 
 export default function DashboardPage() {
-  const { user } = useUser()
+  const { user, onlineCount } = useUser()
   const [stats, setStats] = useState<Stats>({ anggota: 0, kegiatan_aktif: 0, pemasukan: 0, pengeluaran: 0 })
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(new Date())
-  const [onlineCount, setOnlineCount] = useState(1)
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(timer)
   }, [])
-
-  // Realtime online users via Supabase Presence
-  useEffect(() => {
-    if (!user?.id) return
-
-    const channel = supabase.channel('online-users', {
-      config: { presence: { key: user.id } },
-    })
-
-    channel.on('presence', { event: 'sync' }, () => {
-      const state = channel.presenceState()
-      setOnlineCount(Object.keys(state).length)
-    })
-
-    channel.subscribe(async (status) => {
-      if (status === 'SUBSCRIBED') {
-        await channel.track({ user_id: user.id, online_at: new Date().toISOString() })
-      }
-    })
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [user?.id])
 
   const loadStats = useCallback(async () => {
     if (!user) return
