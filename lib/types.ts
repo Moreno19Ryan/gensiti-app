@@ -6,6 +6,7 @@ export interface UserProfile {
   nama_lengkap: string
   no_hp: string | null
   foto_url: string | null
+  avatar_url: string | null
   is_active: boolean
   desa_id: string | null
   kelompok_id: string | null

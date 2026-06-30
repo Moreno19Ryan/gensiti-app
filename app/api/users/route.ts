@@ -127,17 +127,30 @@ export async function PATCH(req: NextRequest) {
       anak_ke, jumlah_saudara,
     } = await req.json()
 
-    if (is_active === false && id) {
-      const { data: targetUser } = await supabaseAdmin.from('users')
-        .select('role_id, roles:role_id(tingkatan)')
-        .eq('id', id)
-        .single()
-      if (targetUser && (targetUser.roles as any)?.tingkatan === 'super_admin') {
-        return NextResponse.json({ error: 'Akun Super Admin tidak dapat dinonaktifkan.' }, { status: 403 })
+    if (!id) return NextResponse.json({ error: 'ID wajib diisi' }, { status: 400 })
+
+    // Proteksi super_admin: cek role target sebelum mengizinkan perubahan
+    const { data: targetUserRole } = await supabaseAdmin
+      .from('users')
+      .select('roles:role_id(tingkatan)')
+      .eq('id', id)
+      .single()
+    const isTargetSuperAdmin = (targetUserRole?.roles as any)?.tingkatan === 'super_admin'
+
+    if (isTargetSuperAdmin) {
+      // Super admin HANYA boleh update: no_hp, avatar_url, dan password
+      // Semua field lain — termasuk nama_lengkap — diblokir sepenuhnya
+      const hasProtectedFields = nama_lengkap !== undefined
+        || role_id !== undefined || desa_id !== undefined || kelompok_id !== undefined
+        || is_active !== undefined || archive !== undefined
+        || tempat_lahir !== undefined || tanggal_lahir !== undefined
+        || jenis_kelamin !== undefined || alamat !== undefined
+        || nama_ayah !== undefined || nama_ibu !== undefined
+        || status_pengguna !== undefined || status_anggota !== undefined
+      if (hasProtectedFields) {
+        return NextResponse.json({ error: 'Profil Super Admin tidak dapat diubah.' }, { status: 403 })
       }
     }
-
-    if (!id) return NextResponse.json({ error: 'ID wajib diisi' }, { status: 400 })
 
     if (password) {
       await supabaseAdmin.auth.admin.updateUserById(id, { password })

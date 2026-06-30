@@ -99,8 +99,8 @@ export default function DashboardPage() {
 
   const isSuper = user?.role?.tingkatan === 'super_admin'
 
-  // Tampilkan Health Score untuk ketua/wakil/bendahara di semua tingkatan
-  const showHealthScore = isSuper || /Ketua|Wakil|Bendahara/i.test(user?.role?.nama_role || '')
+  // Tampilkan Health Score untuk semua pengurus (kecuali anggota biasa)
+  const showHealthScore = isSuper || (!!user?.role && user.role.nama_role !== 'Anggota')
 
   const statCards = [
     {

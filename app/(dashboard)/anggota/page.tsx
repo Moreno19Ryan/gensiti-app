@@ -413,21 +413,23 @@ export default function PenggunaPage() {
 
   const isSuperAdmin = user?.role?.tingkatan === 'super_admin'
 
-  // Ketua / Wakil / Sekretaris di semua tingkatan bisa edit + lihat detail
-  const isKvs = isSuperAdmin || /Ketua|Wakil|Sekretaris/i.test(user?.role?.nama_role || '')
+  // Hanya Ketua Muda-Mudi dan Wakil Ketua (semua scope) yang bisa mengelola anggota.
+  // Role lain (Sekretaris, Bendahara, Kemandirian, Keputrian, dll) hanya bisa melihat daftar.
+  const canManageMembers = isSuperAdmin || (
+    !!user?.role && user.role.nama_role.toLowerCase().includes('ketua')
+  )
 
-  // Cek apakah user punya hak edit/detail pada member tertentu (berdasarkan scope)
+  // Cek apakah user bisa edit/tambah member tertentu — hanya Ketua/Wakil sesuai scope
   const canActOn = (m: Member): boolean => {
-    if (!isKvs) return false
+    if (!canManageMembers) return false
     if (isSuperAdmin || user?.role?.tingkatan === 'daerah') return true
     if (user?.role?.tingkatan === 'desa') return m.desa_id === user?.desa_id
     if (user?.role?.tingkatan === 'kelompok') return m.kelompok_id === user?.kelompok_id
     return false
   }
 
-  // Semua pengurus bisa lihat list (sudah difilter loadData by scope)
-  // tapi hanya isKvs dalam scope yang bisa lihat detail dan edit
-  const canManage = isKvs  // untuk tombol Tambah Pengguna di header
+  // Tombol Tambah Pengguna: hanya Ketua/Wakil Ketua/Super Admin
+  const canManage = canManageMembers
 
   return (
     <div className="space-y-4">

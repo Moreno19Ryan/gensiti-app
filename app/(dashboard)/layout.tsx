@@ -80,11 +80,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (!user) return null
 
   const tingkatan = user.role?.tingkatan
-  const isKvsOrAdmin = tingkatan === 'super_admin' || /Ketua|Wakil/i.test(user.role?.nama_role || '')
+  // Audit Log hanya terlihat untuk Ketua/Wakil Ketua dan Super Admin
+  const canManageMembers = tingkatan === 'super_admin' || (
+    !!user.role && user.role.nama_role.toLowerCase().includes('ketua')
+  )
+  const avatarUrl = user.avatar_url || user.foto_url
 
   const visibleNav = navItems.filter(item => {
     if (!tingkatan || !item.roles.includes(tingkatan)) return false
-    if ((item as any).requiresKvs && !isKvsOrAdmin) return false
+    if ((item as any).requiresKvs && !canManageMembers) return false
     return true
   })
 
@@ -143,13 +147,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </div>
 
-        {/* User Info + Logout */}
-        <div className="px-2 py-2 border-b border-blue-800 shrink-0">
+        {/* User Profile Section */}
+        <div className="border-b border-blue-800 shrink-0">
           {collapsed ? (
-            <div className="flex flex-col items-center gap-1">
+            /* Collapsed: avatar + logout stacked */
+            <div className="flex flex-col items-center gap-1 py-2">
               <Link href="/profil" title={user.nama_lengkap}
-                className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold hover:bg-blue-500 transition">
-                {user.nama_lengkap?.charAt(0).toUpperCase()}
+                className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-base font-bold hover:bg-blue-500 transition overflow-hidden ring-2 ring-blue-700 hover:ring-blue-400">
+                {avatarUrl
+                  ? <img src={avatarUrl} alt={user.nama_lengkap} className="w-full h-full object-cover" />
+                  : <span>{user.nama_lengkap?.charAt(0).toUpperCase()}</span>
+                }
               </Link>
               <button onClick={() => setConfirmLogout(true)} title="Keluar"
                 className="w-9 h-9 flex items-center justify-center rounded-xl text-red-300 hover:bg-red-900/50 transition">
@@ -159,22 +167,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-1">
-              <Link href="/profil" className="flex-1 flex items-center gap-2.5 px-2 py-2 rounded-xl hover:bg-blue-800/70 transition min-w-0">
-                <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold shrink-0">
-                  {user.nama_lengkap?.charAt(0).toUpperCase()}
+            /* Expanded: prominent avatar + name + role + logout */
+            <div className="px-3 py-3">
+              <div className="flex items-center gap-3">
+                {/* Avatar besar dengan ring dan link ke profil */}
+                <Link href="/profil" title="Lihat profil"
+                  className="shrink-0 w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center text-lg font-bold overflow-hidden ring-2 ring-blue-600 hover:ring-white transition">
+                  {avatarUrl
+                    ? <img src={avatarUrl} alt={user.nama_lengkap} className="w-full h-full object-cover" />
+                    : <span>{user.nama_lengkap?.charAt(0).toUpperCase()}</span>
+                  }
+                </Link>
+                {/* Info nama + role */}
+                <div className="flex-1 min-w-0">
+                  <Link href="/profil" className="block hover:underline underline-offset-2">
+                    <div className="text-sm font-bold text-white truncate leading-tight">{user.nama_lengkap}</div>
+                  </Link>
+                  <div className="text-blue-300 text-xs truncate mt-0.5 leading-tight">{user.role?.nama_role}</div>
                 </div>
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold truncate">{user.nama_lengkap}</div>
-                  <div className="text-blue-300 text-xs truncate">{user.role?.nama_role}</div>
-                </div>
-              </Link>
-              <button onClick={() => setConfirmLogout(true)} title="Keluar"
-                className="shrink-0 w-9 h-9 flex items-center justify-center rounded-xl text-red-300 hover:bg-red-900/50 hover:text-red-200 transition">
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-              </button>
+                {/* Logout button */}
+                <button onClick={() => setConfirmLogout(true)} title="Keluar"
+                  className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-red-300 hover:bg-red-900/50 hover:text-red-200 transition">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -195,7 +213,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           })}
         </nav>
 
-        {/* Toggle collapse - 3 garis putih, desktop only */}
+        {/* Toggle collapse - desktop only */}
         <div className="hidden lg:flex justify-center py-3 border-t border-blue-800 shrink-0">
           <button onClick={toggleCollapsed} title={collapsed ? 'Perlebar sidebar' : 'Kecilkan sidebar'}
             className="w-9 h-9 flex items-center justify-center rounded-xl text-white hover:bg-blue-800 transition">
