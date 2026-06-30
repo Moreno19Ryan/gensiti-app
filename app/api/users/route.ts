@@ -147,37 +147,67 @@ export async function PATCH(req: NextRequest) {
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    if (anggota_id || nama_ayah !== undefined || nama_orang_tua !== undefined || status_pengguna !== undefined) {
-      const anggotaPayload: Record<string, unknown> = {
-        nama_lengkap: nama_lengkap || null,
-        tempat_lahir: tempat_lahir || null,
-        tanggal_lahir: tanggal_lahir || null,
-        jenis_kelamin: jenis_kelamin || null,
-        alamat: alamat || null,
-        desa_id: desa_id || null,
-        kelompok_id: kelompok_id || null,
-        status: status_anggota || 'aktif',
-        nama_ayah: nama_ayah || null,
-        nama_ibu: nama_ibu || null,
-        nama_wali: nama_wali || null,
-        no_hp_orangtua_wali: no_hp_orangtua_wali || null,
-        nama_orang_tua: nama_ayah || nama_orang_tua || null,
-        no_hp_orang_tua: no_hp_orangtua_wali || no_hp_orang_tua || null,
-        status_pengguna: status_pengguna || 'lajang',
-        pindah_desa_id: pindah_desa_id || null,
-        pindah_kelompok_id: pindah_kelompok_id || null,
-        pindah_ke_daerah_lain: pindah_ke_daerah_lain === true,
-        anak_ke: anak_ke || null,
-        jumlah_saudara: jumlah_saudara || null,
-      }
+    // Cek apakah ada field anggota yang dikirim
+    const hasAnggotaFields = anggota_id != null
+      || tempat_lahir !== undefined
+      || tanggal_lahir !== undefined
+      || jenis_kelamin !== undefined
+      || alamat !== undefined
+      || nama_ayah !== undefined
+      || nama_ibu !== undefined
+      || nama_wali !== undefined
+      || no_hp_orangtua_wali !== undefined
+      || anak_ke !== undefined
+      || jumlah_saudara !== undefined
+      || status_pengguna !== undefined
+      || status_anggota !== undefined
+      || nama_orang_tua !== undefined
+      || desa_id !== undefined
+      || kelompok_id !== undefined
+      || pindah_ke_daerah_lain !== undefined
 
-      if (anggota_id) {
-        await supabaseAdmin.from('anggota').update(anggotaPayload).eq('id', anggota_id)
-      } else {
-        await supabaseAdmin.from('anggota').upsert(
-          { ...anggotaPayload, user_id: id },
-          { onConflict: 'user_id' }
-        )
+    if (hasAnggotaFields) {
+      // Hanya update field yang benar-benar dikirim - jangan overwrite field lain
+      const anggotaPayload: Record<string, unknown> = {}
+      if (nama_lengkap !== undefined) anggotaPayload.nama_lengkap = nama_lengkap || null
+      if (tempat_lahir !== undefined) anggotaPayload.tempat_lahir = tempat_lahir || null
+      if (tanggal_lahir !== undefined) anggotaPayload.tanggal_lahir = tanggal_lahir || null
+      if (jenis_kelamin !== undefined) anggotaPayload.jenis_kelamin = jenis_kelamin || null
+      if (alamat !== undefined) anggotaPayload.alamat = alamat || null
+      if (desa_id !== undefined) anggotaPayload.desa_id = desa_id || null
+      if (kelompok_id !== undefined) anggotaPayload.kelompok_id = kelompok_id || null
+      if (status_anggota !== undefined) anggotaPayload.status = status_anggota
+      if (nama_ayah !== undefined) {
+        anggotaPayload.nama_ayah = nama_ayah || null
+        anggotaPayload.nama_orang_tua = nama_ayah || null
+      }
+      if (nama_ibu !== undefined) anggotaPayload.nama_ibu = nama_ibu || null
+      if (nama_wali !== undefined) anggotaPayload.nama_wali = nama_wali || null
+      if (no_hp_orangtua_wali !== undefined) {
+        anggotaPayload.no_hp_orangtua_wali = no_hp_orangtua_wali || null
+        anggotaPayload.no_hp_orang_tua = no_hp_orangtua_wali || null
+      }
+      if (nama_orang_tua !== undefined && !nama_ayah) anggotaPayload.nama_orang_tua = nama_orang_tua || null
+      if (no_hp_orang_tua !== undefined && !no_hp_orangtua_wali) anggotaPayload.no_hp_orang_tua = no_hp_orang_tua || null
+      if (status_pengguna !== undefined) anggotaPayload.status_pengguna = status_pengguna
+      if (pindah_desa_id !== undefined) anggotaPayload.pindah_desa_id = pindah_desa_id || null
+      if (pindah_kelompok_id !== undefined) anggotaPayload.pindah_kelompok_id = pindah_kelompok_id || null
+      if (pindah_ke_daerah_lain !== undefined) anggotaPayload.pindah_ke_daerah_lain = pindah_ke_daerah_lain === true
+      if (anak_ke !== undefined) anggotaPayload.anak_ke = anak_ke || null
+      if (jumlah_saudara !== undefined) anggotaPayload.jumlah_saudara = jumlah_saudara || null
+
+      if (Object.keys(anggotaPayload).length > 0) {
+        if (anggota_id) {
+          const { error: anggotaErr } = await supabaseAdmin.from('anggota').update(anggotaPayload).eq('id', anggota_id)
+          if (anggotaErr) console.error('Anggota update error:', anggotaErr.message)
+        } else {
+          // Upsert by user_id sebagai fallback
+          const { error: anggotaErr } = await supabaseAdmin.from('anggota').upsert(
+            { ...anggotaPayload, user_id: id },
+            { onConflict: 'user_id' }
+          )
+          if (anggotaErr) console.error('Anggota upsert error:', anggotaErr.message)
+        }
       }
     }
 

@@ -158,9 +158,16 @@ export default function PenggunaPage() {
       else if (user?.desa_id) query = query.eq('desa_id', user.desa_id)
     }
 
+    // Sembunyikan akun super_admin dari daftar anggota
+    query = query.not('roles.tingkatan', 'eq', 'super_admin')
+
     const { data: rows, error: err } = await query
     if (err) console.error('Pengguna load error:', err)
-    setData((rows as unknown as Member[]) || [])
+    // Filter tambahan di client: pastikan super_admin tidak tampil
+    const filtered = (rows as unknown as Member[])?.filter(
+      m => m.roles?.tingkatan !== 'super_admin'
+    ) || []
+    setData(filtered)
     setLoading(false)
   }, [user])
 
@@ -444,7 +451,7 @@ export default function PenggunaPage() {
         <select value={filterRole} onChange={e => setFilterRole(e.target.value)}
           className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
           <option value="">Semua Role</option>
-          <option value="super_admin">Super Admin</option>
+          
           <option value="daerah">Daerah</option>
           <option value="desa">Desa</option>
           <option value="kelompok">Kelompok</option>

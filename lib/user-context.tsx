@@ -33,9 +33,19 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
+    // Inisialisasi: baca session dari storage
     loadUser()
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      loadUser()
+
+    // Dengarkan perubahan auth state (login, logout, refresh token)
+    // Gunakan session dari callback langsung agar tidak ada race condition
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        const profile = await getUserProfile(session.user.id)
+        setUser(profile)
+      } else {
+        setUser(null)
+      }
+      setLoading(false)
     })
     return () => subscription.unsubscribe()
   }, [])

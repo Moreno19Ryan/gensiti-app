@@ -129,7 +129,10 @@ export default function ProfilPage() {
     if (!user) return
     if (!pwForm.lama) { setMsg({ type: 'err', text: 'Password lama wajib diisi' }); return }
     if (!pwForm.baru) { setMsg({ type: 'err', text: 'Password baru wajib diisi' }); return }
-    if (pwForm.baru.length < 6) { setMsg({ type: 'err', text: 'Password baru minimal 6 karakter' }); return }
+    const pwValid = /^[A-Za-z0-9]{6,}$/.test(pwForm.baru)
+    const hasUpper = /[A-Z]/.test(pwForm.baru)
+    if (!pwValid) { setMsg({ type: 'err', text: 'Password hanya boleh huruf dan angka, tanpa spasi atau simbol, min. 6 karakter' }); return }
+    if (!hasUpper) { setMsg({ type: 'err', text: 'Password wajib mengandung minimal 1 huruf kapital' }); return }
     if (pwForm.baru !== pwForm.konfirmasi) { setMsg({ type: 'err', text: 'Konfirmasi password tidak cocok' }); return }
 
     setSaving(true)

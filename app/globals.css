@@ -1,4 +1,75 @@
 @import "tailwindcss";
+/* Dark mode support untuk Tailwind v4 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Dark mode base overrides */
+.dark body {
+  background: #0f172a;
+  color: #f1f5f9;
+}
+
+/* Kartu / panel */
+.dark .bg-white {
+  background-color: #1e293b !important;
+}
+.dark .bg-slate-50 {
+  background-color: #1e293b !important;
+}
+.dark .bg-slate-100 {
+  background-color: #0f172a !important;
+}
+
+/* Border */
+.dark .border-slate-100 {
+  border-color: #334155 !important;
+}
+.dark .border-slate-200 {
+  border-color: #334155 !important;
+}
+
+/* Teks */
+.dark .text-slate-800 {
+  color: #f1f5f9 !important;
+}
+.dark .text-slate-700 {
+  color: #e2e8f0 !important;
+}
+.dark .text-slate-600 {
+  color: #cbd5e1 !important;
+}
+.dark .text-slate-500 {
+  color: #94a3b8 !important;
+}
+.dark .text-slate-400 {
+  color: #64748b !important;
+}
+
+/* Input & select */
+.dark input:not([type=range]):not([type=checkbox]):not([type=radio]),
+.dark select,
+.dark textarea {
+  background-color: #1e293b !important;
+  color: #f1f5f9 !important;
+  border-color: #475569 !important;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #64748b !important;
+}
+
+/* Tabel */
+.dark table thead tr {
+  background-color: #1e293b !important;
+}
+.dark table tbody tr:hover {
+  background-color: #263548 !important;
+}
+
+/* Shadow */
+.dark .shadow-sm {
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4) !important;
+}
+
 
 :root {
   --background: #f1f5f9;

@@ -18,7 +18,7 @@ export default function LoginPage() {
 
     try {
       await signIn(email, password)
-      router.replace('/dashboard')
+      window.location.href = '/dashboard'
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Login gagal'
       if (message.includes('Invalid login credentials')) {
@@ -47,7 +47,7 @@ export default function LoginPage() {
 
         {/* Card */}
         <div className="bg-white rounded-2xl shadow-2xl p-8">
-          <p className="text-slate-500 text-sm mb-1">Assalamualaikum 👋</p>
+          <p className="text-slate-500 text-sm mb-1">Assalamualaikum Generus 👋</p>
           <h2 className="text-xl font-bold text-slate-800 mb-6">Masuk ke Akun Anda</h2>
 
           {error && (
