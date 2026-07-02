@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth'
-import { Absensi } from '@/lib/types'
+import { Absensi, EmailPreferensi } from '@/lib/types'
 
 interface AnggotaRecord {
   id: string
@@ -26,7 +26,7 @@ export default function ProfilPage() {
   const { user, refresh } = useUser()
   const isSuperAdmin = user?.role?.tingkatan === 'super_admin'
 
-  const [tab, setTab] = useState<'akun' | 'datadiri' | 'presensi' | 'password'>('akun')
+  const [tab, setTab] = useState<'akun' | 'datadiri' | 'presensi' | 'notifikasi' | 'password'>('akun')
   const [form, setForm] = useState({ nama_lengkap: '', no_hp: '' })
   const [diriForm, setDiriForm] = useState({
     tempat_lahir: '', tanggal_lahir: '', jenis_kelamin: '',
@@ -42,6 +42,11 @@ export default function ProfilPage() {
   const [loadingRiwayat, setLoadingRiwayat] = useState(false)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Preferensi notifikasi email -- default semua true kalau baris di email_preferensi
+  // belum ada (belum pernah diubah user), sesuai desain tabel di database.
+  const [notifPref, setNotifPref] = useState({ pengumuman: true, kegiatan: true, reminder: true, approval_ppg: true })
+  const [savingNotif, setSavingNotif] = useState(false)
 
   const loadAnggota = async (userId: string) => {
     const res = await authFetch(`/api/users?userId=${userId}`)
@@ -63,6 +68,25 @@ export default function ProfilPage() {
       })
     }
   }
+
+  const loadNotifPref = useCallback(async (userId: string) => {
+    const { data } = await supabase
+      .from('email_preferensi')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (data) {
+      const p = data as EmailPreferensi
+      setNotifPref({
+        pengumuman: p.pengumuman,
+        kegiatan: p.kegiatan,
+        reminder: p.reminder,
+        approval_ppg: p.approval_ppg,
+      })
+    }
+    // Kalau belum ada baris, biarkan default true (state awal) -- baris baru dibuat
+    // saat user pertama kali menyimpan preferensi (lihat saveNotifPref).
+  }, [])
 
   const loadRiwayatPresensi = useCallback(async (userId: string) => {
     setLoadingRiwayat(true)
@@ -91,6 +115,8 @@ export default function ProfilPage() {
       loadAnggota(user.id)
       loadRiwayatPresensi(user.id)
     }
+    // Preferensi notifikasi berlaku untuk SEMUA role, termasuk Super Admin.
+    loadNotifPref(user.id)
   }, [user])
 
   const saveAkun = async () => {
@@ -187,6 +213,34 @@ export default function ProfilPage() {
     setSaving(false)
   }
 
+  const saveNotifPref = async () => {
+    if (!user) return
+    setSavingNotif(true)
+    setMsg(null)
+    try {
+      // Upsert: kalau baris belum ada (user belum pernah simpan preferensi), insert baru.
+      // RLS email_preferensi_insert_own/update_own sudah menjamin user hanya bisa
+      // insert/update baris miliknya sendiri (user_id = auth.uid()).
+      const { error } = await supabase.from('email_preferensi').upsert({
+        user_id: user.id,
+        pengumuman: notifPref.pengumuman,
+        kegiatan: notifPref.kegiatan,
+        reminder: notifPref.reminder,
+        approval_ppg: notifPref.approval_ppg,
+        updated_at: new Date().toISOString(),
+      })
+      if (error) {
+        setMsg({ type: 'err', text: 'Gagal menyimpan preferensi: ' + error.message })
+      } else {
+        setMsg({ type: 'ok', text: 'Preferensi notifikasi berhasil disimpan!' })
+      }
+    } catch (e) {
+      setMsg({ type: 'err', text: String(e) })
+    } finally {
+      setSavingNotif(false)
+    }
+  }
+
   const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file || !user) return
@@ -248,7 +302,15 @@ export default function ProfilPage() {
     { key: 'akun' as const, label: 'Akun' },
     ...(!isSuperAdmin ? [{ key: 'datadiri' as const, label: 'Data Diri' }] : []),
     ...(!isSuperAdmin ? [{ key: 'presensi' as const, label: 'Riwayat Presensi' }] : []),
+    { key: 'notifikasi' as const, label: 'Notifikasi' },
     { key: 'password' as const, label: 'Password' },
+  ]
+
+  const notifOptions: { key: keyof typeof notifPref; label: string; desc: string }[] = [
+    { key: 'pengumuman', label: 'Pengumuman Baru', desc: 'Email saat ada pengumuman baru yang relevan untuk Anda.' },
+    { key: 'kegiatan', label: 'Kegiatan Baru/Diubah', desc: 'Email saat ada kegiatan baru atau perubahan jadwal/lokasi.' },
+    { key: 'reminder', label: 'Reminder H-1 Kegiatan', desc: 'Pengingat email sehari sebelum kegiatan berlangsung.' },
+    { key: 'approval_ppg', label: 'Approval PPG', desc: 'Email saat kegiatan/pengumuman Anda disetujui atau ditolak PPG.' },
   ]
 
   return (
@@ -514,6 +576,35 @@ export default function ProfilPage() {
                   })}
                 </div>
               )}
+            </div>
+          )}
+
+          {tab === 'notifikasi' && (
+            <div className="space-y-4">
+              <p className="text-xs text-slate-500 bg-blue-50 p-3 rounded-xl border border-blue-100">
+                Atur jenis notifikasi email yang ingin Anda terima dari RYZA. Perubahan berlaku untuk pengiriman email berikutnya.
+              </p>
+              <div className="divide-y divide-slate-100">
+                {notifOptions.map(({ key, label, desc }) => (
+                  <label key={key} className="flex items-center justify-between gap-4 py-3.5 cursor-pointer">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-700">{label}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">{desc}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setNotifPref(p => ({ ...p, [key]: !p[key] }))}
+                      className={`shrink-0 relative w-11 h-6 rounded-full transition-colors ${notifPref[key] ? 'bg-blue-600' : 'bg-slate-200'}`}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${notifPref[key] ? 'translate-x-5' : 'translate-x-0'}`} />
+                    </button>
+                  </label>
+                ))}
+              </div>
+              <button onClick={saveNotifPref} disabled={savingNotif}
+                className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition">
+                {savingNotif ? 'Menyimpan...' : 'Simpan Preferensi'}
+              </button>
             </div>
           )}
 
