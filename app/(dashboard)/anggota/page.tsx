@@ -516,18 +516,24 @@ export default function PenggunaPage() {
           <p className="text-slate-400 text-sm">{data.length} pengguna terdaftar</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={handleExportPDF} disabled={exporting}
-            className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
-            📄 PDF
-          </button>
-          <button onClick={handleExportExcel} disabled={exporting}
-            className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
-            📊 Excel
-          </button>
+          {/* Export berisi data pribadi (TTL, no. HP, dll) seluruh anggota dalam scope --
+              hanya boleh diakses yang berwenang mengelola anggota (Ketua/Wakil/Super Admin),
+              sama seperti tombol "+ Tambah Pengguna". Ru'yah biasa tidak boleh export data
+              anggota lain, hanya boleh melihat profilnya sendiri di halaman ini. */}
           {canManage && (
-            <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
-              + Tambah Pengguna
-            </button>
+            <>
+              <button onClick={handleExportPDF} disabled={exporting}
+                className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
+                📄 PDF
+              </button>
+              <button onClick={handleExportExcel} disabled={exporting}
+                className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
+                📊 Excel
+              </button>
+              <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
+                + Tambah Pengguna
+              </button>
+            </>
           )}
         </div>
       </div>

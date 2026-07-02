@@ -128,11 +128,14 @@ export default function DashboardPage() {
         return q
       }
 
-      // --- Arus kas per bulan (hanya untuk yang punya akses Keuangan: bukan ru'yah, bukan PPG) ---
-      // Pakai isPengurus(user) langsung (bukan variabel showHealthScore di scope komponen)
-      // karena loadCharts adalah useCallback terpisah -- lebih aman & eksplisit daripada
-      // bergantung pada urutan deklarasi variabel di body komponen.
-      const canSeeKeuangan = isPengurus(user)
+      // --- Arus kas per bulan (hanya untuk yang punya akses Keuangan: bukan ru'yah, bukan PPG,
+      // dan BUKAN Super Admin -- Super Admin sengaja nol akses Keuangan di seluruh aplikasi,
+      // termasuk RLS database, jadi dashboard-nya juga tidak boleh menampilkan ringkasan
+      // finansial apapun. isPengurus() sendiri masih true untuk super_admin, jadi harus
+      // dikecualikan eksplisit di sini). Pakai isPengurus(user) langsung (bukan variabel
+      // showHealthScore di scope komponen) karena loadCharts adalah useCallback terpisah --
+      // lebih aman & eksplisit daripada bergantung pada urutan deklarasi variabel di body komponen.
+      const canSeeKeuangan = isPengurus(user) && user?.role?.tingkatan !== 'super_admin'
       if (canSeeKeuangan) {
         let kq = supabase.from('keuangan').select('jenis, jumlah, tanggal').gte('tanggal', rangeStart)
         kq = applyScope(kq)
@@ -227,9 +230,11 @@ export default function DashboardPage() {
   const isSuper = user?.role?.tingkatan === 'super_admin'
   const isPPGUser = user?.role?.tingkatan === 'ppg'
 
-  // Tampilkan Health Score untuk semua pengurus (ru'yah biasa & PPG tidak perlu lihat ini --
-  // PPG bukan pengurus operasional, lihat isPengurus() di lib/roles.ts)
-  const showHealthScore = isPengurus(user)
+  // Tampilkan Health Score untuk pengurus operasional (ru'yah biasa, PPG, dan Super Admin
+  // tidak perlu/tidak boleh lihat ini). Super Admin dikecualikan eksplisit walau isPengurus()
+  // sendiri bernilai true untuknya -- Super Admin sengaja nol akses Keuangan di seluruh
+  // aplikasi (lihat juga canSeeKeuangan di loadCharts dan RLS tabel keuangan).
+  const showHealthScore = isPengurus(user) && !isSuper
 
   const quickActions = isPPGUser
     ? [
@@ -238,6 +243,15 @@ export default function DashboardPage() {
         { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200' },
         { href: '/catatan-pembinaan', label: 'Catatan Pembinaan', icon: '📝', color: 'hover:bg-emerald-50 hover:border-emerald-200' },
       ]
+    : isSuper
+    // Super Admin tidak diberi akses cepat ke Keuangan -- dia akan diblokir "Akses Dibatasi"
+    // kalau tetap masuk ke /keuangan, jadi shortcut ke sana hanya membingungkan.
+    ? [
+        { href: '/anggota', label: 'Data Pengguna', icon: '👥', color: 'hover:bg-blue-50 hover:border-blue-200' },
+        { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200' },
+        { href: '/organisasi', label: 'Organisasi', icon: '🏛️', color: 'hover:bg-violet-50 hover:border-violet-200' },
+        { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200' },
+      ]
     : [
         { href: '/anggota', label: 'Data Pengguna', icon: '👥', color: 'hover:bg-blue-50 hover:border-blue-200' },
         { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200' },
@@ -245,9 +259,10 @@ export default function DashboardPage() {
         { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200' },
       ]
 
-  // PPG bukan pengurus operasional -- tidak perlu lihat data finansial mentah (Total
-  // Pemasukan/Pengeluaran) ataupun Health Score di dashboard umum ini. Cukup tampilkan
-  // Anggota Aktif se-Bekasi Timur; detail approval & ringkasan lengkap ada di /ppg.
+  // PPG bukan pengurus operasional dan Super Admin sengaja nol akses Keuangan -- keduanya
+  // tidak perlu lihat data finansial mentah (Total Pemasukan/Pengeluaran) ataupun Health
+  // Score di dashboard umum ini. Cukup tampilkan Anggota Aktif; detail approval & ringkasan
+  // lengkap PPG ada di /ppg, sementara Super Admin memang tidak punya ringkasan keuangan sama sekali.
   const statCards = [
     {
       label: 'Pengguna Online',
@@ -263,8 +278,8 @@ export default function DashboardPage() {
       icon: '📅',
       color: 'bg-indigo-500',
     },
-    isPPGUser
-      ? { label: 'Ru\'yah Aktif', value: loading ? '...' : stats.anggota.toLocaleString('id-ID'), sub: 'Se-Bekasi Timur', icon: '👥', color: 'bg-violet-500' }
+    (isPPGUser || isSuper)
+      ? { label: 'Anggota Aktif', value: loading ? '...' : stats.anggota.toLocaleString('id-ID'), sub: isPPGUser ? 'Se-Bekasi Timur' : 'Terdaftar & aktif', icon: '👥', color: 'bg-violet-500' }
       : {
           label: showHealthScore ? 'Health Score' : 'Total Pemasukan',
           value: loading ? '...' : showHealthScore ? `${healthScore}%` : formatRupiah(stats.pemasukan),
@@ -274,6 +289,8 @@ export default function DashboardPage() {
         },
     isPPGUser
       ? { label: 'Dashboard PPG', value: 'Lihat', sub: 'Persetujuan & pengawasan', icon: '🛡️', color: 'bg-purple-500' }
+      : isSuper
+      ? { label: 'Organisasi', value: 'Lihat', sub: 'Struktur Desa & Kelompok', icon: '🏛️', color: 'bg-slate-500' }
       : {
           label: showHealthScore ? 'Anggota Aktif' : 'Total Pengeluaran',
           value: loading ? '...' : showHealthScore ? stats.anggota.toLocaleString('id-ID') : formatRupiah(stats.pengeluaran),
