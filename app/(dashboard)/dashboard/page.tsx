@@ -4,6 +4,10 @@ import { useEffect, useState, useCallback } from 'react'
 import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase' // dipakai untuk stats queries
 import { isPengurus } from '@/lib/roles'
+import {
+  ResponsiveContainer, LineChart, Line, BarChart, Bar,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+} from 'recharts'
 
 interface Stats {
   anggota: number
@@ -12,11 +16,35 @@ interface Stats {
   pengeluaran: number
 }
 
+interface ArusKasBulan { bulan: string; pemasukan: number; pengeluaran: number }
+interface KehadiranBulan { bulan: string; persentase: number }
+interface PertumbuhanBulan { bulan: string; anggota_baru: number }
+
+// 6 bulan terakhir termasuk bulan berjalan, format label pendek Indonesia (mis. "Jan 2026").
+// Dipakai sebagai kerangka sumbu-X grafik supaya bulan tanpa data tetap muncul sebagai 0,
+// bukan hilang dari grafik (grafik yang "bolong" lebih membingungkan daripada nilai nol).
+function get6BulanTerakhir(): { key: string; label: string }[] {
+  const out: { key: string; label: string }[] = []
+  const now = new Date()
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const label = d.toLocaleDateString('id-ID', { month: 'short', year: '2-digit' })
+    out.push({ key, label })
+  }
+  return out
+}
+
 export default function DashboardPage() {
   const { user, onlineCount } = useUser()
   const [stats, setStats] = useState<Stats>({ anggota: 0, kegiatan_aktif: 0, pemasukan: 0, pengeluaran: 0 })
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(new Date())
+
+  const [arusKas, setArusKas] = useState<ArusKasBulan[]>([])
+  const [kehadiran, setKehadiran] = useState<KehadiranBulan[]>([])
+  const [pertumbuhan, setPertumbuhan] = useState<PertumbuhanBulan[]>([])
+  const [loadingChart, setLoadingChart] = useState(true)
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000)
@@ -77,9 +105,104 @@ export default function DashboardPage() {
     }
   }, [user])
 
+  const loadCharts = useCallback(async () => {
+    if (!user) return
+    setLoadingChart(true)
+    try {
+      const isSuper = user?.role?.tingkatan === 'super_admin'
+      const isDaerah = user?.role?.tingkatan === 'daerah'
+      const isPPGUser = user?.role?.tingkatan === 'ppg'
+      const bulanList = get6BulanTerakhir()
+      const rangeStart = bulanList[0].key + '-01'
+
+      // Scope filter sama seperti loadStats -- kelompok/desa lihat datanya sendiri,
+      // daerah/super_admin/ppg lihat lintas Bekasi Timur.
+      const applyScope = <T,>(q: T): T => {
+        if (!isSuper && !isDaerah && !isPPGUser) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let qq: any = q
+          if (user?.desa_id) qq = qq.eq('desa_id', user.desa_id)
+          if (user?.kelompok_id) qq = qq.eq('kelompok_id', user.kelompok_id)
+          return qq
+        }
+        return q
+      }
+
+      // --- Arus kas per bulan (hanya untuk yang punya akses Keuangan: bukan ru'yah, bukan PPG) ---
+      // Pakai isPengurus(user) langsung (bukan variabel showHealthScore di scope komponen)
+      // karena loadCharts adalah useCallback terpisah -- lebih aman & eksplisit daripada
+      // bergantung pada urutan deklarasi variabel di body komponen.
+      const canSeeKeuangan = isPengurus(user)
+      if (canSeeKeuangan) {
+        let kq = supabase.from('keuangan').select('jenis, jumlah, tanggal').gte('tanggal', rangeStart)
+        kq = applyScope(kq)
+        const { data: kRows } = await kq
+        const kasMap = new Map(bulanList.map(b => [b.key, { pemasukan: 0, pengeluaran: 0 }]))
+        kRows?.forEach(r => {
+          const key = r.tanggal.slice(0, 7)
+          const entry = kasMap.get(key)
+          if (!entry) return
+          if (r.jenis === 'pemasukan') entry.pemasukan += Number(r.jumlah)
+          else entry.pengeluaran += Number(r.jumlah)
+        })
+        setArusKas(bulanList.map(b => ({ bulan: b.label, ...kasMap.get(b.key)! })))
+      } else {
+        setArusKas([])
+      }
+
+      // --- Pertumbuhan anggota per bulan (jumlah anggota baru, bukan kumulatif) ---
+      let aq = supabase.from('anggota').select('created_at').gte('created_at', rangeStart)
+      aq = applyScope(aq)
+      const { data: aRows } = await aq
+      const tumbuhMap = new Map(bulanList.map(b => [b.key, 0]))
+      aRows?.forEach(r => {
+        const key = r.created_at.slice(0, 7)
+        if (tumbuhMap.has(key)) tumbuhMap.set(key, (tumbuhMap.get(key) || 0) + 1)
+      })
+      setPertumbuhan(bulanList.map(b => ({ bulan: b.label, anggota_baru: tumbuhMap.get(b.key) || 0 })))
+
+      // --- Tren kehadiran per bulan (persentase hadir dari semua absensi tercatat pada kegiatan
+      // dalam scope, dikelompokkan berdasarkan tanggal kegiatan bukan waktu_absen, supaya
+      // kehadiran H-1/susulan tetap terhitung ke bulan kegiatannya) ---
+      let kegq = supabase.from('kegiatan').select('id, tanggal_mulai').gte('tanggal_mulai', rangeStart)
+      kegq = applyScope(kegq)
+      const { data: kegRows } = await kegq
+      const kegiatanBulanMap = new Map((kegRows || []).map(k => [k.id, k.tanggal_mulai?.slice(0, 7)]))
+      const kegiatanIds = (kegRows || []).map(k => k.id)
+
+      const hadirMap = new Map(bulanList.map(b => [b.key, { hadir: 0, total: 0 }]))
+      if (kegiatanIds.length > 0) {
+        const { data: absRows } = await supabase
+          .from('absensi')
+          .select('status, kegiatan_id')
+          .in('kegiatan_id', kegiatanIds)
+        absRows?.forEach(r => {
+          const bulanKey = r.kegiatan_id ? kegiatanBulanMap.get(r.kegiatan_id) : null
+          if (!bulanKey) return
+          const entry = hadirMap.get(bulanKey)
+          if (!entry) return
+          entry.total += 1
+          if (r.status === 'hadir') entry.hadir += 1
+        })
+      }
+      setKehadiran(bulanList.map(b => {
+        const entry = hadirMap.get(b.key)!
+        return { bulan: b.label, persentase: entry.total > 0 ? Math.round((entry.hadir / entry.total) * 100) : 0 }
+      }))
+    } catch (err) {
+      console.error('Gagal memuat data grafik:', err)
+    } finally {
+      setLoadingChart(false)
+    }
+  }, [user])
+
   useEffect(() => {
     loadStats()
   }, [loadStats])
+
+  useEffect(() => {
+    loadCharts()
+  }, [loadCharts])
 
   const formatRupiah = (n: number) =>
     new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
@@ -205,6 +328,73 @@ export default function DashboardPage() {
               <span className="text-xs font-medium text-slate-600">{item.label}</span>
             </a>
           ))}
+        </div>
+      </div>
+
+      {/* Grafik Tren 6 Bulan Terakhir */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        {showHealthScore && (
+          <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100">
+            <h3 className="font-semibold text-slate-700 mb-1">Arus Kas 6 Bulan Terakhir</h3>
+            <p className="text-slate-400 text-xs mb-4">Pemasukan vs pengeluaran per bulan</p>
+            {loadingChart ? (
+              <div className="h-64 flex items-center justify-center text-slate-400">
+                <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={arusKas}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis dataKey="bulan" tick={{ fontSize: 12, fill: '#94a3b8' }} />
+                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} tickFormatter={(v) => Number(v) >= 1000000 ? `${(Number(v) / 1000000).toFixed(0)}jt` : String(v)} />
+                  <Tooltip formatter={(v) => formatRupiah(Number(v))} contentStyle={{ borderRadius: 12, fontSize: 12 }} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Bar dataKey="pemasukan" name="Pemasukan" fill="#10b981" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="pengeluaran" name="Pengeluaran" fill="#ef4444" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        )}
+
+        <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100">
+          <h3 className="font-semibold text-slate-700 mb-1">Tren Kehadiran 6 Bulan Terakhir</h3>
+          <p className="text-slate-400 text-xs mb-4">Persentase kehadiran dari seluruh kegiatan per bulan</p>
+          {loadingChart ? (
+            <div className="h-64 flex items-center justify-center text-slate-400">
+              <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={260}>
+              <LineChart data={kehadiran}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="bulan" tick={{ fontSize: 12, fill: '#94a3b8' }} />
+                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+                <Tooltip formatter={(v) => `${v}%`} contentStyle={{ borderRadius: 12, fontSize: 12 }} />
+                <Line type="monotone" dataKey="persentase" name="Kehadiran" stroke="#2563eb" strokeWidth={2.5} dot={{ r: 4 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100 xl:col-span-2">
+          <h3 className="font-semibold text-slate-700 mb-1">Pertumbuhan Anggota 6 Bulan Terakhir</h3>
+          <p className="text-slate-400 text-xs mb-4">Jumlah anggota baru terdaftar per bulan</p>
+          {loadingChart ? (
+            <div className="h-64 flex items-center justify-center text-slate-400">
+              <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={pertumbuhan}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="bulan" tick={{ fontSize: 12, fill: '#94a3b8' }} />
+                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} allowDecimals={false} />
+                <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12 }} />
+                <Bar dataKey="anggota_baru" name="Anggota Baru" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
     </div>
