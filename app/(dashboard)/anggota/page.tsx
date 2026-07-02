@@ -7,6 +7,7 @@ import { logAudit } from '@/lib/audit'
 import { authFetch } from '@/lib/auth'
 import { canManageMembers as checkCanManageMembers } from '@/lib/roles'
 import Modal from '@/components/Modal'
+import { exportToPDF, exportToExcel } from '@/lib/export'
 
 interface Member {
   id: string
@@ -140,6 +141,7 @@ export default function PenggunaPage() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [confirmStep, setConfirmStep] = useState<1 | 2>(1)
   const [confirmType, setConfirmType] = useState<ConfirmType | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -431,18 +433,103 @@ export default function PenggunaPage() {
   // Tombol Tambah Pengguna: hanya Ketua/Wakil Ketua/Super Admin
   const canManage = canManageMembers
 
+  // Export daftar anggota -- pakai `filtered` (pencarian + filter role yang sedang aktif),
+  // supaya laporan selalu konsisten dengan apa yang sedang dilihat user di layar.
+  const exportColumns = [
+    { header: 'No. Anggota', key: 'no', width: 14 },
+    { header: 'Nama Lengkap', key: 'nama', width: 26 },
+    { header: 'Jenis Kelamin', key: 'jk', width: 14 },
+    { header: 'Tempat, Tgl Lahir', key: 'ttl', width: 24 },
+    { header: 'Role', key: 'role', width: 20 },
+    { header: 'Desa', key: 'desa', width: 18 },
+    { header: 'Kelompok', key: 'kelompok', width: 18 },
+    { header: 'No. HP', key: 'hp', width: 16 },
+    { header: 'Status', key: 'status', width: 14 },
+  ]
+
+  const buildExportData = () => filtered.map(m => {
+    const a = m.anggota?.[0]
+    const ttl = a?.tempat_lahir && a?.tanggal_lahir
+      ? `${a.tempat_lahir}, ${new Date(a.tanggal_lahir).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`
+      : (a?.tempat_lahir || '-')
+    return {
+      no: a?.nomor_anggota || '-',
+      nama: m.nama_lengkap,
+      jk: a?.jenis_kelamin || '-',
+      ttl,
+      role: m.roles?.nama_role || '-',
+      desa: m.desa?.nama_desa || '-',
+      kelompok: m.kelompok?.nama_kelompok || '-',
+      hp: m.no_hp || '-',
+      status: m.is_archived ? 'Diarsipkan' : m.is_active ? 'Aktif' : 'Non-aktif',
+    }
+  })
+
+  const exportSubtitle = () => {
+    const t = user?.role?.tingkatan
+    const scope = t === 'kelompok' ? user?.kelompok?.nama_kelompok
+      : t === 'desa' ? user?.desa?.nama_desa
+      : filterRole ? `Jenjang ${filterRole}`
+      : 'Se-Bekasi Timur'
+    return `${scope} -- ${filtered.length} pengguna`
+  }
+
+  const handleExportPDF = async () => {
+    if (filtered.length === 0) { alert('Tidak ada data untuk diexport.'); return }
+    setExporting(true)
+    try {
+      exportToPDF({
+        title: 'Daftar Anggota / Pengguna',
+        subtitle: exportSubtitle(),
+        columns: exportColumns,
+        rows: buildExportData(),
+        fileName: `Daftar-Anggota-${new Date().toISOString().slice(0, 10)}`,
+      })
+      if (user) await logAudit(user, 'EXPORT', 'Pengguna', `PDF -- ${filtered.length} anggota`)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleExportExcel = async () => {
+    if (filtered.length === 0) { alert('Tidak ada data untuk diexport.'); return }
+    setExporting(true)
+    try {
+      await exportToExcel({
+        title: 'Daftar Anggota / Pengguna',
+        subtitle: exportSubtitle(),
+        columns: exportColumns,
+        rows: buildExportData(),
+        fileName: `Daftar-Anggota-${new Date().toISOString().slice(0, 10)}`,
+      })
+      if (user) await logAudit(user, 'EXPORT', 'Pengguna', `Excel -- ${filtered.length} anggota`)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="font-bold text-slate-800">Pengguna</h2>
           <p className="text-slate-400 text-sm">{data.length} pengguna terdaftar</p>
         </div>
-        {canManage && (
-          <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
-            + Tambah Pengguna
+        <div className="flex items-center gap-2">
+          <button onClick={handleExportPDF} disabled={exporting}
+            className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
+            📄 PDF
           </button>
-        )}
+          <button onClick={handleExportExcel} disabled={exporting}
+            className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
+            📊 Excel
+          </button>
+          {canManage && (
+            <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
+              + Tambah Pengguna
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filter bar */}

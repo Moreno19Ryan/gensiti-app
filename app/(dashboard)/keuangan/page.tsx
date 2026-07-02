@@ -7,6 +7,7 @@ import { Keuangan } from '@/lib/types'
 import Modal from '@/components/Modal'
 import { logAudit } from '@/lib/audit'
 import { isRuyahBiasa, isPengurus } from '@/lib/roles'
+import { exportToPDF, exportToExcel } from '@/lib/export'
 
 interface DesaOpt { id: string; nama_desa: string }
 interface KelompokOpt { id: string; nama_kelompok: string; desa_id: string }
@@ -47,6 +48,11 @@ export default function KeuanganPage() {
   const [filter, setFilter] = useState<'all' | 'pemasukan' | 'pengeluaran'>('all')
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState<'tanggal_desc' | 'tanggal_asc' | 'jumlah_desc' | 'jumlah_asc'>('tanggal_desc')
+  // Filter rentang tanggal -- khusus untuk lingkup laporan export, tidak memengaruhi
+  // tampilan tabel utama (biar user tetap bisa lihat semua transaksi seperti biasa).
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [exporting, setExporting] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Keuangan | null>(null)
   const [form, setForm] = useState(emptyForm)
@@ -172,6 +178,89 @@ export default function KeuanganPage() {
     ? ['Iuran', 'Donasi', 'Bantuan', 'Lainnya']
     : ['Operasional', 'Konsumsi', 'Transport', 'Perlengkapan', 'Lainnya']
 
+  // Data untuk laporan export -- pakai `filtered` (jenis + pencarian yang sedang aktif)
+  // ditambah filter rentang tanggal khusus export, supaya laporan selalu konsisten
+  // dengan apa yang sedang dilihat user di layar saat ini.
+  const exportRows = filtered.filter(k => {
+    if (dateFrom && k.tanggal < dateFrom) return false
+    if (dateTo && k.tanggal > dateTo) return false
+    return true
+  })
+
+  const exportSummary = () => {
+    const p = exportRows.filter(k => k.jenis === 'pemasukan').reduce((s, k) => s + Number(k.jumlah), 0)
+    const g = exportRows.filter(k => k.jenis === 'pengeluaran').reduce((s, k) => s + Number(k.jumlah), 0)
+    return [
+      { label: 'Total Pemasukan', value: fmt(p) },
+      { label: 'Total Pengeluaran', value: fmt(g) },
+      { label: 'Saldo', value: fmt(p - g) },
+    ]
+  }
+
+  const exportSubtitle = () => {
+    const scope = user?.role?.tingkatan === 'kelompok' ? user?.kelompok?.nama_kelompok
+      : user?.role?.tingkatan === 'desa' ? user?.desa?.nama_desa
+      : 'Se-Bekasi Timur'
+    const periode = dateFrom || dateTo
+      ? `Periode ${dateFrom ? new Date(dateFrom).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '...'} - ${dateTo ? new Date(dateTo).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '...'}`
+      : 'Seluruh Periode'
+    return `${scope} -- ${periode}`
+  }
+
+  const exportColumns = [
+    { header: 'No. Transaksi', key: 'no', width: 20 },
+    { header: 'Tanggal', key: 'tanggal', width: 14 },
+    { header: 'Jenis', key: 'jenis', width: 12 },
+    { header: 'Kategori', key: 'kategori', width: 14 },
+    { header: 'Deskripsi', key: 'deskripsi', width: 30 },
+    { header: 'Jumlah', key: 'jumlah', width: 16 },
+  ]
+
+  const buildExportData = () => exportRows.map(k => ({
+    no: k.nomor_transaksi || '-',
+    tanggal: new Date(k.tanggal).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
+    jenis: k.jenis === 'pemasukan' ? 'Pemasukan' : 'Pengeluaran',
+    kategori: k.kategori || '-',
+    deskripsi: k.deskripsi || '-',
+    jumlah: (k.jenis === 'pengeluaran' ? '-' : '+') + fmt(Number(k.jumlah)),
+  }))
+
+  const handleExportPDF = async () => {
+    if (exportRows.length === 0) { alert('Tidak ada data untuk diexport pada rentang/filter ini.'); return }
+    setExporting(true)
+    try {
+      exportToPDF({
+        title: 'Laporan Keuangan',
+        subtitle: exportSubtitle(),
+        columns: exportColumns,
+        rows: buildExportData(),
+        summary: exportSummary(),
+        fileName: `Laporan-Keuangan-${new Date().toISOString().slice(0, 10)}`,
+      })
+      if (user) await logAudit(user, 'EXPORT', 'Keuangan', `PDF -- ${exportRows.length} transaksi`)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleExportExcel = async () => {
+    if (exportRows.length === 0) { alert('Tidak ada data untuk diexport pada rentang/filter ini.'); return }
+    setExporting(true)
+    try {
+      await exportToExcel({
+        title: 'Laporan Keuangan',
+        subtitle: exportSubtitle(),
+        columns: exportColumns,
+        rows: buildExportData(),
+        summary: exportSummary(),
+        fileName: `Laporan-Keuangan-${new Date().toISOString().slice(0, 10)}`,
+      })
+      if (user) await logAudit(user, 'EXPORT', 'Keuangan', `Excel -- ${exportRows.length} transaksi`)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   // Blokir akses Super Admin
   if (!hasAccess) {
     return (
@@ -185,13 +274,39 @@ export default function KeuanganPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="font-bold text-slate-800">Keuangan</h2>
-        {canManage && (
-          <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
-            + Tambah Transaksi
+        <div className="flex items-center gap-2">
+          <button onClick={handleExportPDF} disabled={exporting}
+            className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
+            📄 PDF
+          </button>
+          <button onClick={handleExportExcel} disabled={exporting}
+            className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
+            📊 Excel
+          </button>
+          {canManage && (
+            <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
+              + Tambah Transaksi
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Filter periode -- khusus lingkup laporan export */}
+      <div className="bg-white rounded-2xl p-3 shadow-sm border border-slate-100 flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium text-slate-500">Periode Laporan:</span>
+        <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+          className="px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <span className="text-slate-400 text-sm">s/d</span>
+        <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+          className="px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        {(dateFrom || dateTo) && (
+          <button onClick={() => { setDateFrom(''); setDateTo('') }} className="text-xs text-blue-600 hover:underline">
+            Reset periode
           </button>
         )}
+        <span className="text-xs text-slate-400 ml-auto">{exportRows.length} transaksi akan diexport</span>
       </div>
 
       <div className="grid grid-cols-3 gap-4">

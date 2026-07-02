@@ -8,6 +8,7 @@ import { logAudit } from '@/lib/audit'
 import { canManageMembers } from '@/lib/roles'
 import Modal from '@/components/Modal'
 import PresensiPanel from '@/components/PresensiPanel'
+import { exportToPDF, exportToExcel } from '@/lib/export'
 
 interface DesaOpt { id: string; nama_desa: string }
 interface KelompokOpt { id: string; nama_kelompok: string; desa_id: string }
@@ -50,6 +51,7 @@ export default function KegiatanPage() {
   const [saving, setSaving] = useState(false)
   const [desaList, setDesaList] = useState<DesaOpt[]>([])
   const [kelompokList, setKelompokList] = useState<KelompokOpt[]>([])
+  const [exporting, setExporting] = useState(false)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -163,18 +165,92 @@ export default function KegiatanPage() {
       return 0
     })
 
+  // Export daftar/riwayat kegiatan -- pakai `filtered` (pencarian + filter status yang
+  // sedang aktif), supaya laporan selalu konsisten dengan apa yang sedang dilihat user.
+  const exportColumns = [
+    { header: 'Kode', key: 'kode', width: 16 },
+    { header: 'Nama Kegiatan', key: 'nama', width: 28 },
+    { header: 'Tanggal Mulai', key: 'mulai', width: 18 },
+    { header: 'Tanggal Selesai', key: 'selesai', width: 18 },
+    { header: 'Lokasi', key: 'lokasi', width: 22 },
+    { header: 'Jenjang', key: 'jenjang', width: 14 },
+    { header: 'Status', key: 'status', width: 14 },
+  ]
+
+  const buildExportData = () => filtered.map(k => ({
+    kode: k.kode_kegiatan || '-',
+    nama: k.nama_kegiatan,
+    mulai: k.tanggal_mulai ? new Date(k.tanggal_mulai).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-',
+    selesai: k.tanggal_selesai ? new Date(k.tanggal_selesai).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-',
+    lokasi: k.lokasi || '-',
+    jenjang: k.tingkatan ? k.tingkatan.charAt(0).toUpperCase() + k.tingkatan.slice(1) : '-',
+    status: statusLabel[k.status]?.label || k.status,
+  }))
+
+  const exportSubtitle = () => {
+    const scope = tingkatanUser === 'kelompok' ? user?.kelompok?.nama_kelompok
+      : tingkatanUser === 'desa' ? user?.desa?.nama_desa
+      : 'Se-Bekasi Timur'
+    const statusTxt = filter === 'all' ? 'Semua Status' : statusLabel[filter]?.label || filter
+    return `${scope} -- ${statusTxt} -- ${filtered.length} kegiatan`
+  }
+
+  const handleExportPDF = async () => {
+    if (filtered.length === 0) { alert('Tidak ada data untuk diexport.'); return }
+    setExporting(true)
+    try {
+      exportToPDF({
+        title: 'Daftar Kegiatan',
+        subtitle: exportSubtitle(),
+        columns: exportColumns,
+        rows: buildExportData(),
+        fileName: `Daftar-Kegiatan-${new Date().toISOString().slice(0, 10)}`,
+      })
+      if (user) await logAudit(user, 'EXPORT', 'Kegiatan', `PDF -- ${filtered.length} kegiatan`)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleExportExcel = async () => {
+    if (filtered.length === 0) { alert('Tidak ada data untuk diexport.'); return }
+    setExporting(true)
+    try {
+      await exportToExcel({
+        title: 'Daftar Kegiatan',
+        subtitle: exportSubtitle(),
+        columns: exportColumns,
+        rows: buildExportData(),
+        fileName: `Daftar-Kegiatan-${new Date().toISOString().slice(0, 10)}`,
+      })
+      if (user) await logAudit(user, 'EXPORT', 'Kegiatan', `Excel -- ${filtered.length} kegiatan`)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="font-bold text-slate-800">Kegiatan</h2>
           <p className="text-slate-400 text-sm">{data.length} kegiatan total</p>
         </div>
-        {canManage && (
-          <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
-            + Tambah Kegiatan
+        <div className="flex items-center gap-2">
+          <button onClick={handleExportPDF} disabled={exporting}
+            className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
+            📄 PDF
           </button>
-        )}
+          <button onClick={handleExportExcel} disabled={exporting}
+            className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
+            📊 Excel
+          </button>
+          {canManage && (
+            <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
+              + Tambah Kegiatan
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2 items-center">

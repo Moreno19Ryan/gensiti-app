@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { Kegiatan, Absensi } from '@/lib/types'
 import { logAudit } from '@/lib/audit'
 import { canManagePresensi } from '@/lib/roles'
+import { exportToPDF, exportToExcel } from '@/lib/export'
 
 const statusLabel: Record<string, { label: string; color: string }> = {
   upcoming: { label: 'Akan Datang', color: 'bg-blue-100 text-blue-700' },
@@ -37,6 +38,7 @@ export default function PresensiPage() {
   const [absensiMap, setAbsensiMap] = useState<Record<string, Absensi>>({})
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [savingId, setSavingId] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   const loadKegiatan = useCallback(async () => {
     setLoadingKegiatan(true)
@@ -140,6 +142,74 @@ export default function PresensiPage() {
     total: anggotaScope.length,
   }
 
+  // Export rekap kehadiran untuk kegiatan yang sedang dibuka -- daftar semua anggota
+  // dalam cakupan kegiatan tsb beserta status kehadirannya (termasuk yang belum ditandai).
+  const exportColumns = [
+    { header: 'No. Anggota', key: 'no', width: 16 },
+    { header: 'Nama Lengkap', key: 'nama', width: 28 },
+    { header: 'Status Kehadiran', key: 'status', width: 18 },
+  ]
+
+  const buildExportData = () => anggotaScope.map(a => {
+    const status = absensiMap[a.id]?.status
+    return {
+      no: a.nomor_anggota,
+      nama: a.nama_lengkap,
+      status: status ? kehadiranLabel[status]?.label : 'Belum Ditandai',
+    }
+  })
+
+  const exportSummary = () => [
+    { label: 'Hadir', value: `${Object.values(absensiMap).filter(a => a.status === 'hadir').length} orang` },
+    { label: 'Tidak Hadir', value: `${Object.values(absensiMap).filter(a => a.status === 'tidak_hadir').length} orang` },
+    { label: 'Izin', value: `${Object.values(absensiMap).filter(a => a.status === 'izin').length} orang` },
+    { label: 'Sakit', value: `${Object.values(absensiMap).filter(a => a.status === 'sakit').length} orang` },
+    { label: 'Total Anggota', value: `${rekap.total} orang` },
+  ]
+
+  const exportSubtitle = () => {
+    const tgl = selectedKegiatan?.tanggal_mulai
+      ? new Date(selectedKegiatan.tanggal_mulai).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+      : ''
+    return `${selectedKegiatan?.nama_kegiatan || ''}${tgl ? ` -- ${tgl}` : ''}`
+  }
+
+  const handleExportPDF = async () => {
+    if (!selectedKegiatan || anggotaScope.length === 0) { alert('Tidak ada data anggota untuk diexport.'); return }
+    setExporting(true)
+    try {
+      exportToPDF({
+        title: 'Rekap Presensi Kegiatan',
+        subtitle: exportSubtitle(),
+        columns: exportColumns,
+        rows: buildExportData(),
+        summary: exportSummary(),
+        fileName: `Presensi-${selectedKegiatan.nama_kegiatan.replace(/[^a-zA-Z0-9]/g, '-')}`,
+      })
+      if (user) await logAudit(user, 'EXPORT', 'Presensi', `PDF -- ${selectedKegiatan.nama_kegiatan}`, undefined, selectedKegiatan.id)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleExportExcel = async () => {
+    if (!selectedKegiatan || anggotaScope.length === 0) { alert('Tidak ada data anggota untuk diexport.'); return }
+    setExporting(true)
+    try {
+      await exportToExcel({
+        title: 'Rekap Presensi Kegiatan',
+        subtitle: exportSubtitle(),
+        columns: exportColumns,
+        rows: buildExportData(),
+        summary: exportSummary(),
+        fileName: `Presensi-${selectedKegiatan.nama_kegiatan.replace(/[^a-zA-Z0-9]/g, '-')}`,
+      })
+      if (user) await logAudit(user, 'EXPORT', 'Presensi', `Excel -- ${selectedKegiatan.nama_kegiatan}`, undefined, selectedKegiatan.id)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div>
@@ -191,9 +261,21 @@ export default function PresensiPage() {
         </>
       ) : (
         <div className="space-y-3">
-          <button onClick={() => setSelectedKegiatan(null)} className="text-sm text-blue-600 hover:underline font-medium">
-            ← Kembali ke daftar kegiatan
-          </button>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <button onClick={() => setSelectedKegiatan(null)} className="text-sm text-blue-600 hover:underline font-medium">
+              ← Kembali ke daftar kegiatan
+            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={handleExportPDF} disabled={exporting || loadingDetail}
+                className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
+                📄 PDF
+              </button>
+              <button onClick={handleExportExcel} disabled={exporting || loadingDetail}
+                className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
+                📊 Excel
+              </button>
+            </div>
+          </div>
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
             <h3 className="font-semibold text-slate-800">{selectedKegiatan.nama_kegiatan}</h3>
             <p className="text-xs text-slate-400 mt-1">{rekap.hadir} / {rekap.total} anggota hadir</p>
