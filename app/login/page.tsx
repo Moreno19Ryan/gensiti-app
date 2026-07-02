@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { signIn } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 
@@ -51,8 +52,8 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-lg mb-4">
-            <span className="text-2xl font-black text-blue-700">R</span>
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-lg mb-4 p-2">
+            <img src="/icons/icon-512.png" alt="RYZA" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-3xl font-black text-white tracking-tight">RYZA</h1>
           <p className="text-blue-200 mt-1 text-sm">Smart Organization Management System</p>
@@ -94,7 +95,12 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Password</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-sm font-medium text-slate-700">Password</label>
+                <Link href="/lupa-password" className="text-xs text-blue-600 hover:underline font-medium">
+                  Lupa password?
+                </Link>
+              </div>
               <input
                 type="password"
                 value={password}

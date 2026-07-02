@@ -33,6 +33,7 @@ const navItems: NavItem[] = [
   { href: '/catatan-pembinaan', label: 'Catatan Pembinaan', icon: '📝', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], hideForRuyah: true },
   { href: '/notifikasi', label: 'Notifikasi', icon: '🔔', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
   { href: '/organisasi', label: 'Organisasi', icon: '🏛️', roles: ['super_admin'] },
+  { href: '/reset-password-requests', label: 'Reset Password', icon: '🔑', roles: ['super_admin'] },
   { href: '/audit-log', label: 'Audit Log', icon: '📋', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], requiresKvs: true, hideForRuyah: true },
 ]
 
@@ -153,11 +154,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         collapsed ? 'lg:w-16' : 'lg:w-60',
       ].join(' ')}>
 
-        {/* Logo */}
+        {/* Logo -- kotak putih dipertahankan sebagai wadah kontras karena sidebar berlatar
+            biru tua (bg-blue-900); logo asli RYZA sendiri bergradasi biru-teal jadi kurang
+            terlihat kalau ditempel langsung tanpa alas putih. */}
         <div className="px-3 py-4 border-b border-blue-800 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center shrink-0">
-              <span className="text-blue-700 font-black text-lg">R</span>
+            <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center shrink-0 p-1">
+              <img src="/icons/icon-512.png" alt="RYZA" className="w-full h-full object-contain" />
             </div>
             {!collapsed && (
               <div className="min-w-0">

@@ -186,3 +186,19 @@ export interface AuditLog {
   desa_id: string | null
   kelompok_id: string | null
 }
+
+export type ResetPasswordStatus = 'pending' | 'processed' | 'ditolak'
+
+// Permintaan reset password diajukan oleh siapapun (bahkan yang belum login, lewat halaman
+// publik /lupa-password) dan hanya boleh dilihat/diproses oleh Super Admin -- lihat RLS
+// reset_request_insert (public) & reset_request_superadmin (ALL, hanya super_admin).
+export interface ResetPasswordRequest {
+  id: number
+  email: string
+  nama: string
+  status: ResetPasswordStatus
+  created_at: string
+  processed_at: string | null
+  processed_by: string | null
+  notes: string | null
+}

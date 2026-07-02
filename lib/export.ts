@@ -8,6 +8,7 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import ExcelJS from 'exceljs'
+import { RYZA_LOGO_BASE64 } from './logo'
 
 export interface ExportColumn {
   header: string
@@ -42,7 +43,14 @@ export function exportToPDF(opts: ExportOptions) {
   const doc = new jsPDF({ orientation: opts.columns.length > 5 ? 'landscape' : 'portrait', unit: 'mm' })
   const pageWidth = doc.internal.pageSize.getWidth()
 
-  // Kop laporan
+  // Kop laporan -- logo RYZA ditempel di kiri atas, teks org/app name tetap center
+  // supaya rapi walau ada logo. addImage dibungkus try/catch: kalau base64 gagal
+  // dirender karena alasan apapun, laporan tetap tercetak tanpa logo daripada gagal total.
+  try {
+    doc.addImage(RYZA_LOGO_BASE64, 'PNG', 14, 8, 14, 14)
+  } catch {
+    // non-fatal -- lanjut tanpa logo
+  }
   doc.setFontSize(14)
   doc.setFont('helvetica', 'bold')
   doc.text(ORG_NAME, pageWidth / 2, 15, { align: 'center' })
@@ -112,16 +120,29 @@ export async function exportToExcel(opts: ExportOptions) {
   const safeSheetName = (opts.title.replace(/[*?:\\/[\]]/g, '-').trim().slice(0, 31)) || 'Laporan'
   const sheet = workbook.addWorksheet(safeSheetName)
 
-  // Kop
-  sheet.mergeCells(1, 1, 1, opts.columns.length)
-  sheet.getCell(1, 1).value = ORG_NAME
-  sheet.getCell(1, 1).font = { bold: true, size: 14 }
-  sheet.getCell(1, 1).alignment = { horizontal: 'center' }
+  // Kop -- baris 1 dikhususkan untuk logo RYZA (kolom A) supaya tidak menimpa teks org/app
+  // name yang di-merge & center di baris 2-3 (baris judul digeser turun 1 dibanding
+  // sebelumnya). Row 1 dibuat pendek/kosong secara teks, hanya berisi gambar mengambang.
+  // Dibungkus try/catch: kalau addImage gagal karena alasan apapun, laporan tetap
+  // ter-generate tanpa logo daripada gagal total.
+  try {
+    const imageId = workbook.addImage({ base64: RYZA_LOGO_BASE64, extension: 'png' })
+    sheet.addImage(imageId, { tl: { col: 0.15, row: 0.1 }, ext: { width: 34, height: 34 } })
+    sheet.getRow(1).height = 26
+  } catch {
+    // non-fatal -- lanjut tanpa logo
+  }
+  sheet.addRow([])
 
   sheet.mergeCells(2, 1, 2, opts.columns.length)
-  sheet.getCell(2, 1).value = opts.title + (opts.subtitle ? ` -- ${opts.subtitle}` : '')
-  sheet.getCell(2, 1).font = { bold: true, size: 11 }
+  sheet.getCell(2, 1).value = ORG_NAME
+  sheet.getCell(2, 1).font = { bold: true, size: 14 }
   sheet.getCell(2, 1).alignment = { horizontal: 'center' }
+
+  sheet.mergeCells(3, 1, 3, opts.columns.length)
+  sheet.getCell(3, 1).value = opts.title + (opts.subtitle ? ` -- ${opts.subtitle}` : '')
+  sheet.getCell(3, 1).font = { bold: true, size: 11 }
+  sheet.getCell(3, 1).alignment = { horizontal: 'center' }
 
   sheet.addRow([])
 
