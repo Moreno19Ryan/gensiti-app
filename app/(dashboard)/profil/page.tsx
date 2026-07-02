@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
+import { authFetch } from '@/lib/auth'
+import { Absensi } from '@/lib/types'
 
 interface AnggotaRecord {
   id: string
@@ -24,7 +26,7 @@ export default function ProfilPage() {
   const { user, refresh } = useUser()
   const isSuperAdmin = user?.role?.tingkatan === 'super_admin'
 
-  const [tab, setTab] = useState<'akun' | 'datadiri' | 'password'>('akun')
+  const [tab, setTab] = useState<'akun' | 'datadiri' | 'presensi' | 'password'>('akun')
   const [form, setForm] = useState({ nama_lengkap: '', no_hp: '' })
   const [diriForm, setDiriForm] = useState({
     tempat_lahir: '', tanggal_lahir: '', jenis_kelamin: '',
@@ -36,11 +38,13 @@ export default function ProfilPage() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const [anggotaData, setAnggotaData] = useState<AnggotaRecord | null>(null)
+  const [riwayatPresensi, setRiwayatPresensi] = useState<Absensi[]>([])
+  const [loadingRiwayat, setLoadingRiwayat] = useState(false)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const loadAnggota = async (userId: string) => {
-    const res = await fetch(`/api/users?userId=${userId}`)
+    const res = await authFetch(`/api/users?userId=${userId}`)
     const json = await res.json()
     if (json.data) {
       const data = json.data as AnggotaRecord & { nama_orang_tua?: string }
@@ -60,14 +64,32 @@ export default function ProfilPage() {
     }
   }
 
+  const loadRiwayatPresensi = useCallback(async (userId: string) => {
+    setLoadingRiwayat(true)
+    const { data: anggota } = await supabase.from('anggota').select('id').eq('user_id', userId).maybeSingle()
+    if (!anggota) {
+      setRiwayatPresensi([])
+      setLoadingRiwayat(false)
+      return
+    }
+    const { data } = await supabase
+      .from('absensi')
+      .select('*, kegiatan:kegiatan_id(id, nama_kegiatan)')
+      .eq('anggota_id', anggota.id)
+      .order('waktu_absen', { ascending: false })
+    setRiwayatPresensi((data as Absensi[]) || [])
+    setLoadingRiwayat(false)
+  }, [])
+
   useEffect(() => {
     if (!user) return
     setForm({ nama_lengkap: user.nama_lengkap || '', no_hp: user.no_hp || '' })
-    const url = (user as any).avatar_url || (user as any).foto_url || null
+    const url = user.avatar_url || user.foto_url || null
     setAvatarUrl(url)
 
     if (!isSuperAdmin) {
       loadAnggota(user.id)
+      loadRiwayatPresensi(user.id)
     }
   }, [user])
 
@@ -78,7 +100,7 @@ export default function ProfilPage() {
     try {
       const body: Record<string, unknown> = { id: user.id, no_hp: form.no_hp }
       if (!isSuperAdmin) body.nama_lengkap = form.nama_lengkap
-      const res = await fetch('/api/users', {
+      const res = await authFetch('/api/users', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -102,7 +124,7 @@ export default function ProfilPage() {
     setSaving(true)
     setMsg(null)
     try {
-      const res = await fetch('/api/users', {
+      const res = await authFetch('/api/users', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -199,7 +221,7 @@ export default function ProfilPage() {
     const publicUrl = urlData.publicUrl + '?t=' + Date.now()
 
     // Simpan ke DB via API (service role, bypass RLS)
-    const res = await fetch('/api/users', {
+    const res = await authFetch('/api/users', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: user.id, avatar_url: publicUrl }),
@@ -225,6 +247,7 @@ export default function ProfilPage() {
   const tabs = [
     { key: 'akun' as const, label: 'Akun' },
     ...(!isSuperAdmin ? [{ key: 'datadiri' as const, label: 'Data Diri' }] : []),
+    ...(!isSuperAdmin ? [{ key: 'presensi' as const, label: 'Riwayat Presensi' }] : []),
     { key: 'password' as const, label: 'Password' },
   ]
 
@@ -452,6 +475,45 @@ export default function ProfilPage() {
                 className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition">
                 {saving ? 'Menyimpan...' : 'Simpan Data Diri'}
               </button>
+            </div>
+          )}
+
+          {tab === 'presensi' && !isSuperAdmin && (
+            <div className="space-y-3">
+              {loadingRiwayat ? (
+                <div className="text-center py-8 text-slate-400">
+                  <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                </div>
+              ) : riwayatPresensi.length === 0 ? (
+                <div className="text-center py-8 text-slate-400">
+                  <p className="text-sm">Belum ada riwayat presensi</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {riwayatPresensi.map(r => {
+                    const badge: Record<string, string> = {
+                      hadir: 'bg-green-100 text-green-700',
+                      tidak_hadir: 'bg-red-100 text-red-600',
+                      izin: 'bg-amber-100 text-amber-700',
+                      sakit: 'bg-purple-100 text-purple-700',
+                    }
+                    const label: Record<string, string> = {
+                      hadir: 'Hadir', tidak_hadir: 'Tidak Hadir', izin: 'Izin', sakit: 'Sakit',
+                    }
+                    return (
+                      <div key={r.id} className="flex items-center justify-between gap-3 py-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-slate-700 truncate">{r.kegiatan?.nama_kegiatan || 'Kegiatan'}</p>
+                          <p className="text-xs text-slate-400">{r.waktu_absen ? new Date(r.waktu_absen).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}</p>
+                        </div>
+                        {r.status && (
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${badge[r.status]}`}>{label[r.status]}</span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )}
 

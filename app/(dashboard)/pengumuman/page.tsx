@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { Pengumuman } from '@/lib/types'
 import Modal from '@/components/Modal'
 import { logAudit } from '@/lib/audit'
+import { canManageMembers } from '@/lib/roles'
 
 interface DesaOpt { id: string; nama_desa: string }
 interface KelompokOpt { id: string; nama_kelompok: string; desa_id: string }
@@ -56,11 +57,34 @@ export default function PengumumanPage() {
     })
   }, [loadData])
 
-  const canCreate = ['super_admin', 'daerah', 'desa'].includes(user?.role?.tingkatan || '')
+  // Ketua/Wakil Ketua di semua jenjang (termasuk Kelompok) dan Super Admin boleh buat pengumuman.
+  // Sebelumnya pengurus Kelompok tidak bisa membuat pengumuman untuk kelompoknya sendiri —
+  // diperbaiki agar konsisten dengan modul lain yang berbasis peran fungsional.
+  const canCreate = canManageMembers(user)
+
+  // Hanya Super Admin dan Daerah yang boleh memilih desa/kelompok manapun serta target
+  // "Semua"/"Daerah". Pengurus Desa/Kelompok dikunci ke scope & jangkauan wewenangnya sendiri —
+  // RLS tidak memvalidasi kolom 'tingkatan', jadi pembatasan ini penting dilakukan di UI.
+  const tingkatanUser = user?.role?.tingkatan
+  const canPickScope = tingkatanUser === 'super_admin' || tingkatanUser === 'daerah'
+  const tingkatanOptions =
+    tingkatanUser === 'kelompok' ? [{ value: 'kelompok', label: 'Kelompok' }]
+    : tingkatanUser === 'desa' ? [{ value: 'desa', label: 'Desa' }, { value: 'kelompok', label: 'Kelompok' }]
+    : [
+        { value: 'semua', label: 'Semua' },
+        { value: 'daerah', label: 'Daerah' },
+        { value: 'desa', label: 'Desa' },
+        { value: 'kelompok', label: 'Kelompok' },
+      ]
 
   const openAdd = () => {
     setEditTarget(null)
-    setForm({ ...emptyForm, desa_id: user?.desa_id || '' })
+    setForm({
+      ...emptyForm,
+      tingkatan: tingkatanOptions[0]?.value || 'semua',
+      desa_id: user?.desa_id || '',
+      kelompok_id: user?.kelompok_id || '',
+    })
     setModalOpen(true)
   }
 
@@ -107,12 +131,15 @@ export default function PengumumanPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Hapus pengumuman ini?')) return
+    const target = data.find(p => p.id === id)
     await supabase.from('pengumuman').delete().eq('id', id)
+    if (user) await logAudit(user, 'DELETE', 'Pengumuman', target?.judul || id, undefined, id)
     loadData()
   }
 
   const toggleActive = async (p: Pengumuman) => {
     await supabase.from('pengumuman').update({ is_active: !p.is_active }).eq('id', p.id)
+    if (user) await logAudit(user, p.is_active ? 'DEACTIVATE' : 'ACTIVATE', 'Pengumuman', p.judul, undefined, p.id)
     loadData()
   }
 
@@ -124,6 +151,13 @@ export default function PengumumanPage() {
     daerah: 'bg-purple-100 text-purple-700',
     desa: 'bg-green-100 text-green-700',
     kelompok: 'bg-orange-100 text-orange-700',
+  }
+
+  // Badge status approval PPG -- hanya relevan utk pengumuman tingkat Daerah.
+  const approvalLabel: Record<string, { label: string; color: string }> = {
+    menunggu_ppg: { label: '⏳ Menunggu Persetujuan PPG', color: 'bg-amber-100 text-amber-700' },
+    disetujui: { label: '✓ Disetujui PPG', color: 'bg-green-100 text-green-700' },
+    ditolak: { label: '✕ Ditolak PPG', color: 'bg-red-100 text-red-600' },
   }
 
   const filteredData = data
@@ -194,9 +228,19 @@ export default function PengumumanPage() {
                       {p.tingkatan || 'semua'}
                     </span>
                     {!p.is_active && <span className="px-2 py-0.5 bg-slate-100 text-slate-400 rounded-full text-xs">Nonaktif</span>}
+                    {p.tingkatan === 'daerah' && (
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${approvalLabel[p.status_approval]?.color}`}>
+                        {approvalLabel[p.status_approval]?.label}
+                      </span>
+                    )}
                   </div>
                   <p className="text-slate-500 text-sm line-clamp-2">{p.isi}</p>
                   <p className="text-slate-400 text-xs mt-2">{fmt(p.tanggal_publish)}</p>
+                  {p.tingkatan === 'daerah' && p.status_approval === 'ditolak' && p.catatan_ppg && (
+                    <div className="mt-2 p-2 bg-red-50 border border-red-100 rounded-lg text-xs text-red-600">
+                      <span className="font-medium">Catatan PPG:</span> {p.catatan_ppg}
+                    </div>
+                  )}
                 </div>
                 {canCreate && (
                   <div className="flex gap-2 shrink-0">
@@ -249,17 +293,16 @@ export default function PengumumanPage() {
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Target</label>
               <select value={form.tingkatan} onChange={e => set('tingkatan', e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="semua">Semua</option>
-                <option value="daerah">Daerah</option>
-                <option value="desa">Desa</option>
-                <option value="kelompok">Kelompok</option>
+                disabled={!canPickScope && tingkatanOptions.length === 1}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed">
+                {tingkatanOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Desa</label>
               <select value={form.desa_id} onChange={e => set('desa_id', e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                disabled={!canPickScope}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed">
                 <option value="">-- Semua --</option>
                 {desaList.map(d => <option key={d.id} value={d.id}>{d.nama_desa}</option>)}
               </select>
@@ -267,7 +310,8 @@ export default function PengumumanPage() {
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Kelompok</label>
               <select value={form.kelompok_id} onChange={e => set('kelompok_id', e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                disabled={!canPickScope && tingkatanUser === 'kelompok'}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed">
                 <option value="">-- Semua --</option>
                 {kelompokList.filter(k => !form.desa_id || k.desa_id === form.desa_id).map(k => (
                   <option key={k.id} value={k.id}>{k.nama_kelompok}</option>

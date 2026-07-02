@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { logAudit } from '@/lib/audit'
+import { authFetch } from '@/lib/auth'
+import { canManageMembers as checkCanManageMembers } from '@/lib/roles'
 import Modal from '@/components/Modal'
 
 interface Member {
@@ -256,7 +258,7 @@ export default function PenggunaPage() {
       let userId = editTarget?.id
 
       if (!editTarget) {
-        const res = await fetch('/api/users', {
+        const res = await authFetch('/api/users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -306,7 +308,7 @@ export default function PenggunaPage() {
           body.alasan_arsip = alasan
         }
 
-        const res = await fetch('/api/users', {
+        const res = await authFetch('/api/users', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
@@ -378,7 +380,7 @@ export default function PenggunaPage() {
       alert('Akun Super Admin tidak dapat dinonaktifkan.')
       return
     }
-    await fetch('/api/users', {
+    await authFetch('/api/users', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: m.id, nama_lengkap: m.nama_lengkap, is_active: !m.is_active }),
@@ -414,10 +416,8 @@ export default function PenggunaPage() {
   const isSuperAdmin = user?.role?.tingkatan === 'super_admin'
 
   // Hanya Ketua Muda-Mudi dan Wakil Ketua (semua scope) yang bisa mengelola anggota.
-  // Role lain (Sekretaris, Bendahara, Kemandirian, Keputrian, dll) hanya bisa melihat daftar.
-  const canManageMembers = isSuperAdmin || (
-    !!user?.role && user.role.nama_role.toLowerCase().includes('ketua')
-  )
+  // Role lain (Sekretaris, Bendahara, Kemandirian, Keputrian, dll) dan ru'yah biasa hanya bisa melihat daftar.
+  const canManageMembers = checkCanManageMembers(user)
 
   // Cek apakah user bisa edit/tambah member tertentu — hanya Ketua/Wakil sesuai scope
   const canActOn = (m: Member): boolean => {

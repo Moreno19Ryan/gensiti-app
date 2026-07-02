@@ -31,3 +31,15 @@ export async function getSession() {
   const { data: { session } } = await supabase.auth.getSession()
   return session
 }
+
+// Wrapper fetch yang otomatis menyisipkan access token sesi saat ini sebagai Bearer token.
+// Dipakai untuk memanggil API route internal (mis. /api/users) yang memverifikasi identitas
+// pemanggil di server sebelum menggunakan service role key.
+export async function authFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+  const session = await getSession()
+  const headers = new Headers(init.headers)
+  if (session?.access_token) {
+    headers.set('Authorization', `Bearer ${session.access_token}`)
+  }
+  return fetch(input, { ...init, headers })
+}

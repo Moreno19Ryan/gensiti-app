@@ -17,20 +17,24 @@ export default function NotifikasiPage() {
   const [data, setData] = useState<Notifikasi[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    if (user) loadData()
-  }, [user])
-
   const loadData = async () => {
-    const tingkatan = user?.role?.tingkatan || ''
+    // Jangan query sebelum user & role siap — mencegah filter PostgREST yang tidak valid
+    // (target_role.eq., target_user.eq.undefined) yang bisa gagal senyap atau salah hasil.
+    if (!user?.id || !user?.role?.tingkatan) return
+    const tingkatan = user.role.tingkatan
     const { data: rows } = await supabase
       .from('notifikasi')
       .select('*')
-      .or(`target_role.eq.all,target_role.eq.${tingkatan},target_user.eq.${user?.id}`)
+      .or(`target_role.eq.all,target_role.eq.${tingkatan},target_user.eq.${user.id}`)
       .order('created_at', { ascending: false })
     setData(rows || [])
     setLoading(false)
   }
+
+  useEffect(() => {
+    if (user) loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user])
 
   const markRead = async (id: number) => {
     await supabase

@@ -9,13 +9,84 @@ function adminClient() {
   )
 }
 
+interface Caller {
+  id: string
+  tingkatan: string | null
+  nama_role: string | null
+  desa_id: string | null
+  kelompok_id: string | null
+}
+
+// Memverifikasi bearer token dari header Authorization dan mengambil profil + role pemanggil.
+// Semua endpoint di file ini memakai service role key (bypass RLS), jadi verifikasi ini WAJIB
+// dilakukan manual di server — tanpa ini siapapun bisa memanggil endpoint tanpa login sama sekali.
+async function getCaller(req: NextRequest, supabaseAdmin: ReturnType<typeof adminClient>): Promise<Caller | null> {
+  const authHeader = req.headers.get('authorization') || ''
+  const token = authHeader.replace(/^Bearer\s+/i, '')
+  if (!token) return null
+
+  const { data: userData, error: userErr } = await supabaseAdmin.auth.getUser(token)
+  if (userErr || !userData.user) return null
+
+  const { data: profile } = await supabaseAdmin
+    .from('users')
+    .select('id, desa_id, kelompok_id, is_active, roles:role_id(nama_role, tingkatan)')
+    .eq('id', userData.user.id)
+    .single()
+
+  if (!profile || profile.is_active === false) return null
+
+  const role = profile.roles as { nama_role?: string; tingkatan?: string } | { nama_role?: string; tingkatan?: string }[] | null
+  const roleObj = Array.isArray(role) ? role[0] : role
+
+  return {
+    id: profile.id,
+    tingkatan: roleObj?.tingkatan || null,
+    nama_role: roleObj?.nama_role || null,
+    desa_id: profile.desa_id,
+    kelompok_id: profile.kelompok_id,
+  }
+}
+
+// Hanya Ketua/Wakil Ketua (semua scope) dan Super Admin yang boleh mengelola anggota lain.
+function canManageMembers(caller: Caller): boolean {
+  if (caller.tingkatan === 'super_admin') return true
+  return !!caller.nama_role && caller.nama_role.toLowerCase().includes('ketua')
+}
+
+// Cek apakah caller berwenang bertindak atas target berdasarkan scope desa/kelompok.
+function canActOnScope(caller: Caller, targetDesaId: string | null, targetKelompokId: string | null): boolean {
+  if (!canManageMembers(caller)) return false
+  if (caller.tingkatan === 'super_admin' || caller.tingkatan === 'daerah') return true
+  if (caller.tingkatan === 'desa') return targetDesaId === caller.desa_id
+  if (caller.tingkatan === 'kelompok') return targetKelompokId === caller.kelompok_id
+  return false
+}
+
+// Super Admin adalah akun tunggal & mutlak — tidak boleh ada akun kedua yang dibuat
+// dengan role bertingkatan super_admin, oleh siapapun (termasuk sesama Super Admin),
+// lewat jalur aplikasi ini. Perubahan role sistem hanya boleh terjadi langsung di database.
+async function isSuperAdminRole(supabaseAdmin: ReturnType<typeof adminClient>, roleId: string | null | undefined): Promise<boolean> {
+  if (!roleId) return false
+  const { data } = await supabaseAdmin.from('roles').select('tingkatan').eq('id', roleId).single()
+  return data?.tingkatan === 'super_admin'
+}
+
 // GET: Ambil data anggota by userId (server-side, bypass RLS)
+// Diizinkan untuk: pemilik data sendiri, atau pengguna yang berwenang mengelola anggota (Ketua/Wakil/Super Admin).
 export async function GET(req: NextRequest) {
   try {
     const supabaseAdmin = adminClient()
+    const caller = await getCaller(req, supabaseAdmin)
+    if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
     const { searchParams } = new URL(req.url)
     const userId = searchParams.get('userId')
     if (!userId) return NextResponse.json({ error: 'userId wajib diisi' }, { status: 400 })
+
+    if (userId !== caller.id && !canManageMembers(caller)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
 
     const { data, error } = await supabaseAdmin
       .from('anggota')
@@ -33,9 +104,14 @@ export async function GET(req: NextRequest) {
 }
 
 // POST: Buat user baru + anggota record
+// Hanya boleh dipanggil oleh Ketua/Wakil Ketua/Super Admin.
 export async function POST(req: NextRequest) {
   try {
     const supabaseAdmin = adminClient()
+    const caller = await getCaller(req, supabaseAdmin)
+    if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!canManageMembers(caller)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
     const {
       email, password, nama_lengkap, no_hp,
       role_id, desa_id, kelompok_id,
@@ -50,6 +126,16 @@ export async function POST(req: NextRequest) {
 
     if (!email || !password || !nama_lengkap) {
       return NextResponse.json({ error: 'Email, password, dan nama wajib diisi' }, { status: 400 })
+    }
+
+    // Admin desa/kelompok hanya boleh membuat user dalam scope-nya sendiri
+    if (!canActOnScope(caller, desa_id || null, kelompok_id || null)) {
+      return NextResponse.json({ error: 'Anda tidak berwenang membuat pengguna di luar scope Anda.' }, { status: 403 })
+    }
+
+    // Super Admin adalah akun tunggal mutlak — tidak boleh ada user baru dibuat dengan role ini.
+    if (await isSuperAdminRole(supabaseAdmin, role_id)) {
+      return NextResponse.json({ error: 'Tidak dapat membuat pengguna dengan role Super Admin.' }, { status: 403 })
     }
 
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -114,6 +200,9 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const supabaseAdmin = adminClient()
+    const caller = await getCaller(req, supabaseAdmin)
+    if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
     const {
       id, nama_lengkap, no_hp, role_id, desa_id, kelompok_id, is_active, password,
       avatar_url,
@@ -129,13 +218,25 @@ export async function PATCH(req: NextRequest) {
 
     if (!id) return NextResponse.json({ error: 'ID wajib diisi' }, { status: 400 })
 
-    // Proteksi super_admin: cek role target sebelum mengizinkan perubahan
+    // Proteksi super_admin: cek role & scope target sebelum mengizinkan perubahan
     const { data: targetUserRole } = await supabaseAdmin
       .from('users')
-      .select('roles:role_id(tingkatan)')
+      .select('desa_id, kelompok_id, roles:role_id(tingkatan)')
       .eq('id', id)
       .single()
-    const isTargetSuperAdmin = (targetUserRole?.roles as any)?.tingkatan === 'super_admin'
+    const targetRole = targetUserRole?.roles as { tingkatan?: string } | { tingkatan?: string }[] | null
+    const isTargetSuperAdmin = (Array.isArray(targetRole) ? targetRole[0]?.tingkatan : targetRole?.tingkatan) === 'super_admin'
+
+    const isSelf = id === caller.id
+    // Otorisasi: harus salah satu dari — mengubah data diri sendiri, atau berwenang
+    // mengelola anggota lain dalam scope-nya (Ketua/Wakil/Super Admin sesuai desa/kelompok).
+    if (!isSelf) {
+      const targetDesaId = targetUserRole?.desa_id ?? null
+      const targetKelompokId = targetUserRole?.kelompok_id ?? null
+      if (!canActOnScope(caller, targetDesaId, targetKelompokId)) {
+        return NextResponse.json({ error: 'Anda tidak berwenang mengubah pengguna ini.' }, { status: 403 })
+      }
+    }
 
     if (isTargetSuperAdmin) {
       // Super admin HANYA boleh update: no_hp, avatar_url, dan password
@@ -150,6 +251,19 @@ export async function PATCH(req: NextRequest) {
       if (hasProtectedFields) {
         return NextResponse.json({ error: 'Profil Super Admin tidak dapat diubah.' }, { status: 403 })
       }
+    }
+
+    // Field administratif (role, scope, status akun) hanya boleh diubah oleh yang berwenang
+    // mengelola anggota — mencegah pengguna menaikkan hak aksesnya sendiri lewat halaman profil.
+    const hasAdminFields = role_id !== undefined || is_active !== undefined || archive !== undefined
+    if (hasAdminFields && !canManageMembers(caller)) {
+      return NextResponse.json({ error: 'Anda tidak berwenang mengubah role atau status akun.' }, { status: 403 })
+    }
+
+    // Super Admin adalah akun tunggal mutlak — role_id siapapun tidak boleh diarahkan
+    // menjadi Super Admin lewat aplikasi ini, oleh siapapun termasuk Super Admin itu sendiri.
+    if (role_id !== undefined && await isSuperAdminRole(supabaseAdmin, role_id)) {
+      return NextResponse.json({ error: 'Tidak dapat mengubah role pengguna menjadi Super Admin.' }, { status: 403 })
     }
 
     if (password) {

@@ -5,6 +5,7 @@ import { useUser } from '@/lib/user-context'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { AuditLog } from '@/lib/types'
+import { canManageMembers } from '@/lib/roles'
 
 export default function AuditLogPage() {
   const { user } = useUser()
@@ -13,17 +14,9 @@ export default function AuditLogPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
 
-  const isKvsOrAdmin = user?.role?.tingkatan === 'super_admin' || /Ketua|Wakil/i.test(user?.role?.nama_role || '')
-
-  useEffect(() => {
-    if (!user) return
-    if (!isKvsOrAdmin) {
-      router.replace('/dashboard')
-      return
-    }
-    loadData()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user])
+  // Pakai helper terpusat lib/roles.ts (Ketua/Wakil semua jenjang + Super Admin) alih-alih
+  // regex nama_role sendiri, agar konsisten dan tidak drift jika kriteria di roles.ts berubah.
+  const isKvsOrAdmin = canManageMembers(user)
 
   const loadData = async () => {
     if (!user) return
@@ -43,6 +36,16 @@ export default function AuditLogPage() {
     setData(rows || [])
     setLoading(false)
   }
+
+  useEffect(() => {
+    if (!user) return
+    if (!isKvsOrAdmin) {
+      router.replace('/dashboard')
+      return
+    }
+    loadData()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user])
 
   const filtered = data.filter(a =>
     a.action?.toLowerCase().includes(search.toLowerCase()) ||

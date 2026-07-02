@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase' // dipakai untuk stats queries
+import { isPengurus } from '@/lib/roles'
 
 interface Stats {
   anggota: number
@@ -28,12 +29,16 @@ export default function DashboardPage() {
     try {
       const isSuper = user?.role?.tingkatan === 'super_admin'
       const isDaerah = user?.role?.tingkatan === 'daerah'
+      // PPG mengawasi seluruh Bekasi Timur (read-only) -- statistiknya harus lintas
+      // Desa/Kelompok seperti Daerah/Super Admin, bukan ter-filter ke scope tertentu
+      // (PPG tidak punya desa_id/kelompok_id).
+      const isPPGUser = user?.role?.tingkatan === 'ppg'
 
       let anggotaQuery = supabase.from('anggota').select('id', { count: 'exact', head: true }).eq('status', 'aktif')
       let kegiatanQuery = supabase.from('kegiatan').select('id', { count: 'exact', head: true }).in('status', ['upcoming', 'ongoing'])
       let keuanganQuery = supabase.from('keuangan').select('jenis, jumlah')
 
-      if (!isSuper && !isDaerah) {
+      if (!isSuper && !isDaerah && !isPPGUser) {
         if (user?.desa_id) {
           anggotaQuery = anggotaQuery.eq('desa_id', user.desa_id)
           kegiatanQuery = kegiatanQuery.eq('desa_id', user.desa_id)
@@ -93,15 +98,33 @@ export default function DashboardPage() {
     return Math.min(score, 100)
   })()
 
-  const healthColor = healthScore >= 70 ? 'text-emerald-400' : healthScore >= 40 ? 'text-yellow-400' : 'text-red-400'
   const healthBg = healthScore >= 70 ? 'bg-emerald-500' : healthScore >= 40 ? 'bg-yellow-500' : 'bg-red-500'
   const healthLabel = healthScore >= 70 ? 'Sehat' : healthScore >= 40 ? 'Perlu Perhatian' : 'Kritis'
 
   const isSuper = user?.role?.tingkatan === 'super_admin'
+  const isPPGUser = user?.role?.tingkatan === 'ppg'
 
-  // Tampilkan Health Score untuk semua pengurus (kecuali anggota biasa)
-  const showHealthScore = isSuper || (!!user?.role && user.role.nama_role !== 'Anggota')
+  // Tampilkan Health Score untuk semua pengurus (ru'yah biasa & PPG tidak perlu lihat ini --
+  // PPG bukan pengurus operasional, lihat isPengurus() di lib/roles.ts)
+  const showHealthScore = isPengurus(user)
 
+  const quickActions = isPPGUser
+    ? [
+        { href: '/ppg', label: 'Dashboard PPG', icon: '🛡️', color: 'hover:bg-purple-50 hover:border-purple-200' },
+        { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200' },
+        { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200' },
+        { href: '/catatan-pembinaan', label: 'Catatan Pembinaan', icon: '📝', color: 'hover:bg-emerald-50 hover:border-emerald-200' },
+      ]
+    : [
+        { href: '/anggota', label: 'Data Pengguna', icon: '👥', color: 'hover:bg-blue-50 hover:border-blue-200' },
+        { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200' },
+        { href: '/keuangan', label: 'Keuangan', icon: '💰', color: 'hover:bg-emerald-50 hover:border-emerald-200' },
+        { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200' },
+      ]
+
+  // PPG bukan pengurus operasional -- tidak perlu lihat data finansial mentah (Total
+  // Pemasukan/Pengeluaran) ataupun Health Score di dashboard umum ini. Cukup tampilkan
+  // Anggota Aktif se-Bekasi Timur; detail approval & ringkasan lengkap ada di /ppg.
   const statCards = [
     {
       label: 'Pengguna Online',
@@ -117,20 +140,24 @@ export default function DashboardPage() {
       icon: '📅',
       color: 'bg-indigo-500',
     },
-    {
-      label: showHealthScore ? 'Health Score' : 'Total Pemasukan',
-      value: loading ? '...' : showHealthScore ? `${healthScore}%` : formatRupiah(stats.pemasukan),
-      sub: showHealthScore ? healthLabel : 'Total masuk',
-      icon: showHealthScore ? '❤️' : '💰',
-      color: showHealthScore ? healthBg : 'bg-emerald-500',
-    },
-    {
-      label: showHealthScore ? 'Anggota Aktif' : 'Total Pengeluaran',
-      value: loading ? '...' : showHealthScore ? stats.anggota.toLocaleString('id-ID') : formatRupiah(stats.pengeluaran),
-      sub: showHealthScore ? 'Terdaftar & aktif' : 'Total keluar',
-      icon: showHealthScore ? '👥' : '💸',
-      color: showHealthScore ? 'bg-violet-500' : 'bg-red-500',
-    },
+    isPPGUser
+      ? { label: 'Ru\'yah Aktif', value: loading ? '...' : stats.anggota.toLocaleString('id-ID'), sub: 'Se-Bekasi Timur', icon: '👥', color: 'bg-violet-500' }
+      : {
+          label: showHealthScore ? 'Health Score' : 'Total Pemasukan',
+          value: loading ? '...' : showHealthScore ? `${healthScore}%` : formatRupiah(stats.pemasukan),
+          sub: showHealthScore ? healthLabel : 'Total masuk',
+          icon: showHealthScore ? '❤️' : '💰',
+          color: showHealthScore ? healthBg : 'bg-emerald-500',
+        },
+    isPPGUser
+      ? { label: 'Dashboard PPG', value: 'Lihat', sub: 'Persetujuan & pengawasan', icon: '🛡️', color: 'bg-purple-500' }
+      : {
+          label: showHealthScore ? 'Anggota Aktif' : 'Total Pengeluaran',
+          value: loading ? '...' : showHealthScore ? stats.anggota.toLocaleString('id-ID') : formatRupiah(stats.pengeluaran),
+          sub: showHealthScore ? 'Terdaftar & aktif' : 'Total keluar',
+          icon: showHealthScore ? '👥' : '💸',
+          color: showHealthScore ? 'bg-violet-500' : 'bg-red-500',
+        },
   ]
 
   return (
@@ -168,12 +195,7 @@ export default function DashboardPage() {
       <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100">
         <h3 className="font-semibold text-slate-700 mb-4">Akses Cepat</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { href: '/anggota', label: 'Data Pengguna', icon: '👥', color: 'hover:bg-blue-50 hover:border-blue-200' },
-            { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200' },
-            { href: '/keuangan', label: 'Keuangan', icon: '💰', color: 'hover:bg-emerald-50 hover:border-emerald-200' },
-            { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200' },
-          ].map((item) => (
+          {quickActions.map((item) => (
             <a
               key={item.href}
               href={item.href}

@@ -1,4 +1,6 @@
-export type Tingkatan = 'super_admin' | 'daerah' | 'desa' | 'kelompok'
+export type Tingkatan = 'super_admin' | 'daerah' | 'desa' | 'kelompok' | 'ppg'
+
+export type StatusApproval = 'menunggu_ppg' | 'disetujui' | 'ditolak'
 
 export interface UserProfile {
   id: string
@@ -54,6 +56,13 @@ export interface Kegiatan {
   dibuat_oleh: string | null
   status: 'upcoming' | 'ongoing' | 'selesai'
   created_at: string
+  kode_kegiatan: string | null
+  kode_presensi_aktif: string | null
+  kode_presensi_expired_at: string | null
+  status_approval: StatusApproval
+  approved_by: string | null
+  approved_at: string | null
+  catatan_ppg: string | null
 }
 
 export interface Keuangan {
@@ -69,6 +78,7 @@ export interface Keuangan {
   dibuat_oleh: string | null
   bukti_url: string | null
   created_at: string
+  nomor_transaksi: string | null
 }
 
 export interface Pengumuman {
@@ -82,6 +92,43 @@ export interface Pengumuman {
   tanggal_publish: string
   is_active: boolean
   created_at: string
+  status_approval: StatusApproval
+  approved_by: string | null
+  approved_at: string | null
+  catatan_ppg: string | null
+}
+
+export interface CatatanPembinaan {
+  id: string
+  dibuat_oleh: string
+  target_desa_id: string | null
+  target_kelompok_id: string | null
+  judul: string
+  isi: string
+  created_at: string
+  desa?: { id: string; nama_desa: string } | null
+  kelompok?: { id: string; nama_kelompok: string } | null
+}
+
+export interface Absensi {
+  id: string
+  kegiatan_id: string | null
+  anggota_id: string | null
+  status: 'hadir' | 'tidak_hadir' | 'izin' | 'sakit' | null
+  keterangan: string | null
+  waktu_absen: string | null
+  created_at: string | null
+  anggota?: {
+    id: string
+    nama_lengkap: string
+    nomor_anggota: string
+    kelompok_id: string | null
+    desa_id: string | null
+  } | null
+  kegiatan?: {
+    id: string
+    nama_kegiatan: string
+  } | null
 }
 
 export interface Notifikasi {
@@ -98,6 +145,31 @@ export interface Notifikasi {
   created_at: string
 }
 
+export type EmailTipe = 'pengumuman' | 'kegiatan' | 'reminder' | 'approval_ppg'
+export type EmailStatus = 'pending' | 'sent' | 'failed'
+
+export interface EmailLog {
+  id: string
+  recipient: string
+  recipient_user_id: string | null
+  subject: string
+  tipe: EmailTipe
+  reference_id: string | null
+  status: EmailStatus
+  error_message: string | null
+  created_at: string
+  sent_at: string | null
+}
+
+export interface EmailPreferensi {
+  user_id: string
+  pengumuman: boolean
+  kegiatan: boolean
+  reminder: boolean
+  approval_ppg: boolean
+  updated_at: string
+}
+
 export interface AuditLog {
   id: number
   user_id: string | null
@@ -111,4 +183,6 @@ export interface AuditLog {
   ip_address: string | null
   status: string
   created_at: string
+  desa_id: string | null
+  kelompok_id: string | null
 }

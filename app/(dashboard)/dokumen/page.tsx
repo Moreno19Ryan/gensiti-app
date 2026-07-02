@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { logAudit } from '@/lib/audit'
+import { isRuyahBiasa, canManageMembers } from '@/lib/roles'
 import Modal from '@/components/Modal'
 
 interface Dokumen {
@@ -22,6 +23,7 @@ interface Dokumen {
   desa: { nama_desa: string } | null
   kelompok: { nama_kelompok: string } | null
   uploader: { nama_lengkap: string } | null
+  nomor_dokumen: string | null
 }
 
 const KATEGORI = ['Administrasi', 'Keuangan', 'Kegiatan', 'Pengumuman', 'Laporan', 'Lainnya']
@@ -82,9 +84,17 @@ export default function DokumenPage() {
       .order('created_at', { ascending: false })
 
     const t = user?.role?.tingkatan
-    if (t !== 'super_admin' && t !== 'daerah') {
+    // PPG melihat lintas Desa/Kelompok se-Bekasi Timur -- disejajarkan dengan super_admin/daerah,
+    // bukan diam-diam lolos filter karena kelompok_id/desa_id-nya kebetulan NULL.
+    if (t !== 'super_admin' && t !== 'daerah' && t !== 'ppg') {
       if (user?.kelompok_id) query = query.eq('kelompok_id', user.kelompok_id)
       else if (user?.desa_id) query = query.eq('desa_id', user.desa_id)
+    }
+
+    // Ru'yah biasa (role 'Anggota') hanya boleh melihat dokumen yang ditandai publik —
+    // dokumen internal/privat tetap tersembunyi dari mereka.
+    if (isRuyahBiasa(user)) {
+      query = query.eq('is_public', true)
     }
 
     const { data: rows } = await query
@@ -181,7 +191,15 @@ export default function DokumenPage() {
       return 0
     })
 
-  const canManage = ['super_admin', 'daerah', 'desa'].includes(user?.role?.tingkatan || '')
+  // Ketua/Wakil Ketua di semua jenjang (termasuk Kelompok) dan Super Admin boleh kelola dokumen.
+  // Sebelumnya pengurus Kelompok tidak bisa mengelola dokumen kelompoknya sendiri — diperbaiki
+  // agar konsisten dengan modul lain (Kegiatan, Anggota) yang berbasis peran fungsional.
+  const canManage = canManageMembers(user)
+
+  // Hanya Super Admin dan Daerah yang boleh memilih desa/kelompok manapun saat membuat dokumen.
+  // Pengurus Desa/Kelompok dikunci ke scope-nya sendiri agar tidak submit ke luar wilayahnya —
+  // RLS di database sudah menolak percobaan ini juga, tapi mengunci di UI mencegah error membingungkan.
+  const canPickScope = ['super_admin', 'daerah'].includes(user?.role?.tingkatan || '')
 
   return (
     <div className="space-y-4">
@@ -236,8 +254,8 @@ export default function DokumenPage() {
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-semibold text-slate-800">{d.judul}</h3>
-                      {(d as any).nomor_dokumen && (
-                        <span className="px-1.5 py-0.5 rounded text-xs font-mono bg-slate-100 text-slate-400">{(d as any).nomor_dokumen}</span>
+                      {d.nomor_dokumen && (
+                        <span className="px-1.5 py-0.5 rounded text-xs font-mono bg-slate-100 text-slate-400">{d.nomor_dokumen}</span>
                       )}
                     </div>
                     {d.deskripsi && <p className="text-slate-500 text-sm mt-0.5">{d.deskripsi}</p>}
@@ -313,7 +331,8 @@ export default function DokumenPage() {
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Desa *</label>
               <select value={form.desa_id} onChange={e => { set('desa_id', e.target.value); set('kelompok_id', '') }}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                disabled={!canPickScope}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed">
                 <option value="">-- Pilih Desa --</option>
                 {desaList.map(d => <option key={d.id} value={d.id}>{d.nama_desa}</option>)}
               </select>
@@ -321,6 +340,7 @@ export default function DokumenPage() {
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Kelompok</label>
               <select value={form.kelompok_id} onChange={e => set('kelompok_id', e.target.value)}
+                disabled={!canPickScope && user?.role?.tingkatan === 'kelompok'}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="">-- Semua --</option>
                 {kelompokList.filter(k => !form.desa_id || k.desa_id === form.desa_id).map(k => (

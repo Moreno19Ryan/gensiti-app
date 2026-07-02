@@ -5,17 +5,35 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { useUser } from '@/lib/user-context'
 import { signOut } from '@/lib/auth'
+import { isRuyahBiasa, canManageMembers as checkCanManageMembers, canManagePresensi as checkCanManagePresensi } from '@/lib/roles'
 
-const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: '🏠', roles: ['super_admin', 'daerah', 'desa', 'kelompok'] },
-  { href: '/anggota', label: 'Pengguna', icon: '👥', roles: ['super_admin', 'daerah', 'desa', 'kelompok'] },
-  { href: '/kegiatan', label: 'Kegiatan', icon: '📅', roles: ['super_admin', 'daerah', 'desa', 'kelompok'] },
-  { href: '/keuangan', label: 'Keuangan', icon: '💰', roles: ['super_admin', 'daerah', 'desa', 'kelompok'] },
-  { href: '/pengumuman', label: 'Pengumuman', icon: '📢', roles: ['super_admin', 'daerah', 'desa', 'kelompok'] },
-  { href: '/dokumen', label: 'Dokumen', icon: '📁', roles: ['super_admin', 'daerah', 'desa', 'kelompok'] },
-  { href: '/notifikasi', label: 'Notifikasi', icon: '🔔', roles: ['super_admin', 'daerah', 'desa', 'kelompok'] },
+interface NavItem {
+  href: string
+  label: string
+  icon: string
+  roles: string[]
+  requiresKvs?: boolean
+  // Khusus menu Presensi: Ketua/Wakil Ketua, Sekretaris & Super Admin (beda dgn requiresKvs
+  // yang hanya Ketua/Wakil Ketua & Super Admin, dipakai Audit Log).
+  requiresPresensiAccess?: boolean
+  // Menu yang tidak relevan untuk ru'yah biasa (bukan pengurus) — mis. Keuangan, Pengguna, Organisasi.
+  // Ru'yah biasa hanya perlu melihat Kegiatan, Pengumuman, Dokumen, Notifikasi, dan Profil sendiri.
+  hideForRuyah?: boolean
+}
+
+const navItems: NavItem[] = [
+  { href: '/dashboard', label: 'Dashboard', icon: '🏠', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
+  { href: '/ppg', label: 'Dashboard PPG', icon: '🛡️', roles: ['ppg'] },
+  { href: '/anggota', label: 'Pengguna', icon: '👥', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForRuyah: true },
+  { href: '/kegiatan', label: 'Kegiatan', icon: '📅', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
+  { href: '/presensi', label: 'Presensi', icon: '✅', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForRuyah: true, requiresPresensiAccess: true },
+  { href: '/keuangan', label: 'Keuangan', icon: '💰', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForRuyah: true },
+  { href: '/pengumuman', label: 'Pengumuman', icon: '📢', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
+  { href: '/dokumen', label: 'Dokumen', icon: '📁', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
+  { href: '/catatan-pembinaan', label: 'Catatan Pembinaan', icon: '📝', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], hideForRuyah: true },
+  { href: '/notifikasi', label: 'Notifikasi', icon: '🔔', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
   { href: '/organisasi', label: 'Organisasi', icon: '🏛️', roles: ['super_admin'] },
-  { href: '/audit-log', label: 'Audit Log', icon: '📋', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], requiresKvs: true },
+  { href: '/audit-log', label: 'Audit Log', icon: '📋', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], requiresKvs: true, hideForRuyah: true },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -81,14 +99,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const tingkatan = user.role?.tingkatan
   // Audit Log hanya terlihat untuk Ketua/Wakil Ketua dan Super Admin
-  const canManageMembers = tingkatan === 'super_admin' || (
-    !!user.role && user.role.nama_role.toLowerCase().includes('ketua')
-  )
+  const canManageMembers = checkCanManageMembers(user)
+  // Presensi terlihat untuk Ketua/Wakil Ketua, Sekretaris, dan Super Admin
+  const canManagePresensi = checkCanManagePresensi(user)
+  const isRuyah = isRuyahBiasa(user)
   const avatarUrl = user.avatar_url || user.foto_url
 
   const visibleNav = navItems.filter(item => {
     if (!tingkatan || !item.roles.includes(tingkatan)) return false
-    if ((item as any).requiresKvs && !canManageMembers) return false
+    if (item.requiresKvs && !canManageMembers) return false
+    if (item.requiresPresensiAccess && !canManagePresensi) return false
+    if (item.hideForRuyah && isRuyah) return false
     return true
   })
 
@@ -238,7 +259,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div>
               <h1 className="font-bold text-slate-800 dark:text-slate-100 text-base lg:text-lg leading-tight">{currentLabel}</h1>
               <p className="text-slate-400 dark:text-slate-500 text-xs hidden sm:block">
-                {user.desa ? user.desa.nama_desa : 'Tingkat Daerah'}
+                {tingkatan === 'ppg' ? 'PPG · Bekasi Timur' : user.desa ? user.desa.nama_desa : 'Tingkat Daerah'}
                 {user.kelompok ? ` · ${user.kelompok.nama_kelompok}` : ''}
               </p>
             </div>

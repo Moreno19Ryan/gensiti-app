@@ -5,7 +5,9 @@ import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { Kegiatan } from '@/lib/types'
 import { logAudit } from '@/lib/audit'
+import { canManageMembers } from '@/lib/roles'
 import Modal from '@/components/Modal'
+import PresensiPanel from '@/components/PresensiPanel'
 
 interface DesaOpt { id: string; nama_desa: string }
 interface KelompokOpt { id: string; nama_kelompok: string; desa_id: string }
@@ -14,6 +16,13 @@ const statusLabel: Record<string, { label: string; color: string }> = {
   upcoming: { label: 'Akan Datang', color: 'bg-blue-100 text-blue-700' },
   ongoing: { label: 'Berlangsung', color: 'bg-green-100 text-green-700' },
   selesai: { label: 'Selesai', color: 'bg-slate-100 text-slate-500' },
+}
+
+// Badge status approval PPG -- hanya relevan utk kegiatan tingkat Daerah.
+const approvalLabel: Record<string, { label: string; color: string }> = {
+  menunggu_ppg: { label: '⏳ Menunggu Persetujuan PPG', color: 'bg-amber-100 text-amber-700' },
+  disetujui: { label: '✓ Disetujui PPG', color: 'bg-green-100 text-green-700' },
+  ditolak: { label: '✕ Ditolak PPG', color: 'bg-red-100 text-red-600' },
 }
 
 const emptyForm = {
@@ -122,9 +131,21 @@ export default function KegiatanPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Hapus kegiatan ini?')) return
+    const target = data.find(k => k.id === id)
     await supabase.from('kegiatan').delete().eq('id', id)
+    if (user) await logAudit(user, 'DELETE', 'Kegiatan', target?.nama_kegiatan || id, undefined, id)
     loadData()
   }
+
+  // Hanya Ketua/Wakil Ketua (semua jenjang) dan Super Admin yang boleh kelola kegiatan.
+  // Ru'yah biasa dan pengurus non-Ketua (Sekretaris, Bendahara, dll) hanya bisa melihat.
+  const canManage = canManageMembers(user)
+
+  // Hanya Super Admin dan Daerah yang boleh memilih desa/kelompok manapun saat membuat kegiatan.
+  // Pengurus Desa/Kelompok dikunci ke scope-nya sendiri — RLS di database juga sudah menegakkan
+  // ini, tapi mengunci di UI mencegah submit gagal dengan error yang membingungkan.
+  const tingkatanUser = user?.role?.tingkatan
+  const canPickScope = tingkatanUser === 'super_admin' || tingkatanUser === 'daerah'
 
   const set = (key: string, val: string) => setForm(f => ({ ...f, [key]: val }))
   const fmt = (t: string | null) => t ? new Date(t).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'
@@ -149,9 +170,11 @@ export default function KegiatanPage() {
           <h2 className="font-bold text-slate-800">Kegiatan</h2>
           <p className="text-slate-400 text-sm">{data.length} kegiatan total</p>
         </div>
-        <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
-          + Tambah Kegiatan
-        </button>
+        {canManage && (
+          <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
+            + Tambah Kegiatan
+          </button>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-2 items-center">
@@ -180,7 +203,7 @@ export default function KegiatanPage() {
         <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
           <div className="text-4xl mb-2">📅</div>
           <p>Belum ada kegiatan</p>
-          <button onClick={openAdd} className="mt-3 text-blue-600 text-sm font-medium hover:underline">+ Tambah sekarang</button>
+          {canManage && <button onClick={openAdd} className="mt-3 text-blue-600 text-sm font-medium hover:underline">+ Tambah sekarang</button>}
         </div>
       ) : (
         <div className="grid gap-3">
@@ -191,8 +214,13 @@ export default function KegiatanPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-semibold text-slate-800">{k.nama_kegiatan}</h3>
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusLabel[k.status]?.color}`}>{statusLabel[k.status]?.label}</span>
-                    {(k as any).kode_kegiatan && (
-                      <span className="px-2 py-0.5 rounded-full text-xs font-mono bg-slate-100 text-slate-500">{(k as any).kode_kegiatan}</span>
+                    {k.kode_kegiatan && (
+                      <span className="px-2 py-0.5 rounded-full text-xs font-mono bg-slate-100 text-slate-500">{k.kode_kegiatan}</span>
+                    )}
+                    {k.tingkatan === 'daerah' && (
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${approvalLabel[k.status_approval]?.color}`}>
+                        {approvalLabel[k.status_approval]?.label}
+                      </span>
                     )}
                   </div>
                   {k.deskripsi && <p className="text-slate-500 text-sm mt-1 line-clamp-2">{k.deskripsi}</p>}
@@ -200,12 +228,24 @@ export default function KegiatanPage() {
                     {k.tanggal_mulai && <span>📅 {fmt(k.tanggal_mulai)}{k.tanggal_selesai ? ` – ${fmt(k.tanggal_selesai)}` : ''}</span>}
                     {k.lokasi && <span>📍 {k.lokasi}</span>}
                   </div>
+                  {k.tingkatan === 'daerah' && k.status_approval === 'ditolak' && k.catatan_ppg && (
+                    <div className="mt-2 p-2 bg-red-50 border border-red-100 rounded-lg text-xs text-red-600">
+                      <span className="font-medium">Catatan PPG:</span> {k.catatan_ppg}
+                    </div>
+                  )}
                 </div>
-                <div className="flex gap-2 shrink-0">
-                  <button onClick={() => openEdit(k)} className="text-blue-600 hover:text-blue-800 font-medium text-xs">Edit</button>
-                  <button onClick={() => handleDelete(k.id)} className="text-red-400 hover:text-red-600 font-medium text-xs">Hapus</button>
-                </div>
+                {canManage && (
+                  <div className="flex gap-2 shrink-0">
+                    <button onClick={() => openEdit(k)} className="text-blue-600 hover:text-blue-800 font-medium text-xs">Edit</button>
+                    <button onClick={() => handleDelete(k.id)} className="text-red-400 hover:text-red-600 font-medium text-xs">Hapus</button>
+                  </div>
+                )}
               </div>
+              <PresensiPanel
+                kegiatan={k}
+                user={user}
+                onUpdated={updated => setData(prev => prev.map(item => item.id === updated.id ? updated : item))}
+              />
             </div>
           ))}
         </div>
@@ -213,10 +253,10 @@ export default function KegiatanPage() {
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editTarget ? 'Edit Kegiatan' : 'Tambah Kegiatan'} size="lg">
         <div className="space-y-4">
-          {editTarget && (editTarget as any).kode_kegiatan && (
+          {editTarget && editTarget.kode_kegiatan && (
             <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
               <span className="text-xs text-slate-400">Kode Kegiatan</span>
-              <span className="font-mono text-sm font-semibold text-slate-600">{(editTarget as any).kode_kegiatan}</span>
+              <span className="font-mono text-sm font-semibold text-slate-600">{editTarget.kode_kegiatan}</span>
               <span className="text-xs text-slate-400 ml-auto">Auto-generate</span>
             </div>
           )}
@@ -258,10 +298,9 @@ export default function KegiatanPage() {
               <label className="block text-xs font-medium text-slate-600 mb-1">Status *</label>
               <select value={form.status} onChange={e => set('status', e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="terjadwal">Terjadwal</option>
-                <option value="berlangsung">Berlangsung</option>
+                <option value="upcoming">Akan Datang</option>
+                <option value="ongoing">Berlangsung</option>
                 <option value="selesai">Selesai</option>
-                <option value="dibatalkan">Dibatalkan</option>
               </select>
             </div>
           </div>
@@ -270,7 +309,8 @@ export default function KegiatanPage() {
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Desa *</label>
               <select value={form.desa_id} onChange={e => { set('desa_id', e.target.value); set('kelompok_id', '') }}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                disabled={!canPickScope}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed">
                 <option value="">-- Pilih Desa --</option>
                 {desaList.map(d => <option key={d.id} value={d.id}>{d.nama_desa}</option>)}
               </select>
@@ -278,7 +318,8 @@ export default function KegiatanPage() {
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Kelompok *</label>
               <select value={form.kelompok_id} onChange={e => set('kelompok_id', e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                disabled={!canPickScope && tingkatanUser === 'kelompok'}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed">
                 <option value="">-- Pilih Kelompok --</option>
                 {kelompokList.filter(k => !form.desa_id || k.desa_id === form.desa_id).map(k => (
                   <option key={k.id} value={k.id}>{k.nama_kelompok}</option>

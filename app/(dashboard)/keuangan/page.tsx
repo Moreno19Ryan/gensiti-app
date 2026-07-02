@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { Keuangan } from '@/lib/types'
 import Modal from '@/components/Modal'
 import { logAudit } from '@/lib/audit'
+import { isRuyahBiasa, isPengurus } from '@/lib/roles'
 
 interface DesaOpt { id: string; nama_desa: string }
 interface KelompokOpt { id: string; nama_kelompok: string; desa_id: string }
@@ -24,9 +25,22 @@ const emptyForm = {
 export default function KeuanganPage() {
   const { user } = useUser()
 
-  // Super Admin tidak punya akses ke keuangan
+  // Super Admin dan ru'yah biasa (role 'Anggota') tidak punya akses ke keuangan —
+  // keuangan adalah privilese Pengurus Muda-Mudi di jenjang Daerah/Desa/Kelompok.
+  // PPG juga bisa MELIHAT (read-only, pengawasan lintas Bekasi Timur) tapi tidak mengelola --
+  // lihat guard canManage di bawah utk membedakan hak lihat vs hak tulis.
   const tingkatan = user?.role?.tingkatan
-  const hasAccess = tingkatan && ['daerah', 'desa', 'kelompok'].includes(tingkatan)
+  const hasAccess = !!tingkatan && (['daerah', 'desa', 'kelompok'].includes(tingkatan) || tingkatan === 'ppg') && !isRuyahBiasa(user)
+
+  // Hanya pengurus operasional (bukan PPG) yang boleh tambah/edit/hapus transaksi.
+  // Sebelumnya halaman ini tidak punya guard tulis sama sekali -- siapapun yg hasAccess
+  // otomatis dapat tombol kelola. Diperbaiki agar PPG (read-only by design) tidak ikut
+  // kebagian tombol tulis hanya karena ditambahkan ke daftar hasAccess di atas.
+  const canManage = isPengurus(user)
+
+  // Hanya Daerah yang boleh memilih desa/kelompok manapun saat mencatat transaksi.
+  // Pengurus Desa/Kelompok dikunci ke scope-nya sendiri, konsisten dengan Kegiatan/Dokumen/Pengumuman.
+  const canPickScope = tingkatan === 'daerah'
 
   const [data, setData] = useState<Keuangan[]>([])
   const [loading, setLoading] = useState(true)
@@ -50,7 +64,7 @@ export default function KeuanganPage() {
     } else if (t === 'desa') {
       if (user?.desa_id) query = query.eq('desa_id', user.desa_id)
     }
-    // daerah: lihat semua
+    // daerah & ppg: lihat semua (PPG lintas Bekasi Timur, read-only)
     const { data: rows } = await query
     setData(rows || [])
     setLoading(false)
@@ -143,7 +157,7 @@ export default function KeuanganPage() {
       return (
         k.kategori?.toLowerCase().includes(q) ||
         k.deskripsi?.toLowerCase().includes(q) ||
-        (k as any).nomor_transaksi?.toLowerCase().includes(q)
+        k.nomor_transaksi?.toLowerCase().includes(q)
       )
     })
     .sort((a, b) => {
@@ -164,7 +178,7 @@ export default function KeuanganPage() {
       <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
         <div className="text-4xl mb-3">🔒</div>
         <p className="font-semibold text-slate-600">Akses Dibatasi</p>
-        <p className="text-sm mt-1">Menu Keuangan hanya tersedia untuk role Daerah, Desa, dan Kelompok.</p>
+        <p className="text-sm mt-1">Menu Keuangan hanya tersedia untuk role Daerah, Desa, Kelompok, dan PPG.</p>
       </div>
     )
   }
@@ -173,9 +187,11 @@ export default function KeuanganPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="font-bold text-slate-800">Keuangan</h2>
-        <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
-          + Tambah Transaksi
-        </button>
+        {canManage && (
+          <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
+            + Tambah Transaksi
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-3 gap-4">
@@ -223,7 +239,7 @@ export default function KeuanganPage() {
           <div className="text-center py-12 text-slate-400">
             <div className="text-4xl mb-2">💰</div>
             <p>Belum ada transaksi</p>
-            <button onClick={openAdd} className="mt-3 text-blue-600 text-sm font-medium hover:underline">+ Tambah sekarang</button>
+            {canManage && <button onClick={openAdd} className="mt-3 text-blue-600 text-sm font-medium hover:underline">+ Tambah sekarang</button>}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -236,14 +252,14 @@ export default function KeuanganPage() {
                   <th className="px-4 py-3 font-medium">Kategori</th>
                   <th className="px-4 py-3 font-medium">Deskripsi</th>
                   <th className="px-4 py-3 font-medium text-right">Jumlah</th>
-                  <th className="px-4 py-3 font-medium">Aksi</th>
+                  {canManage && <th className="px-4 py-3 font-medium">Aksi</th>}
                 </tr>
               </thead>
               <tbody>
                 {filtered.map(k => (
                   <tr key={k.id} className="border-b border-slate-50 hover:bg-slate-50 transition">
                     <td className="px-4 py-3">
-                      <span className="font-mono text-xs text-slate-400">{(k as any).nomor_transaksi || '-'}</span>
+                      <span className="font-mono text-xs text-slate-400">{k.nomor_transaksi || '-'}</span>
                     </td>
                     <td className="px-4 py-3 text-slate-500">
                       {new Date(k.tanggal).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -258,10 +274,12 @@ export default function KeuanganPage() {
                     <td className={`px-4 py-3 text-right font-semibold ${k.jenis === 'pemasukan' ? 'text-emerald-600' : 'text-red-500'}`}>
                       {k.jenis === 'pengeluaran' ? '-' : '+'}{fmt(Number(k.jumlah))}
                     </td>
-                    <td className="px-4 py-3 flex gap-3">
-                      <button onClick={() => openEdit(k)} className="text-blue-600 hover:text-blue-800 font-medium text-xs">Edit</button>
-                      <button onClick={() => handleDelete(k.id, `${k.jenis} - ${k.kategori}`)} className="text-red-400 hover:text-red-600 font-medium text-xs">Hapus</button>
-                    </td>
+                    {canManage && (
+                      <td className="px-4 py-3 flex gap-3">
+                        <button onClick={() => openEdit(k)} className="text-blue-600 hover:text-blue-800 font-medium text-xs">Edit</button>
+                        <button onClick={() => handleDelete(k.id, `${k.jenis} - ${k.kategori}`)} className="text-red-400 hover:text-red-600 font-medium text-xs">Hapus</button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -312,15 +330,28 @@ export default function KeuanganPage() {
               className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Desa *</label>
-            <select value={form.desa_id} onChange={e => set('desa_id', e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="">-- Pilih Desa --</option>
-              {desaList.map(d => <option key={d.id} value={d.id}>{d.nama_desa}</option>)}
-            </select>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Desa *</label>
+              <select value={form.desa_id} onChange={e => { set('desa_id', e.target.value); set('kelompok_id', '') }}
+                disabled={!canPickScope}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed">
+                <option value="">-- Pilih Desa --</option>
+                {desaList.map(d => <option key={d.id} value={d.id}>{d.nama_desa}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Kelompok</label>
+              <select value={form.kelompok_id} onChange={e => set('kelompok_id', e.target.value)}
+                disabled={!canPickScope && tingkatan === 'kelompok'}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed">
+                <option value="">-- Semua --</option>
+                {kelompokList.filter(k => !form.desa_id || k.desa_id === form.desa_id).map(k => (
+                  <option key={k.id} value={k.id}>{k.nama_kelompok}</option>
+                ))}
+              </select>
+            </div>
           </div>
-
 
           <div className="flex gap-3 pt-2 border-t border-slate-100">
             <button onClick={() => setModalOpen(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
