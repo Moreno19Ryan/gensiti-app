@@ -106,7 +106,11 @@ export async function exportToExcel(opts: ExportOptions) {
   workbook.creator = APP_NAME
   workbook.created = new Date()
 
-  const sheet = workbook.addWorksheet(opts.title.slice(0, 31) || 'Laporan')
+  // Nama worksheet Excel tidak boleh mengandung karakter * ? : \ / [ ] dan maks. 31 karakter
+  // (batasan format .xlsx, bukan batasan ExcelJS) -- judul laporan seperti "Daftar Anggota /
+  // Pengguna" harus disanitasi dulu, kalau tidak addWorksheet() akan throw exception.
+  const safeSheetName = (opts.title.replace(/[*?:\\/[\]]/g, '-').trim().slice(0, 31)) || 'Laporan'
+  const sheet = workbook.addWorksheet(safeSheetName)
 
   // Kop
   sheet.mergeCells(1, 1, 1, opts.columns.length)
