@@ -22,11 +22,14 @@ export default function NotifikasiPage() {
     // (target_role.eq., target_user.eq.undefined) yang bisa gagal senyap atau salah hasil.
     if (!user?.id || !user?.role?.tingkatan) return
     const tingkatan = user.role.tingkatan
+    // Limit 200 -- notifikasi lama tidak perlu ditarik semua tiap buka halaman, cukup
+    // riwayat terbaru (mencegah query membengkak seiring notifikasi menumpuk dari waktu ke waktu).
     const { data: rows } = await supabase
       .from('notifikasi')
       .select('*')
       .or(`target_role.eq.all,target_role.eq.${tingkatan},target_user.eq.${user.id}`)
       .order('created_at', { ascending: false })
+      .limit(200)
     setData(rows || [])
     setLoading(false)
   }

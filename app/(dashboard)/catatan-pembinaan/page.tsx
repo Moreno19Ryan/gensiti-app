@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { CatatanPembinaan } from '@/lib/types'
@@ -13,9 +14,18 @@ interface KelompokOpt { id: string; nama_kelompok: string; desa_id: string }
 // - PPG: bisa menulis catatan baru, target Daerah (umum) / Desa tertentu / Kelompok tertentu.
 // - Pengurus Daerah/Desa/Kelompok: hanya melihat catatan yang ditujukan utk scope mereka
 //   (RLS di database yang menegakkan pemisahan ini, bukan filter client).
+// - Super Admin: TIDAK relevan sama sekali (bukan pengurus, bukan PPG) -- redirect ke
+//   dashboard kalau nekat akses lewat URL langsung, konsisten dengan proteksi RLS yang
+//   sudah dicabut total untuk role ini di database.
 export default function CatatanPembinaanPage() {
   const { user } = useUser()
+  const router = useRouter()
   const isPPGUser = isPPG(user)
+  const isSuperAdmin = user?.role?.tingkatan === 'super_admin'
+
+  useEffect(() => {
+    if (user && isSuperAdmin) router.replace('/dashboard')
+  }, [user, isSuperAdmin, router])
 
   const [data, setData] = useState<CatatanPembinaan[]>([])
   const [loading, setLoading] = useState(true)

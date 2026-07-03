@@ -48,7 +48,7 @@ async function getCaller(req: NextRequest, supabaseAdmin: ReturnType<typeof admi
   }
 }
 
-// Hanya Ketua/Wakil Ketua (semua scope) dan Super Admin yang boleh mengelola anggota lain.
+// Hanya Ketua/Wakil Ketua (semua scope) dan Super Admin yang boleh mengelola Generus lain.
 function canManageMembers(caller: Caller): boolean {
   if (caller.tingkatan === 'super_admin') return true
   return !!caller.nama_role && caller.nama_role.toLowerCase().includes('ketua')
@@ -72,8 +72,8 @@ async function isSuperAdminRole(supabaseAdmin: ReturnType<typeof adminClient>, r
   return data?.tingkatan === 'super_admin'
 }
 
-// GET: Ambil data anggota by userId (server-side, bypass RLS)
-// Diizinkan untuk: pemilik data sendiri, atau pengguna yang berwenang mengelola anggota (Ketua/Wakil/Super Admin).
+// GET: Ambil data Generus by userId (server-side, bypass RLS)
+// Diizinkan untuk: pemilik data sendiri, atau pengguna yang berwenang mengelola Generus (Ketua/Wakil/Super Admin).
 export async function GET(req: NextRequest) {
   try {
     const supabaseAdmin = adminClient()
@@ -89,7 +89,7 @@ export async function GET(req: NextRequest) {
     }
 
     const { data, error } = await supabaseAdmin
-      .from('anggota')
+      .from('generus')
       .select('*')
       .eq('user_id', userId)
       .single()
@@ -103,7 +103,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST: Buat user baru + anggota record
+// POST: Buat user baru + generus record
 // Hanya boleh dipanggil oleh Ketua/Wakil Ketua/Super Admin.
 export async function POST(req: NextRequest) {
   try {
@@ -164,7 +164,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: profileError.message }, { status: 500 })
     }
 
-    const { error: anggotaError } = await supabaseAdmin.from('anggota').insert({
+    const { error: generusError } = await supabaseAdmin.from('generus').insert({
       user_id: userId,
       nama_lengkap,
       tempat_lahir: tempat_lahir || null,
@@ -186,8 +186,8 @@ export async function POST(req: NextRequest) {
       jumlah_saudara: jumlah_saudara || null,
     })
 
-    if (anggotaError) {
-      console.error('Anggota insert error:', anggotaError.message)
+    if (generusError) {
+      console.error('Generus insert error:', generusError.message)
     }
 
     return NextResponse.json({ success: true, userId })
@@ -196,7 +196,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PATCH: Update user + anggota record
+// PATCH: Update user + generus record
 export async function PATCH(req: NextRequest) {
   try {
     const supabaseAdmin = adminClient()
@@ -206,7 +206,7 @@ export async function PATCH(req: NextRequest) {
     const {
       id, nama_lengkap, no_hp, role_id, desa_id, kelompok_id, is_active, password,
       avatar_url,
-      anggota_id, tempat_lahir, tanggal_lahir, jenis_kelamin, alamat,
+      generus_id, tempat_lahir, tanggal_lahir, jenis_kelamin, alamat,
       nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali,
       nama_orang_tua, no_hp_orang_tua,
       status_anggota,
@@ -254,7 +254,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     // Field administratif (role, scope, status akun) hanya boleh diubah oleh yang berwenang
-    // mengelola anggota — mencegah pengguna menaikkan hak aksesnya sendiri lewat halaman profil.
+    // mengelola Generus — mencegah pengguna menaikkan hak aksesnya sendiri lewat halaman profil.
     const hasAdminFields = role_id !== undefined || is_active !== undefined || archive !== undefined
     if (hasAdminFields && !canManageMembers(caller)) {
       return NextResponse.json({ error: 'Anda tidak berwenang mengubah role atau status akun.' }, { status: 403 })
@@ -294,7 +294,7 @@ export async function PATCH(req: NextRequest) {
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const hasAnggotaFields = anggota_id != null
+    const hasGenerusFields = generus_id != null
       || tempat_lahir !== undefined
       || tanggal_lahir !== undefined
       || jenis_kelamin !== undefined
@@ -310,55 +310,55 @@ export async function PATCH(req: NextRequest) {
       || nama_orang_tua !== undefined
       || pindah_ke_daerah_lain !== undefined
 
-    if (hasAnggotaFields) {
-      const anggotaPayload: Record<string, unknown> = {}
-      if (nama_lengkap !== undefined) anggotaPayload.nama_lengkap = nama_lengkap || null
-      if (tempat_lahir !== undefined) anggotaPayload.tempat_lahir = tempat_lahir || null
-      if (tanggal_lahir !== undefined) anggotaPayload.tanggal_lahir = tanggal_lahir || null
-      if (jenis_kelamin !== undefined) anggotaPayload.jenis_kelamin = jenis_kelamin || null
-      if (alamat !== undefined) anggotaPayload.alamat = alamat || null
-      if (desa_id !== undefined) anggotaPayload.desa_id = desa_id || null
-      if (kelompok_id !== undefined) anggotaPayload.kelompok_id = kelompok_id || null
-      if (status_anggota !== undefined) anggotaPayload.status = status_anggota
+    if (hasGenerusFields) {
+      const generusPayload: Record<string, unknown> = {}
+      if (nama_lengkap !== undefined) generusPayload.nama_lengkap = nama_lengkap || null
+      if (tempat_lahir !== undefined) generusPayload.tempat_lahir = tempat_lahir || null
+      if (tanggal_lahir !== undefined) generusPayload.tanggal_lahir = tanggal_lahir || null
+      if (jenis_kelamin !== undefined) generusPayload.jenis_kelamin = jenis_kelamin || null
+      if (alamat !== undefined) generusPayload.alamat = alamat || null
+      if (desa_id !== undefined) generusPayload.desa_id = desa_id || null
+      if (kelompok_id !== undefined) generusPayload.kelompok_id = kelompok_id || null
+      if (status_anggota !== undefined) generusPayload.status = status_anggota
       if (nama_ayah !== undefined) {
-        anggotaPayload.nama_ayah = nama_ayah || null
-        anggotaPayload.nama_orang_tua = nama_ayah || null
+        generusPayload.nama_ayah = nama_ayah || null
+        generusPayload.nama_orang_tua = nama_ayah || null
       }
-      if (nama_ibu !== undefined) anggotaPayload.nama_ibu = nama_ibu || null
-      if (nama_wali !== undefined) anggotaPayload.nama_wali = nama_wali || null
+      if (nama_ibu !== undefined) generusPayload.nama_ibu = nama_ibu || null
+      if (nama_wali !== undefined) generusPayload.nama_wali = nama_wali || null
       if (no_hp_orangtua_wali !== undefined) {
-        anggotaPayload.no_hp_orangtua_wali = no_hp_orangtua_wali || null
-        anggotaPayload.no_hp_orang_tua = no_hp_orangtua_wali || null
+        generusPayload.no_hp_orangtua_wali = no_hp_orangtua_wali || null
+        generusPayload.no_hp_orang_tua = no_hp_orangtua_wali || null
       }
-      if (nama_orang_tua !== undefined && !nama_ayah) anggotaPayload.nama_orang_tua = nama_orang_tua || null
-      if (no_hp_orang_tua !== undefined && !no_hp_orangtua_wali) anggotaPayload.no_hp_orang_tua = no_hp_orang_tua || null
-      if (status_pengguna !== undefined) anggotaPayload.status_pengguna = status_pengguna
-      if (pindah_desa_id !== undefined) anggotaPayload.pindah_desa_id = pindah_desa_id || null
-      if (pindah_kelompok_id !== undefined) anggotaPayload.pindah_kelompok_id = pindah_kelompok_id || null
-      if (pindah_ke_daerah_lain !== undefined) anggotaPayload.pindah_ke_daerah_lain = pindah_ke_daerah_lain === true
-      if (anak_ke !== undefined) anggotaPayload.anak_ke = anak_ke || null
-      if (jumlah_saudara !== undefined) anggotaPayload.jumlah_saudara = jumlah_saudara || null
+      if (nama_orang_tua !== undefined && !nama_ayah) generusPayload.nama_orang_tua = nama_orang_tua || null
+      if (no_hp_orang_tua !== undefined && !no_hp_orangtua_wali) generusPayload.no_hp_orang_tua = no_hp_orang_tua || null
+      if (status_pengguna !== undefined) generusPayload.status_pengguna = status_pengguna
+      if (pindah_desa_id !== undefined) generusPayload.pindah_desa_id = pindah_desa_id || null
+      if (pindah_kelompok_id !== undefined) generusPayload.pindah_kelompok_id = pindah_kelompok_id || null
+      if (pindah_ke_daerah_lain !== undefined) generusPayload.pindah_ke_daerah_lain = pindah_ke_daerah_lain === true
+      if (anak_ke !== undefined) generusPayload.anak_ke = anak_ke || null
+      if (jumlah_saudara !== undefined) generusPayload.jumlah_saudara = jumlah_saudara || null
 
-      if (Object.keys(anggotaPayload).length > 0) {
-        // Selalu cari anggota by user_id dulu (lebih reliable daripada upsert tanpa constraint)
-        const { data: existingAnggota } = await supabaseAdmin
-          .from('anggota')
+      if (Object.keys(generusPayload).length > 0) {
+        // Selalu cari generus by user_id dulu (lebih reliable daripada upsert tanpa constraint)
+        const { data: existingGenerus } = await supabaseAdmin
+          .from('generus')
           .select('id')
           .eq('user_id', id)
           .single()
 
-        if (existingAnggota?.id) {
-          const { error: anggotaErr } = await supabaseAdmin
-            .from('anggota')
-            .update(anggotaPayload)
-            .eq('id', existingAnggota.id)
-          if (anggotaErr) console.error('Anggota update error:', anggotaErr.message)
+        if (existingGenerus?.id) {
+          const { error: generusErr } = await supabaseAdmin
+            .from('generus')
+            .update(generusPayload)
+            .eq('id', existingGenerus.id)
+          if (generusErr) console.error('Generus update error:', generusErr.message)
         } else {
-          // Buat record anggota baru jika belum ada
-          const { error: anggotaErr } = await supabaseAdmin
-            .from('anggota')
-            .insert({ ...anggotaPayload, user_id: id, status: 'aktif', status_pengguna: 'lajang' })
-          if (anggotaErr) console.error('Anggota insert error:', anggotaErr.message)
+          // Buat record generus baru jika belum ada
+          const { error: generusErr } = await supabaseAdmin
+            .from('generus')
+            .insert({ ...generusPayload, user_id: id, status: 'aktif', status_pengguna: 'lajang' })
+          if (generusErr) console.error('Generus insert error:', generusErr.message)
         }
       }
     }

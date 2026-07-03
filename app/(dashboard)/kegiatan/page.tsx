@@ -5,7 +5,7 @@ import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { Kegiatan } from '@/lib/types'
 import { logAudit } from '@/lib/audit'
-import { canManageMembers } from '@/lib/roles'
+import { canManageKontenOrganisasi } from '@/lib/roles'
 import Modal from '@/components/Modal'
 import PresensiPanel from '@/components/PresensiPanel'
 import { exportToPDF, exportToExcel } from '@/lib/export'
@@ -139,9 +139,11 @@ export default function KegiatanPage() {
     loadData()
   }
 
-  // Hanya Ketua/Wakil Ketua (semua jenjang) dan Super Admin yang boleh kelola kegiatan.
-  // Ru'yah biasa dan pengurus non-Ketua (Sekretaris, Bendahara, dll) hanya bisa melihat.
-  const canManage = canManageMembers(user)
+  // Hanya Ketua/Wakil Ketua (semua jenjang) yang boleh kelola kegiatan. Super Admin
+  // SENGAJA DIKECUALIKAN (sejak audit peran) -- dia pengelola sistem, bukan pengurus
+  // organisasi, jadi read-only untuk konten operasional seperti Kegiatan. Generus biasa
+  // dan pengurus non-Ketua (Sekretaris, Bendahara, dll) juga hanya bisa melihat.
+  const canManage = canManageKontenOrganisasi(user)
 
   // Hanya Super Admin dan Daerah yang boleh memilih desa/kelompok manapun saat membuat kegiatan.
   // Pengurus Desa/Kelompok dikunci ke scope-nya sendiri — RLS di database juga sudah menegakkan
@@ -238,7 +240,7 @@ export default function KegiatanPage() {
         </div>
         <div className="flex items-center gap-2">
           {/* Export daftar kegiatan dibatasi ke yang berwenang mengelola kegiatan (Ketua/Wakil/
-              Super Admin), konsisten dengan tombol "+ Tambah Kegiatan" -- ru'yah biasa boleh
+              Super Admin), konsisten dengan tombol "+ Tambah Kegiatan" -- Generus biasa boleh
               melihat daftar kegiatan tapi tidak perlu bisa export laporan ke PDF/Excel. */}
           {canManage && (
             <>

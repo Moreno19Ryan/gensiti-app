@@ -28,9 +28,9 @@ export interface UserProfile {
   } | null
 }
 
-export interface Anggota {
+export interface Generus {
   id: string
-  nomor_anggota: string
+  nomor_generus: string
   nama_lengkap: string
   tanggal_lahir: string | null
   jenis_kelamin: 'laki-laki' | 'perempuan' | null
@@ -113,15 +113,15 @@ export interface CatatanPembinaan {
 export interface Absensi {
   id: string
   kegiatan_id: string | null
-  anggota_id: string | null
+  generus_id: string | null
   status: 'hadir' | 'tidak_hadir' | 'izin' | 'sakit' | null
   keterangan: string | null
   waktu_absen: string | null
   created_at: string | null
-  anggota?: {
+  generus?: {
     id: string
     nama_lengkap: string
-    nomor_anggota: string
+    nomor_generus: string
     kelompok_id: string | null
     desa_id: string | null
   } | null

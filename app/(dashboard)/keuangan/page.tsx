@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { Keuangan } from '@/lib/types'
 import Modal from '@/components/Modal'
 import { logAudit } from '@/lib/audit'
-import { isRuyahBiasa, isPengurus } from '@/lib/roles'
+import { isGenerusBiasa, isPengurus } from '@/lib/roles'
 import { exportToPDF, exportToExcel } from '@/lib/export'
 
 interface DesaOpt { id: string; nama_desa: string }
@@ -26,12 +26,12 @@ const emptyForm = {
 export default function KeuanganPage() {
   const { user } = useUser()
 
-  // Super Admin dan ru'yah biasa (role 'Anggota') tidak punya akses ke keuangan —
+  // Super Admin dan Generus biasa (role 'Generus') tidak punya akses ke keuangan —
   // keuangan adalah privilese Pengurus Muda-Mudi di jenjang Daerah/Desa/Kelompok.
   // PPG juga bisa MELIHAT (read-only, pengawasan lintas Bekasi Timur) tapi tidak mengelola --
   // lihat guard canManage di bawah utk membedakan hak lihat vs hak tulis.
   const tingkatan = user?.role?.tingkatan
-  const hasAccess = !!tingkatan && (['daerah', 'desa', 'kelompok'].includes(tingkatan) || tingkatan === 'ppg') && !isRuyahBiasa(user)
+  const hasAccess = !!tingkatan && (['daerah', 'desa', 'kelompok'].includes(tingkatan) || tingkatan === 'ppg') && !isGenerusBiasa(user)
 
   // Hanya pengurus operasional (bukan PPG) yang boleh tambah/edit/hapus transaksi.
   // Sebelumnya halaman ini tidak punya guard tulis sama sekali -- siapapun yg hasAccess

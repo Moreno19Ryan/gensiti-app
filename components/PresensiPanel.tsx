@@ -15,11 +15,16 @@ interface Props {
 const KODE_MASA_BERLAKU_MS = 5 * 60 * 1000
 
 // Panel presensi untuk kartu kegiatan yang sedang berlangsung (status = 'ongoing').
-// - Ketua/Wakil Ketua, Sekretaris, & Super Admin: bisa "Mulai Presensi" -> menampilkan kode
-//   besar yang otomatis diperbarui (rotasi) setiap 5 menit sampai ditutup manual.
-// - Ru'yah biasa & pengurus lain (Bendahara, Kemandirian, dll): melihat form input kode
-//   6 digit untuk self check-in, sama seperti ru'yah biasa.
+// - Ketua/Wakil Ketua & Sekretaris: bisa "Mulai Presensi" -> menampilkan kode besar yang
+//   otomatis diperbarui (rotasi) setiap 5 menit sampai ditutup manual.
+// - Generus biasa & pengurus lain (Bendahara, Kemandirian, dll): melihat form input kode
+//   6 digit untuk self check-in, sama seperti Generus biasa.
+// - Super Admin: BUKAN keduanya -- dia bukan Generus organisasi (tidak boleh muncul di
+//   presensi/rekap kegiatan manapun, sejak audit peran) dan tidak lagi berwenang mengelola
+//   presensi (read-only, sejak audit peran Super Admin). Ditangani terpisah di bawah,
+//   sebelum canOpenPresensi dicek, supaya tidak jatuh ke form self check-in.
 export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
+  const isSuperAdmin = user?.role?.tingkatan === 'super_admin'
   const canOpenPresensi = canManagePresensi(user)
   const [kode, setKode] = useState<string | null>(kegiatan.kode_presensi_aktif)
   const [expiredAt, setExpiredAt] = useState<string | null>(kegiatan.kode_presensi_expired_at)
@@ -34,16 +39,16 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
 
   const isAktif = !!kode && !!expiredAt && new Date(expiredAt).getTime() > Date.now()
 
-  // Cek apakah ru'yah/pengurus yang login sudah tercatat hadir untuk kegiatan ini
+  // Cek apakah Generus/pengurus yang login sudah tercatat hadir untuk kegiatan ini
   const cekStatusKehadiran = useCallback(async () => {
     if (!user) return
-    const { data: anggota } = await supabase.from('anggota').select('id').eq('user_id', user.id).maybeSingle()
-    if (!anggota) return
+    const { data: generus } = await supabase.from('generus').select('id').eq('user_id', user.id).maybeSingle()
+    if (!generus) return
     const { data: absen } = await supabase
       .from('absensi')
       .select('status')
       .eq('kegiatan_id', kegiatan.id)
-      .eq('anggota_id', anggota.id)
+      .eq('generus_id', generus.id)
       .maybeSingle()
     setSudahHadir(absen?.status === 'hadir')
   }, [user, kegiatan.id])
@@ -131,6 +136,17 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
     const m = Math.floor(total / 60)
     const s = total % 60
     return `${m}:${s.toString().padStart(2, '0')}`
+  }
+
+  // Super Admin bukan Generus organisasi dan tidak lagi berwenang mengelola presensi --
+  // tampilkan keterangan netral saja, jangan tampilkan tombol "Mulai Presensi" ataupun
+  // form self check-in "Hadir" (dia tidak pernah tercatat sebagai peserta kegiatan apapun).
+  if (isSuperAdmin) {
+    return (
+      <div className="mt-3 pt-3 border-t border-slate-100">
+        <p className="text-xs text-slate-400 italic text-center">Presensi dikelola oleh Ketua/Wakil Ketua/Sekretaris.</p>
+      </div>
+    )
   }
 
   return (

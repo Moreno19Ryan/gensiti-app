@@ -21,7 +21,7 @@ export default function PPGPage() {
 
   const [loading, setLoading] = useState(true)
   const [menunggu, setMenunggu] = useState<{ kegiatan: Kegiatan[]; pengumuman: Pengumuman[] }>({ kegiatan: [], pengumuman: [] })
-  const [ringkasan, setRingkasan] = useState({ totalAnggota: 0, kegiatanAktif: 0, pengumumanAktif: 0, totalDesa: 0, totalKelompok: 0 })
+  const [ringkasan, setRingkasan] = useState({ totalGenerus: 0, kegiatanAktif: 0, pengumumanAktif: 0, totalDesa: 0, totalKelompok: 0 })
   const [approvalTarget, setApprovalTarget] = useState<ApprovalTarget | null>(null)
   const [catatan, setCatatan] = useState('')
   const [processing, setProcessing] = useState(false)
@@ -32,7 +32,7 @@ export default function PPGPage() {
     const [
       { data: kegiatanMenunggu },
       { data: pengumumanMenunggu },
-      { count: totalAnggota },
+      { count: totalGenerus },
       { count: kegiatanAktif },
       { count: pengumumanAktif },
       { count: totalDesa },
@@ -40,7 +40,7 @@ export default function PPGPage() {
     ] = await Promise.all([
       supabase.from('kegiatan').select('*').eq('tingkatan', 'daerah').eq('status_approval', 'menunggu_ppg').order('created_at', { ascending: false }),
       supabase.from('pengumuman').select('*').eq('tingkatan', 'daerah').eq('status_approval', 'menunggu_ppg').order('created_at', { ascending: false }),
-      supabase.from('anggota').select('id', { count: 'exact', head: true }).eq('status', 'aktif'),
+      supabase.from('generus').select('id', { count: 'exact', head: true }).eq('status', 'aktif'),
       supabase.from('kegiatan').select('id', { count: 'exact', head: true }).in('status', ['upcoming', 'ongoing']),
       supabase.from('pengumuman').select('id', { count: 'exact', head: true }).eq('is_active', true),
       supabase.from('desa').select('id', { count: 'exact', head: true }).eq('is_active', true),
@@ -49,7 +49,7 @@ export default function PPGPage() {
 
     setMenunggu({ kegiatan: kegiatanMenunggu || [], pengumuman: pengumumanMenunggu || [] })
     setRingkasan({
-      totalAnggota: totalAnggota || 0,
+      totalGenerus: totalGenerus || 0,
       kegiatanAktif: kegiatanAktif || 0,
       pengumumanAktif: pengumumanAktif || 0,
       totalDesa: totalDesa || 0,
@@ -102,7 +102,7 @@ export default function PPGPage() {
   const fmt = (t: string | null) => t ? new Date(t).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'
 
   const summaryCards = [
-    { label: 'Total Ru\'yah Aktif', value: ringkasan.totalAnggota, icon: '👥', color: 'bg-blue-500' },
+    { label: 'Total Generus Aktif', value: ringkasan.totalGenerus, icon: '👥', color: 'bg-blue-500' },
     { label: 'Kegiatan Berjalan', value: ringkasan.kegiatanAktif, icon: '📅', color: 'bg-indigo-500' },
     { label: 'Pengumuman Aktif', value: ringkasan.pengumumanAktif, icon: '📢', color: 'bg-orange-500' },
     { label: 'Desa & Kelompok', value: `${ringkasan.totalDesa} / ${ringkasan.totalKelompok}`, icon: '🏘️', color: 'bg-emerald-500' },

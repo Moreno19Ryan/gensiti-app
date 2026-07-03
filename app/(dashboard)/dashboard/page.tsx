@@ -10,7 +10,7 @@ import {
 } from 'recharts'
 
 interface Stats {
-  anggota: number
+  generus: number
   kegiatan_aktif: number
   pemasukan: number
   pengeluaran: number
@@ -18,7 +18,7 @@ interface Stats {
 
 interface ArusKasBulan { bulan: string; pemasukan: number; pengeluaran: number }
 interface KehadiranBulan { bulan: string; persentase: number }
-interface PertumbuhanBulan { bulan: string; anggota_baru: number }
+interface PertumbuhanBulan { bulan: string; generus_baru: number }
 
 // 6 bulan terakhir termasuk bulan berjalan, format label pendek Indonesia (mis. "Jan 2026").
 // Dipakai sebagai kerangka sumbu-X grafik supaya bulan tanpa data tetap muncul sebagai 0,
@@ -37,7 +37,7 @@ function get6BulanTerakhir(): { key: string; label: string }[] {
 
 export default function DashboardPage() {
   const { user, onlineCount } = useUser()
-  const [stats, setStats] = useState<Stats>({ anggota: 0, kegiatan_aktif: 0, pemasukan: 0, pengeluaran: 0 })
+  const [stats, setStats] = useState<Stats>({ generus: 0, kegiatan_aktif: 0, pemasukan: 0, pengeluaran: 0 })
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(new Date())
 
@@ -62,38 +62,40 @@ export default function DashboardPage() {
       // (PPG tidak punya desa_id/kelompok_id).
       const isPPGUser = user?.role?.tingkatan === 'ppg'
 
-      let anggotaQuery = supabase.from('anggota').select('id', { count: 'exact', head: true }).eq('status', 'aktif')
+      let generusQuery = supabase.from('generus').select('id', { count: 'exact', head: true }).eq('status', 'aktif')
       let kegiatanQuery = supabase.from('kegiatan').select('id', { count: 'exact', head: true }).in('status', ['upcoming', 'ongoing'])
-      let keuanganQuery = supabase.from('keuangan').select('jenis, jumlah')
+      // Scope untuk RPC ringkasan keuangan -- dikirim sebagai parameter, BUKAN filter .eq()
+      // client-side, karena sekarang penjumlahan dilakukan di database (lihat di bawah).
+      let scopeDesaId: string | null = null
+      let scopeKelompokId: string | null = null
 
       if (!isSuper && !isDaerah && !isPPGUser) {
         if (user?.desa_id) {
-          anggotaQuery = anggotaQuery.eq('desa_id', user.desa_id)
+          generusQuery = generusQuery.eq('desa_id', user.desa_id)
           kegiatanQuery = kegiatanQuery.eq('desa_id', user.desa_id)
-          keuanganQuery = keuanganQuery.eq('desa_id', user.desa_id)
+          scopeDesaId = user.desa_id
         }
         if (user?.kelompok_id) {
-          anggotaQuery = anggotaQuery.eq('kelompok_id', user.kelompok_id)
+          generusQuery = generusQuery.eq('kelompok_id', user.kelompok_id)
           kegiatanQuery = kegiatanQuery.eq('kelompok_id', user.kelompok_id)
-          keuanganQuery = keuanganQuery.eq('kelompok_id', user.kelompok_id)
+          scopeKelompokId = user.kelompok_id
         }
       }
 
-      const [{ count: anggotaCount }, { count: kegiatanCount }, { data: keuanganData }] = await Promise.all([
-        anggotaQuery,
+      // Ringkasan keuangan dihitung via RPC get_ringkasan_keuangan (SUM/GROUP BY di database)
+      // alih-alih menarik SEMUA baris tabel keuangan (select 'jenis, jumlah' tanpa limit) ke
+      // client lalu menjumlahkan manual -- hemat bandwidth & tetap tunduk RLS (SECURITY INVOKER).
+      const [{ count: generusCount }, { count: kegiatanCount }, { data: ringkasanKeuangan }] = await Promise.all([
+        generusQuery,
         kegiatanQuery,
-        keuanganQuery,
+        supabase.rpc('get_ringkasan_keuangan', { p_desa_id: scopeDesaId, p_kelompok_id: scopeKelompokId }),
       ])
 
-      let pemasukan = 0
-      let pengeluaran = 0
-      keuanganData?.forEach((k) => {
-        if (k.jenis === 'pemasukan') pemasukan += Number(k.jumlah)
-        else pengeluaran += Number(k.jumlah)
-      })
+      const pemasukan = Number(ringkasanKeuangan?.[0]?.pemasukan) || 0
+      const pengeluaran = Number(ringkasanKeuangan?.[0]?.pengeluaran) || 0
 
       setStats({
-        anggota: anggotaCount || 0,
+        generus: generusCount || 0,
         kegiatan_aktif: kegiatanCount || 0,
         pemasukan,
         pengeluaran,
@@ -128,7 +130,7 @@ export default function DashboardPage() {
         return q
       }
 
-      // --- Arus kas per bulan (hanya untuk yang punya akses Keuangan: bukan ru'yah, bukan PPG,
+      // --- Arus kas per bulan (hanya untuk yang punya akses Keuangan: bukan Generus biasa, bukan PPG,
       // dan BUKAN Super Admin -- Super Admin sengaja nol akses Keuangan di seluruh aplikasi,
       // termasuk RLS database, jadi dashboard-nya juga tidak boleh menampilkan ringkasan
       // finansial apapun. isPengurus() sendiri masih true untuk super_admin, jadi harus
@@ -137,7 +139,9 @@ export default function DashboardPage() {
       // lebih aman & eksplisit daripada bergantung pada urutan deklarasi variabel di body komponen.
       const canSeeKeuangan = isPengurus(user) && user?.role?.tingkatan !== 'super_admin'
       if (canSeeKeuangan) {
-        let kq = supabase.from('keuangan').select('jenis, jumlah, tanggal').gte('tanggal', rangeStart)
+        // Sudah dibatasi rentang 6 bulan terakhir (gte tanggal), .limit() sebagai pengaman
+        // tambahan untuk skenario transaksi sangat banyak per bulan.
+        let kq = supabase.from('keuangan').select('jenis, jumlah, tanggal').gte('tanggal', rangeStart).limit(2000)
         kq = applyScope(kq)
         const { data: kRows } = await kq
         const kasMap = new Map(bulanList.map(b => [b.key, { pemasukan: 0, pengeluaran: 0 }]))
@@ -153,8 +157,8 @@ export default function DashboardPage() {
         setArusKas([])
       }
 
-      // --- Pertumbuhan anggota per bulan (jumlah anggota baru, bukan kumulatif) ---
-      let aq = supabase.from('anggota').select('created_at').gte('created_at', rangeStart)
+      // --- Pertumbuhan Generus per bulan (jumlah Generus baru, bukan kumulatif) ---
+      let aq = supabase.from('generus').select('created_at').gte('created_at', rangeStart).limit(2000)
       aq = applyScope(aq)
       const { data: aRows } = await aq
       const tumbuhMap = new Map(bulanList.map(b => [b.key, 0]))
@@ -162,12 +166,12 @@ export default function DashboardPage() {
         const key = r.created_at.slice(0, 7)
         if (tumbuhMap.has(key)) tumbuhMap.set(key, (tumbuhMap.get(key) || 0) + 1)
       })
-      setPertumbuhan(bulanList.map(b => ({ bulan: b.label, anggota_baru: tumbuhMap.get(b.key) || 0 })))
+      setPertumbuhan(bulanList.map(b => ({ bulan: b.label, generus_baru: tumbuhMap.get(b.key) || 0 })))
 
       // --- Tren kehadiran per bulan (persentase hadir dari semua absensi tercatat pada kegiatan
       // dalam scope, dikelompokkan berdasarkan tanggal kegiatan bukan waktu_absen, supaya
       // kehadiran H-1/susulan tetap terhitung ke bulan kegiatannya) ---
-      let kegq = supabase.from('kegiatan').select('id, tanggal_mulai').gte('tanggal_mulai', rangeStart)
+      let kegq = supabase.from('kegiatan').select('id, tanggal_mulai').gte('tanggal_mulai', rangeStart).limit(500)
       kegq = applyScope(kegq)
       const { data: kegRows } = await kegq
       const kegiatanBulanMap = new Map((kegRows || []).map(k => [k.id, k.tanggal_mulai?.slice(0, 7)]))
@@ -179,6 +183,7 @@ export default function DashboardPage() {
           .from('absensi')
           .select('status, kegiatan_id')
           .in('kegiatan_id', kegiatanIds)
+          .limit(5000)
         absRows?.forEach(r => {
           const bulanKey = r.kegiatan_id ? kegiatanBulanMap.get(r.kegiatan_id) : null
           if (!bulanKey) return
@@ -230,7 +235,7 @@ export default function DashboardPage() {
   const isSuper = user?.role?.tingkatan === 'super_admin'
   const isPPGUser = user?.role?.tingkatan === 'ppg'
 
-  // Tampilkan Health Score untuk pengurus operasional (ru'yah biasa, PPG, dan Super Admin
+  // Tampilkan Health Score untuk pengurus operasional (Generus biasa, PPG, dan Super Admin
   // tidak perlu/tidak boleh lihat ini). Super Admin dikecualikan eksplisit walau isPengurus()
   // sendiri bernilai true untuknya -- Super Admin sengaja nol akses Keuangan di seluruh
   // aplikasi (lihat juga canSeeKeuangan di loadCharts dan RLS tabel keuangan).
@@ -247,13 +252,13 @@ export default function DashboardPage() {
     // Super Admin tidak diberi akses cepat ke Keuangan -- dia akan diblokir "Akses Dibatasi"
     // kalau tetap masuk ke /keuangan, jadi shortcut ke sana hanya membingungkan.
     ? [
-        { href: '/anggota', label: 'Data Pengguna', icon: '👥', color: 'hover:bg-blue-50 hover:border-blue-200' },
+        { href: '/generus', label: 'Data Pengguna', icon: '👥', color: 'hover:bg-blue-50 hover:border-blue-200' },
         { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200' },
         { href: '/organisasi', label: 'Organisasi', icon: '🏛️', color: 'hover:bg-violet-50 hover:border-violet-200' },
         { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200' },
       ]
     : [
-        { href: '/anggota', label: 'Data Pengguna', icon: '👥', color: 'hover:bg-blue-50 hover:border-blue-200' },
+        { href: '/generus', label: 'Data Pengguna', icon: '👥', color: 'hover:bg-blue-50 hover:border-blue-200' },
         { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200' },
         { href: '/keuangan', label: 'Keuangan', icon: '💰', color: 'hover:bg-emerald-50 hover:border-emerald-200' },
         { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200' },
@@ -261,7 +266,7 @@ export default function DashboardPage() {
 
   // PPG bukan pengurus operasional dan Super Admin sengaja nol akses Keuangan -- keduanya
   // tidak perlu lihat data finansial mentah (Total Pemasukan/Pengeluaran) ataupun Health
-  // Score di dashboard umum ini. Cukup tampilkan Anggota Aktif; detail approval & ringkasan
+  // Score di dashboard umum ini. Cukup tampilkan Generus Aktif; detail approval & ringkasan
   // lengkap PPG ada di /ppg, sementara Super Admin memang tidak punya ringkasan keuangan sama sekali.
   const statCards = [
     {
@@ -279,7 +284,7 @@ export default function DashboardPage() {
       color: 'bg-indigo-500',
     },
     (isPPGUser || isSuper)
-      ? { label: 'Anggota Aktif', value: loading ? '...' : stats.anggota.toLocaleString('id-ID'), sub: isPPGUser ? 'Se-Bekasi Timur' : 'Terdaftar & aktif', icon: '👥', color: 'bg-violet-500' }
+      ? { label: 'Generus Aktif', value: loading ? '...' : stats.generus.toLocaleString('id-ID'), sub: isPPGUser ? 'Se-Bekasi Timur' : 'Terdaftar & aktif', icon: '👥', color: 'bg-violet-500' }
       : {
           label: showHealthScore ? 'Health Score' : 'Total Pemasukan',
           value: loading ? '...' : showHealthScore ? `${healthScore}%` : formatRupiah(stats.pemasukan),
@@ -292,8 +297,8 @@ export default function DashboardPage() {
       : isSuper
       ? { label: 'Organisasi', value: 'Lihat', sub: 'Struktur Desa & Kelompok', icon: '🏛️', color: 'bg-slate-500' }
       : {
-          label: showHealthScore ? 'Anggota Aktif' : 'Total Pengeluaran',
-          value: loading ? '...' : showHealthScore ? stats.anggota.toLocaleString('id-ID') : formatRupiah(stats.pengeluaran),
+          label: showHealthScore ? 'Generus Aktif' : 'Total Pengeluaran',
+          value: loading ? '...' : showHealthScore ? stats.generus.toLocaleString('id-ID') : formatRupiah(stats.pengeluaran),
           sub: showHealthScore ? 'Terdaftar & aktif' : 'Total keluar',
           icon: showHealthScore ? '👥' : '💸',
           color: showHealthScore ? 'bg-violet-500' : 'bg-red-500',
@@ -395,8 +400,8 @@ export default function DashboardPage() {
         </div>
 
         <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100 xl:col-span-2">
-          <h3 className="font-semibold text-slate-700 mb-1">Pertumbuhan Anggota 6 Bulan Terakhir</h3>
-          <p className="text-slate-400 text-xs mb-4">Jumlah anggota baru terdaftar per bulan</p>
+          <h3 className="font-semibold text-slate-700 mb-1">Pertumbuhan Generus 6 Bulan Terakhir</h3>
+          <p className="text-slate-400 text-xs mb-4">Jumlah Generus baru terdaftar per bulan</p>
           {loadingChart ? (
             <div className="h-64 flex items-center justify-center text-slate-400">
               <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
@@ -408,7 +413,7 @@ export default function DashboardPage() {
                 <XAxis dataKey="bulan" tick={{ fontSize: 12, fill: '#94a3b8' }} />
                 <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} allowDecimals={false} />
                 <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12 }} />
-                <Bar dataKey="anggota_baru" name="Anggota Baru" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="generus_baru" name="Generus Baru" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           )}

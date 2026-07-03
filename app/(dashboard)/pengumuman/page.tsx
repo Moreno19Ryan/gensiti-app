@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { Pengumuman } from '@/lib/types'
 import Modal from '@/components/Modal'
 import { logAudit } from '@/lib/audit'
-import { canManageMembers } from '@/lib/roles'
+import { canManageKontenOrganisasi } from '@/lib/roles'
 
 interface DesaOpt { id: string; nama_desa: string }
 interface KelompokOpt { id: string; nama_kelompok: string; desa_id: string }
@@ -57,10 +57,10 @@ export default function PengumumanPage() {
     })
   }, [loadData])
 
-  // Ketua/Wakil Ketua di semua jenjang (termasuk Kelompok) dan Super Admin boleh buat pengumuman.
-  // Sebelumnya pengurus Kelompok tidak bisa membuat pengumuman untuk kelompoknya sendiri —
-  // diperbaiki agar konsisten dengan modul lain yang berbasis peran fungsional.
-  const canCreate = canManageMembers(user)
+  // Ketua/Wakil Ketua di semua jenjang (termasuk Kelompok) boleh buat pengumuman. Super Admin
+  // SENGAJA DIKECUALIKAN (sejak audit peran) -- read-only untuk konten operasional organisasi,
+  // konsisten dengan Kegiatan/Dokumen/Presensi.
+  const canCreate = canManageKontenOrganisasi(user)
 
   // Hanya Super Admin dan Daerah yang boleh memilih desa/kelompok manapun serta target
   // "Semua"/"Daerah". Pengurus Desa/Kelompok dikunci ke scope & jangkauan wewenangnya sendiri —

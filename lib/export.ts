@@ -1,5 +1,5 @@
 // Helper reusable untuk export laporan ke PDF & Excel, dipakai di modul
-// Keuangan, Presensi, Anggota, dan Kegiatan. Semua export mengikuti data yang
+// Keuangan, Presensi, Generus, dan Kegiatan. Semua export mengikuti data yang
 // SUDAH difilter/di-scope di halaman pemanggil (helper ini tidak melakukan
 // query/scope sendiri) -- supaya export selalu konsisten dengan apa yang
 // sedang dilihat user di layar.
@@ -115,7 +115,7 @@ export async function exportToExcel(opts: ExportOptions) {
   workbook.created = new Date()
 
   // Nama worksheet Excel tidak boleh mengandung karakter * ? : \ / [ ] dan maks. 31 karakter
-  // (batasan format .xlsx, bukan batasan ExcelJS) -- judul laporan seperti "Daftar Anggota /
+  // (batasan format .xlsx, bukan batasan ExcelJS) -- judul laporan seperti "Daftar Generus /
   // Pengguna" harus disanitasi dulu, kalau tidak addWorksheet() akan throw exception.
   const safeSheetName = (opts.title.replace(/[*?:\\/[\]]/g, '-').trim().slice(0, 31)) || 'Laporan'
   const sheet = workbook.addWorksheet(safeSheetName)

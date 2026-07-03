@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { logAudit } from '@/lib/audit'
-import { isRuyahBiasa, canManageMembers } from '@/lib/roles'
+import { isGenerusBiasa, canManageKontenOrganisasi } from '@/lib/roles'
 import Modal from '@/components/Modal'
 
 interface Dokumen {
@@ -91,9 +91,9 @@ export default function DokumenPage() {
       else if (user?.desa_id) query = query.eq('desa_id', user.desa_id)
     }
 
-    // Ru'yah biasa (role 'Anggota') hanya boleh melihat dokumen yang ditandai publik —
+    // Generus biasa (role 'Generus') hanya boleh melihat dokumen yang ditandai publik —
     // dokumen internal/privat tetap tersembunyi dari mereka.
-    if (isRuyahBiasa(user)) {
+    if (isGenerusBiasa(user)) {
       query = query.eq('is_public', true)
     }
 
@@ -191,10 +191,10 @@ export default function DokumenPage() {
       return 0
     })
 
-  // Ketua/Wakil Ketua di semua jenjang (termasuk Kelompok) dan Super Admin boleh kelola dokumen.
-  // Sebelumnya pengurus Kelompok tidak bisa mengelola dokumen kelompoknya sendiri — diperbaiki
-  // agar konsisten dengan modul lain (Kegiatan, Anggota) yang berbasis peran fungsional.
-  const canManage = canManageMembers(user)
+  // Ketua/Wakil Ketua di semua jenjang (termasuk Kelompok) boleh kelola dokumen. Super Admin
+  // SENGAJA DIKECUALIKAN (sejak audit peran) -- read-only untuk konten operasional organisasi,
+  // konsisten dengan Kegiatan/Pengumuman/Presensi.
+  const canManage = canManageKontenOrganisasi(user)
 
   // Hanya Super Admin dan Daerah yang boleh memilih desa/kelompok manapun saat membuat dokumen.
   // Pengurus Desa/Kelompok dikunci ke scope-nya sendiri agar tidak submit ke luar wilayahnya —

@@ -14,6 +14,16 @@ export default function AuditLogPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
 
+  // Filter tambahan -- per user, rentang tanggal, dan jenis aksi/modul. Opsi dropdown
+  // (uniqueUsers/uniqueModules/uniqueActions di bawah) diturunkan dari nilai unik pada `data`
+  // yang sudah dimuat, BUKAN hardcode daftar tetap -- supaya otomatis ikut berkembang kalau
+  // ada modul/jenis aksi baru di masa depan tanpa perlu ubah kode ini.
+  const [filterUser, setFilterUser] = useState('')
+  const [filterModule, setFilterModule] = useState('')
+  const [filterAction, setFilterAction] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+
   // Pakai helper terpusat lib/roles.ts (Ketua/Wakil semua jenjang + Super Admin) alih-alih
   // regex nama_role sendiri, agar konsisten dan tidak drift jika kriteria di roles.ts berubah.
   const isKvsOrAdmin = canManageMembers(user)
@@ -47,11 +57,29 @@ export default function AuditLogPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
-  const filtered = data.filter(a =>
-    a.action?.toLowerCase().includes(search.toLowerCase()) ||
-    a.user_email?.toLowerCase().includes(search.toLowerCase()) ||
-    a.module?.toLowerCase().includes(search.toLowerCase())
-  )
+  const uniqueUsers = Array.from(new Set(data.map(a => a.user_email).filter(Boolean))) as string[]
+  const uniqueModules = Array.from(new Set(data.map(a => a.module).filter(Boolean))) as string[]
+  const uniqueActions = Array.from(new Set(data.map(a => a.action).filter(Boolean))) as string[]
+
+  const filtered = data.filter(a => {
+    const matchSearch = !search ||
+      a.action?.toLowerCase().includes(search.toLowerCase()) ||
+      a.user_email?.toLowerCase().includes(search.toLowerCase()) ||
+      a.module?.toLowerCase().includes(search.toLowerCase()) ||
+      a.target_desc?.toLowerCase().includes(search.toLowerCase())
+    const matchUser = !filterUser || a.user_email === filterUser
+    const matchModule = !filterModule || a.module === filterModule
+    const matchAction = !filterAction || a.action === filterAction
+    const t = new Date(a.created_at).getTime()
+    const matchFrom = !dateFrom || t >= new Date(dateFrom + 'T00:00:00').getTime()
+    const matchTo = !dateTo || t <= new Date(dateTo + 'T23:59:59').getTime()
+    return matchSearch && matchUser && matchModule && matchAction && matchFrom && matchTo
+  })
+
+  const hasActiveFilter = !!(filterUser || filterModule || filterAction || dateFrom || dateTo)
+  const resetFilters = () => {
+    setFilterUser(''); setFilterModule(''); setFilterAction(''); setDateFrom(''); setDateTo('')
+  }
 
   const statusColor: Record<string, string> = {
     success: 'bg-green-100 text-green-700',
@@ -69,14 +97,52 @@ export default function AuditLogPage() {
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100">
-        <div className="p-4 border-b border-slate-100">
+        <div className="p-4 border-b border-slate-100 space-y-2">
           <input
             type="text"
-            placeholder="Cari aksi, user, atau modul..."
+            placeholder="Cari aksi, user, modul, atau target..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full px-4 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
+          <div className="flex flex-wrap gap-2">
+            <select value={filterUser} onChange={(e) => setFilterUser(e.target.value)}
+              className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">Semua User</option>
+              {uniqueUsers.map(u => <option key={u} value={u}>{u}</option>)}
+            </select>
+            <select value={filterModule} onChange={(e) => setFilterModule(e.target.value)}
+              className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">Semua Modul</option>
+              {uniqueModules.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+            <select value={filterAction} onChange={(e) => setFilterAction(e.target.value)}
+              className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">Semua Aksi</option>
+              {uniqueActions.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+            <div className="flex items-center gap-1">
+              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+                title="Dari tanggal"
+                className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <span className="text-slate-300 text-xs">—</span>
+              <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+                title="Sampai tanggal"
+                className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            {hasActiveFilter && (
+              <button onClick={resetFilters}
+                className="px-3 py-2 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl transition font-medium">
+                Reset filter
+              </button>
+            )}
+          </div>
+          {hasActiveFilter && (
+            <p className="text-xs text-slate-400">
+              {filtered.length} dari {data.length} log ditampilkan
+              {data.length >= 300 && ' (hanya menyaring 300 log terbaru -- gunakan rentang tanggal yang lebih baru kalau hasil tampak kosong)'}
+            </p>
+          )}
         </div>
 
         {loading ? (

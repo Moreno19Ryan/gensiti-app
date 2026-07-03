@@ -21,20 +21,25 @@ const kehadiranLabel: Record<string, { label: string; color: string }> = {
   sakit: { label: 'Sakit', color: 'bg-purple-100 text-purple-700' },
 }
 
-// Halaman koreksi manual presensi — hanya untuk Ketua/Wakil Ketua, Sekretaris & Super Admin
-// (selaras dengan siapa yang boleh membuka sesi presensi di PresensiPanel).
-// Alurnya: pilih kegiatan -> lihat semua anggota dalam scope kegiatan tsb beserta status
-// kehadirannya -> bisa diedit manual kapan saja (mis. anggota lupa self check-in, atau ijin/sakit).
+// Halaman koreksi manual presensi — kelola (ubah status kehadiran) hanya untuk Ketua/Wakil
+// Ketua & Sekretaris (selaras dengan siapa yang boleh membuka sesi presensi di PresensiPanel).
+// Super Admin BISA MEMBUKA halaman ini untuk melihat rekap presensi (read-only, sejak audit
+// peran) tapi tidak bisa mengubah status kehadiran siapapun -- lihat canView vs canManage.
+// Alurnya: pilih kegiatan -> lihat semua Generus dalam scope kegiatan tsb beserta status
+// kehadirannya -> yang berwenang kelola bisa diedit manual kapan saja (mis. Generus lupa
+// self check-in, atau ijin/sakit).
 export default function PresensiPage() {
   const { user } = useUser()
   const canManage = canManagePresensi(user)
+  const isSuperAdmin = user?.role?.tingkatan === 'super_admin'
+  const canView = canManage || isSuperAdmin
 
   const [kegiatanList, setKegiatanList] = useState<Kegiatan[]>([])
   const [selectedKegiatan, setSelectedKegiatan] = useState<Kegiatan | null>(null)
   const [loadingKegiatan, setLoadingKegiatan] = useState(true)
   const [search, setSearch] = useState('')
 
-  const [anggotaScope, setAnggotaScope] = useState<{ id: string; nama_lengkap: string; nomor_anggota: string }[]>([])
+  const [generusScope, setGenerusScope] = useState<{ id: string; nama_lengkap: string; nomor_generus: string }[]>([])
   const [absensiMap, setAbsensiMap] = useState<Record<string, Absensi>>({})
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [savingId, setSavingId] = useState<string | null>(null)
@@ -42,7 +47,9 @@ export default function PresensiPage() {
 
   const loadKegiatan = useCallback(async () => {
     setLoadingKegiatan(true)
-    let query = supabase.from('kegiatan').select('*').order('tanggal_mulai', { ascending: false })
+    // Limit 500 -- daftar kegiatan untuk dipilih, bukan laporan lengkap; pengaman supaya
+    // query tidak membengkak seiring histori kegiatan bertambah dari tahun ke tahun.
+    let query = supabase.from('kegiatan').select('*').order('tanggal_mulai', { ascending: false }).limit(500)
     const t = user?.role?.tingkatan
     if (t !== 'super_admin' && t !== 'daerah') {
       if (user?.kelompok_id) query = query.eq('kelompok_id', user.kelompok_id)
@@ -54,45 +61,47 @@ export default function PresensiPage() {
   }, [user])
 
   useEffect(() => {
-    if (user && canManage) loadKegiatan()
-  }, [user, canManage, loadKegiatan])
+    if (user && canView) loadKegiatan()
+  }, [user, canView, loadKegiatan])
 
   const loadDetail = useCallback(async (kegiatan: Kegiatan) => {
     setLoadingDetail(true)
     setSelectedKegiatan(kegiatan)
 
-    // Anggota dalam scope kegiatan (mengikuti tempat sambung TERKINI, bukan snapshot historis)
-    let anggotaQuery = supabase.from('anggota').select('id, nama_lengkap, nomor_anggota').eq('status', 'aktif')
+    // Generus dalam scope kegiatan (mengikuti tempat sambung TERKINI, bukan snapshot historis)
+    let generusQuery = supabase.from('generus').select('id, nama_lengkap, nomor_generus').eq('status', 'aktif')
     if (kegiatan.tingkatan === 'kelompok' && kegiatan.kelompok_id) {
-      anggotaQuery = anggotaQuery.eq('kelompok_id', kegiatan.kelompok_id)
+      generusQuery = generusQuery.eq('kelompok_id', kegiatan.kelompok_id)
     } else if (kegiatan.tingkatan === 'desa' && kegiatan.desa_id) {
-      anggotaQuery = anggotaQuery.eq('desa_id', kegiatan.desa_id)
+      generusQuery = generusQuery.eq('desa_id', kegiatan.desa_id)
     } else if (kegiatan.desa_id) {
-      anggotaQuery = anggotaQuery.eq('desa_id', kegiatan.desa_id)
+      generusQuery = generusQuery.eq('desa_id', kegiatan.desa_id)
     } else if (kegiatan.kelompok_id) {
-      anggotaQuery = anggotaQuery.eq('kelompok_id', kegiatan.kelompok_id)
+      generusQuery = generusQuery.eq('kelompok_id', kegiatan.kelompok_id)
     }
-    // tingkatan 'daerah' tanpa desa_id/kelompok_id -> seluruh anggota daerah (tidak difilter tambahan)
+    // tingkatan 'daerah' tanpa desa_id/kelompok_id -> seluruh Generus daerah (tidak difilter tambahan)
 
-    const [{ data: anggotaRows }, { data: absensiRows }] = await Promise.all([
-      anggotaQuery.order('nama_lengkap'),
-      supabase.from('absensi').select('*').eq('kegiatan_id', kegiatan.id),
+    const [{ data: generusRows }, { data: absensiRows }] = await Promise.all([
+      generusQuery.order('nama_lengkap').limit(1000),
+      // Limit 1000 -- absensi per kegiatan dibatasi jumlah Generus dalam scope-nya, tapi
+      // tetap diberi pengaman untuk kegiatan tingkat Daerah dengan peserta sangat banyak.
+      supabase.from('absensi').select('*').eq('kegiatan_id', kegiatan.id).limit(1000),
     ])
 
-    setAnggotaScope(anggotaRows || [])
+    setGenerusScope(generusRows || [])
     const map: Record<string, Absensi> = {}
     for (const row of (absensiRows || []) as Absensi[]) {
-      if (row.anggota_id) map[row.anggota_id] = row
+      if (row.generus_id) map[row.generus_id] = row
     }
     setAbsensiMap(map)
     setLoadingDetail(false)
   }, [])
 
-  const updateStatus = async (anggotaId: string, status: Absensi['status']) => {
+  const updateStatus = async (generusId: string, status: Absensi['status']) => {
     if (!selectedKegiatan || !status) return
-    setSavingId(anggotaId)
+    setSavingId(generusId)
     try {
-      const existing = absensiMap[anggotaId]
+      const existing = absensiMap[generusId]
       if (existing) {
         const { data: updated } = await supabase
           .from('absensi')
@@ -100,30 +109,30 @@ export default function PresensiPage() {
           .eq('id', existing.id)
           .select('*')
           .single()
-        if (updated) setAbsensiMap(prev => ({ ...prev, [anggotaId]: updated as Absensi }))
+        if (updated) setAbsensiMap(prev => ({ ...prev, [generusId]: updated as Absensi }))
       } else {
         const { data: inserted } = await supabase
           .from('absensi')
           .insert({
             kegiatan_id: selectedKegiatan.id,
-            anggota_id: anggotaId,
+            generus_id: generusId,
             status,
             keterangan: 'Koreksi manual pengurus',
             waktu_absen: new Date().toISOString(),
           })
           .select('*')
           .single()
-        if (inserted) setAbsensiMap(prev => ({ ...prev, [anggotaId]: inserted as Absensi }))
+        if (inserted) setAbsensiMap(prev => ({ ...prev, [generusId]: inserted as Absensi }))
       }
       if (user) {
-        await logAudit(user, 'UPDATE', 'Presensi', selectedKegiatan.nama_kegiatan, { anggota_id: anggotaId, status }, selectedKegiatan.id)
+        await logAudit(user, 'UPDATE', 'Presensi', selectedKegiatan.nama_kegiatan, { generus_id: generusId, status }, selectedKegiatan.id)
       }
     } finally {
       setSavingId(null)
     }
   }
 
-  if (!canManage) {
+  if (!canView) {
     return (
       <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
         <div className="text-4xl mb-2">🔒</div>
@@ -139,21 +148,21 @@ export default function PresensiPage() {
 
   const rekap = {
     hadir: Object.values(absensiMap).filter(a => a.status === 'hadir').length,
-    total: anggotaScope.length,
+    total: generusScope.length,
   }
 
-  // Export rekap kehadiran untuk kegiatan yang sedang dibuka -- daftar semua anggota
+  // Export rekap kehadiran untuk kegiatan yang sedang dibuka -- daftar semua Generus
   // dalam cakupan kegiatan tsb beserta status kehadirannya (termasuk yang belum ditandai).
   const exportColumns = [
-    { header: 'No. Anggota', key: 'no', width: 16 },
+    { header: 'No. Generus', key: 'no', width: 16 },
     { header: 'Nama Lengkap', key: 'nama', width: 28 },
     { header: 'Status Kehadiran', key: 'status', width: 18 },
   ]
 
-  const buildExportData = () => anggotaScope.map(a => {
+  const buildExportData = () => generusScope.map(a => {
     const status = absensiMap[a.id]?.status
     return {
-      no: a.nomor_anggota,
+      no: a.nomor_generus,
       nama: a.nama_lengkap,
       status: status ? kehadiranLabel[status]?.label : 'Belum Ditandai',
     }
@@ -164,7 +173,7 @@ export default function PresensiPage() {
     { label: 'Tidak Hadir', value: `${Object.values(absensiMap).filter(a => a.status === 'tidak_hadir').length} orang` },
     { label: 'Izin', value: `${Object.values(absensiMap).filter(a => a.status === 'izin').length} orang` },
     { label: 'Sakit', value: `${Object.values(absensiMap).filter(a => a.status === 'sakit').length} orang` },
-    { label: 'Total Anggota', value: `${rekap.total} orang` },
+    { label: 'Total Generus', value: `${rekap.total} orang` },
   ]
 
   const exportSubtitle = () => {
@@ -175,7 +184,7 @@ export default function PresensiPage() {
   }
 
   const handleExportPDF = async () => {
-    if (!selectedKegiatan || anggotaScope.length === 0) { alert('Tidak ada data anggota untuk diexport.'); return }
+    if (!selectedKegiatan || generusScope.length === 0) { alert('Tidak ada data Generus untuk diexport.'); return }
     setExporting(true)
     try {
       exportToPDF({
@@ -193,7 +202,7 @@ export default function PresensiPage() {
   }
 
   const handleExportExcel = async () => {
-    if (!selectedKegiatan || anggotaScope.length === 0) { alert('Tidak ada data anggota untuk diexport.'); return }
+    if (!selectedKegiatan || generusScope.length === 0) { alert('Tidak ada data Generus untuk diexport.'); return }
     setExporting(true)
     try {
       await exportToExcel({
@@ -278,27 +287,27 @@ export default function PresensiPage() {
           </div>
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
             <h3 className="font-semibold text-slate-800">{selectedKegiatan.nama_kegiatan}</h3>
-            <p className="text-xs text-slate-400 mt-1">{rekap.hadir} / {rekap.total} anggota hadir</p>
+            <p className="text-xs text-slate-400 mt-1">{rekap.hadir} / {rekap.total} Generus hadir</p>
           </div>
 
           {loadingDetail ? (
             <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
               <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
             </div>
-          ) : anggotaScope.length === 0 ? (
+          ) : generusScope.length === 0 ? (
             <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
-              <p>Tidak ada anggota dalam cakupan kegiatan ini</p>
+              <p>Tidak ada Generus dalam cakupan kegiatan ini</p>
             </div>
           ) : (
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 divide-y divide-slate-100">
-              {anggotaScope.map(a => {
+              {generusScope.map(a => {
                 const absen = absensiMap[a.id]
                 const currentStatus = absen?.status || null
                 return (
                   <div key={a.id} className="flex items-center justify-between gap-3 p-3">
                     <div className="min-w-0">
                       <p className="font-medium text-slate-700 text-sm truncate">{a.nama_lengkap}</p>
-                      <p className="text-xs text-slate-400">{a.nomor_anggota}</p>
+                      <p className="text-xs text-slate-400">{a.nomor_generus}</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       {currentStatus && (
@@ -306,18 +315,27 @@ export default function PresensiPage() {
                           {kehadiranLabel[currentStatus]?.label}
                         </span>
                       )}
-                      <select
-                        value={currentStatus || ''}
-                        disabled={savingId === a.id}
-                        onChange={e => updateStatus(a.id, e.target.value as Absensi['status'])}
-                        className="px-2 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                      >
-                        <option value="">-- Tandai --</option>
-                        <option value="hadir">Hadir</option>
-                        <option value="tidak_hadir">Tidak Hadir</option>
-                        <option value="izin">Izin</option>
-                        <option value="sakit">Sakit</option>
-                      </select>
+                      {/* Dropdown koreksi status hanya untuk yang berwenang KELOLA presensi
+                          (Ketua/Wakil/Sekretaris) -- Super Admin cuma bisa lihat badge status
+                          di atas, tidak bisa mengubah kehadiran siapapun (read-only, sejak
+                          audit peran Super Admin). */}
+                      {canManage && (
+                        <select
+                          value={currentStatus || ''}
+                          disabled={savingId === a.id}
+                          onChange={e => updateStatus(a.id, e.target.value as Absensi['status'])}
+                          className="px-2 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                        >
+                          <option value="">-- Tandai --</option>
+                          <option value="hadir">Hadir</option>
+                          <option value="tidak_hadir">Tidak Hadir</option>
+                          <option value="izin">Izin</option>
+                          <option value="sakit">Sakit</option>
+                        </select>
+                      )}
+                      {!canManage && !currentStatus && (
+                        <span className="text-xs text-slate-300 italic">Belum ditandai</span>
+                      )}
                     </div>
                   </div>
                 )

@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { useUser } from '@/lib/user-context'
 import { signOut } from '@/lib/auth'
-import { isRuyahBiasa, canManageMembers as checkCanManageMembers, canManagePresensi as checkCanManagePresensi } from '@/lib/roles'
+import { isGenerusBiasa, canManageMembers as checkCanManageMembers, canManagePresensi as checkCanManagePresensi } from '@/lib/roles'
 
 interface NavItem {
   href: string
@@ -16,25 +16,32 @@ interface NavItem {
   // Khusus menu Presensi: Ketua/Wakil Ketua, Sekretaris & Super Admin (beda dgn requiresKvs
   // yang hanya Ketua/Wakil Ketua & Super Admin, dipakai Audit Log).
   requiresPresensiAccess?: boolean
-  // Menu yang tidak relevan untuk ru'yah biasa (bukan pengurus) — mis. Keuangan, Pengguna, Organisasi.
-  // Ru'yah biasa hanya perlu melihat Kegiatan, Pengumuman, Dokumen, Notifikasi, dan Profil sendiri.
-  hideForRuyah?: boolean
+  // Menu yang tidak relevan untuk Generus biasa (bukan pengurus) — mis. Keuangan, Pengguna, Organisasi.
+  // Generus biasa hanya perlu melihat Kegiatan, Pengumuman, Dokumen, Notifikasi, dan Profil sendiri.
+  hideForGenerus?: boolean
 }
 
 const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: '🏠', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
   { href: '/ppg', label: 'Dashboard PPG', icon: '🛡️', roles: ['ppg'] },
-  { href: '/anggota', label: 'Pengguna', icon: '👥', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForRuyah: true },
+  { href: '/generus', label: 'Pengguna', icon: '👥', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true },
   { href: '/kegiatan', label: 'Kegiatan', icon: '📅', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
-  { href: '/presensi', label: 'Presensi', icon: '✅', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForRuyah: true, requiresPresensiAccess: true },
-  { href: '/keuangan', label: 'Keuangan', icon: '💰', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForRuyah: true },
+  { href: '/presensi', label: 'Presensi', icon: '✅', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, requiresPresensiAccess: true },
+  { href: '/keuangan', label: 'Keuangan', icon: '💰', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true },
   { href: '/pengumuman', label: 'Pengumuman', icon: '📢', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
   { href: '/dokumen', label: 'Dokumen', icon: '📁', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
-  { href: '/catatan-pembinaan', label: 'Catatan Pembinaan', icon: '📝', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], hideForRuyah: true },
+  // Super Admin SENGAJA TIDAK termasuk -- Catatan Pembinaan murni komunikasi satu arah
+  // PPG ke Pengurus organisasi, bukan urusan Super Admin sama sekali (sejak audit peran;
+  // RLS 'catatan_pembinaan_all_superadmin' juga sudah dicabut total di database).
+  { href: '/catatan-pembinaan', label: 'Catatan Pembinaan', icon: '📝', roles: ['daerah', 'desa', 'kelompok', 'ppg'], hideForGenerus: true },
   { href: '/notifikasi', label: 'Notifikasi', icon: '🔔', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
   { href: '/organisasi', label: 'Organisasi', icon: '🏛️', roles: ['super_admin'] },
   { href: '/reset-password-requests', label: 'Reset Password', icon: '🔑', roles: ['super_admin'] },
-  { href: '/audit-log', label: 'Audit Log', icon: '📋', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], requiresKvs: true, hideForRuyah: true },
+  { href: '/audit-log', label: 'Audit Log', icon: '📋', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], requiresKvs: true, hideForGenerus: true },
+  // Email Log: observability sistem (riwayat kirim notifikasi email), bukan konten organisasi
+  // -- cakupan aksesnya sengaja disamakan dgn RLS email_log_select_admin di database
+  // (super_admin + daerah saja, TIDAK sampai desa/kelompok seperti Audit Log).
+  { href: '/email-log', label: 'Email Log', icon: '✉️', roles: ['super_admin', 'daerah'], hideForGenerus: true },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -99,18 +106,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (!user) return null
 
   const tingkatan = user.role?.tingkatan
+  const isSuperAdmin = tingkatan === 'super_admin'
   // Audit Log hanya terlihat untuk Ketua/Wakil Ketua dan Super Admin
   const canManageMembers = checkCanManageMembers(user)
-  // Presensi terlihat untuk Ketua/Wakil Ketua, Sekretaris, dan Super Admin
-  const canManagePresensi = checkCanManagePresensi(user)
-  const isRuyah = isRuyahBiasa(user)
+  // Presensi: menu tetap terlihat untuk Ketua/Wakil Ketua, Sekretaris, dan Super Admin --
+  // canManagePresensi() sendiri kini EXCLUDE super_admin (dia read-only, sejak audit peran),
+  // tapi itu hanya mengatur hak KELOLA presensi di dalam halamannya, bukan visibility menu.
+  // Super Admin tetap harus bisa membuka menu untuk melihat rekap presensi.
+  const canManagePresensi = checkCanManagePresensi(user) || isSuperAdmin
+  const isGenerus = isGenerusBiasa(user)
   const avatarUrl = user.avatar_url || user.foto_url
 
   const visibleNav = navItems.filter(item => {
     if (!tingkatan || !item.roles.includes(tingkatan)) return false
     if (item.requiresKvs && !canManageMembers) return false
     if (item.requiresPresensiAccess && !canManagePresensi) return false
-    if (item.hideForRuyah && isRuyah) return false
+    if (item.hideForGenerus && isGenerus) return false
     return true
   })
 

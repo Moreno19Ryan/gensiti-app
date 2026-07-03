@@ -6,9 +6,9 @@ import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth'
 import { Absensi, EmailPreferensi } from '@/lib/types'
 
-interface AnggotaRecord {
+interface GenerusRecord {
   id: string
-  nomor_anggota: string | null
+  nomor_generus: string | null
   tempat_lahir: string | null
   tanggal_lahir: string | null
   jenis_kelamin: string | null
@@ -37,7 +37,7 @@ export default function ProfilPage() {
   const [saving, setSaving] = useState(false)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
-  const [anggotaData, setAnggotaData] = useState<AnggotaRecord | null>(null)
+  const [generusData, setGenerusData] = useState<GenerusRecord | null>(null)
   const [riwayatPresensi, setRiwayatPresensi] = useState<Absensi[]>([])
   const [loadingRiwayat, setLoadingRiwayat] = useState(false)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
@@ -48,12 +48,12 @@ export default function ProfilPage() {
   const [notifPref, setNotifPref] = useState({ pengumuman: true, kegiatan: true, reminder: true, approval_ppg: true })
   const [savingNotif, setSavingNotif] = useState(false)
 
-  const loadAnggota = async (userId: string) => {
+  const loadGenerus = async (userId: string) => {
     const res = await authFetch(`/api/users?userId=${userId}`)
     const json = await res.json()
     if (json.data) {
-      const data = json.data as AnggotaRecord & { nama_orang_tua?: string }
-      setAnggotaData(data)
+      const data = json.data as GenerusRecord & { nama_orang_tua?: string }
+      setGenerusData(data)
       setDiriForm({
         tempat_lahir: data.tempat_lahir || '',
         tanggal_lahir: data.tanggal_lahir || '',
@@ -90,8 +90,8 @@ export default function ProfilPage() {
 
   const loadRiwayatPresensi = useCallback(async (userId: string) => {
     setLoadingRiwayat(true)
-    const { data: anggota } = await supabase.from('anggota').select('id').eq('user_id', userId).maybeSingle()
-    if (!anggota) {
+    const { data: generus } = await supabase.from('generus').select('id').eq('user_id', userId).maybeSingle()
+    if (!generus) {
       setRiwayatPresensi([])
       setLoadingRiwayat(false)
       return
@@ -99,7 +99,7 @@ export default function ProfilPage() {
     const { data } = await supabase
       .from('absensi')
       .select('*, kegiatan:kegiatan_id(id, nama_kegiatan)')
-      .eq('anggota_id', anggota.id)
+      .eq('generus_id', generus.id)
       .order('waktu_absen', { ascending: false })
     setRiwayatPresensi((data as Absensi[]) || [])
     setLoadingRiwayat(false)
@@ -112,11 +112,12 @@ export default function ProfilPage() {
     setAvatarUrl(url)
 
     if (!isSuperAdmin) {
-      loadAnggota(user.id)
+      loadGenerus(user.id)
       loadRiwayatPresensi(user.id)
+      // Tab & preferensi notifikasi disembunyikan untuk Super Admin (tidak relevan --
+      // lihat komentar di const tabs), jadi tidak perlu di-load untuknya sama sekali.
+      loadNotifPref(user.id)
     }
-    // Preferensi notifikasi berlaku untuk SEMUA role, termasuk Super Admin.
-    loadNotifPref(user.id)
   }, [user])
 
   const saveAkun = async () => {
@@ -173,7 +174,7 @@ export default function ProfilPage() {
         setMsg({ type: 'err', text: json.error })
       } else {
         setMsg({ type: 'ok', text: 'Data diri berhasil diperbarui!' })
-        await loadAnggota(user.id)
+        await loadGenerus(user.id)
       }
     } catch (e) {
       setMsg({ type: 'err', text: String(e) })
@@ -241,21 +242,67 @@ export default function ProfilPage() {
     }
   }
 
+  // Kompresi + resize foto profil di browser sebelum upload -- avatar tidak pernah perlu
+  // resolusi tinggi (ditampilkan maks. ~56px di sidebar, sedikit lebih besar di halaman ini),
+  // jadi foto kamera HP 4-5 MB bisa dipangkas jadi puluhan KB tanpa terlihat bedanya.
+  // GIF SENGAJA DIKECUALIKAN -- canvas hanya menangkap frame pertama, jadi animasi akan hilang
+  // kalau ikut dikompresi. GIF tetap diupload apa adanya (masih tunduk limit 5 MB di atas).
+  const MAX_AVATAR_DIMENSION = 512
+  const compressImage = (file: File): Promise<File> => new Promise((resolve, reject) => {
+    const img = new Image()
+    const objectUrl = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl)
+      const scale = Math.min(1, MAX_AVATAR_DIMENSION / Math.max(img.width, img.height))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(img.width * scale)
+      canvas.height = Math.round(img.height * scale)
+      const ctx = canvas.getContext('2d')
+      if (!ctx) { resolve(file); return }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) { resolve(file); return }
+          resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' }))
+        },
+        'image/jpeg',
+        0.82
+      )
+    }
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Gagal membaca gambar')) }
+    img.src = objectUrl
+  })
+
   const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file || !user) return
-    if (file.size > 5 * 1024 * 1024) {
+    const rawFile = e.target.files?.[0]
+    if (!rawFile || !user) return
+    if (rawFile.size > 5 * 1024 * 1024) {
       setMsg({ type: 'err', text: 'Ukuran foto maksimal 5 MB.' })
       return
     }
-    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(rawFile.type)) {
       setMsg({ type: 'err', text: 'Format foto harus JPG, PNG, WebP, atau GIF.' })
       return
     }
     setUploadingPhoto(true)
     setMsg(null)
 
-    const ext = file.name.split('.').pop()
+    let file = rawFile
+    if (rawFile.type !== 'image/gif') {
+      try {
+        file = await compressImage(rawFile)
+      } catch {
+        // Kompresi gagal (mis. format tidak didukung canvas) -- lanjut upload file asli
+        // daripada memblokir user sepenuhnya, karena file asli sudah lolos validasi di atas.
+        file = rawFile
+      }
+    }
+
+    // Nama file avatar SELALU tetap (avatar.jpg atau avatar.gif), bukan ikut ekstensi asli
+    // upload -- karena kompresi bisa mengubah format (mis. .png -> .jpg). Kalau path berubah
+    // setiap upload, file lama tidak pernah tertimpa oleh {upsert:true} dan menumpuk di storage,
+    // bertentangan dengan tujuan hemat kuota dari kompresi ini sendiri.
+    const ext = file.type === 'image/gif' ? 'gif' : 'jpg'
     const filePath = `${user.id}/avatar.${ext}`
 
     const { error: uploadErr } = await supabase.storage
@@ -302,7 +349,11 @@ export default function ProfilPage() {
     { key: 'akun' as const, label: 'Akun' },
     ...(!isSuperAdmin ? [{ key: 'datadiri' as const, label: 'Data Diri' }] : []),
     ...(!isSuperAdmin ? [{ key: 'presensi' as const, label: 'Riwayat Presensi' }] : []),
-    { key: 'notifikasi' as const, label: 'Notifikasi' },
+    // Tab Notifikasi disembunyikan untuk Super Admin -- keempat jenis notifikasi yang ada
+    // (pengumuman, kegiatan, reminder, approval_ppg) semuanya murni notifikasi konten
+    // organisasi yang tidak relevan untuknya sebagai pengelola sistem, bukan pengurus
+    // organisasi (sejak audit peran Super Admin).
+    ...(!isSuperAdmin ? [{ key: 'notifikasi' as const, label: 'Notifikasi' }] : []),
     { key: 'password' as const, label: 'Password' },
   ]
 
@@ -373,29 +424,29 @@ export default function ProfilPage() {
           </div>
         </div>
 
-        {/* Data anggota ringkas - hanya non-super admin */}
-        {!isSuperAdmin && anggotaData && (
+        {/* Data Generus ringkas - hanya non-super admin */}
+        {!isSuperAdmin && generusData && (
           <div className="mt-5 pt-5 border-t border-slate-100 dark:border-slate-700 grid grid-cols-2 gap-3">
             {[
-              { label: 'No. Anggota', val: anggotaData.nomor_anggota },
-              { label: 'Status Anggota', val: anggotaData.status },
-              { label: 'Tempat Lahir', val: anggotaData.tempat_lahir },
-              { label: 'Tanggal Lahir', val: formatDate(anggotaData.tanggal_lahir) },
-              { label: 'Jenis Kelamin', val: anggotaData.jenis_kelamin },
-              { label: 'HP Orang Tua/Wali', val: anggotaData.no_hp_orangtua_wali },
-              { label: 'Nama Ayah', val: anggotaData.nama_ayah },
-              { label: 'Nama Ibu', val: anggotaData.nama_ibu },
-              { label: 'Nama Wali', val: anggotaData.nama_wali },
+              { label: 'No. Generus', val: generusData.nomor_generus },
+              { label: 'Status Generus', val: generusData.status },
+              { label: 'Tempat Lahir', val: generusData.tempat_lahir },
+              { label: 'Tanggal Lahir', val: formatDate(generusData.tanggal_lahir) },
+              { label: 'Jenis Kelamin', val: generusData.jenis_kelamin },
+              { label: 'HP Orang Tua/Wali', val: generusData.no_hp_orangtua_wali },
+              { label: 'Nama Ayah', val: generusData.nama_ayah },
+              { label: 'Nama Ibu', val: generusData.nama_ibu },
+              { label: 'Nama Wali', val: generusData.nama_wali },
             ].filter(x => x.val).map(({ label, val }) => (
               <div key={label}>
                 <p className="text-xs text-slate-400">{label}</p>
                 <p className="text-sm text-slate-700 dark:text-slate-200">{val}</p>
               </div>
             ))}
-            {anggotaData.alamat && (
+            {generusData.alamat && (
               <div className="col-span-2">
                 <p className="text-xs text-slate-400">Alamat</p>
-                <p className="text-sm text-slate-700 dark:text-slate-200">{anggotaData.alamat}</p>
+                <p className="text-sm text-slate-700 dark:text-slate-200">{generusData.alamat}</p>
               </div>
             )}
           </div>
@@ -452,7 +503,7 @@ export default function ProfilPage() {
           {tab === 'datadiri' && !isSuperAdmin && (
             <div className="space-y-4">
               <p className="text-xs text-slate-500 bg-blue-50 p-3 rounded-xl border border-blue-100">
-                Data diri Anda. Perubahan akan tersimpan ke profil anggota.
+                Data diri Anda. Perubahan akan tersimpan ke profil Generus.
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
