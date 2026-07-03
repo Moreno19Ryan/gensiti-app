@@ -162,12 +162,15 @@ export default function PenggunaPage() {
       else if (user?.desa_id) query = query.eq('desa_id', user.desa_id)
     }
 
-    // Sembunyikan akun super_admin dari daftar Generus
-    query = query.not('roles.tingkatan', 'eq', 'super_admin')
-
+    // CATATAN: filter super_admin SENGAJA TIDAK dilakukan di query PostgREST
+    // (`.not('roles.tingkatan', 'eq', 'super_admin')`) -- filter negasi pada embedded
+    // resource/relasi nested seperti ini terbukti (ditemukan saat uji production)
+    // mengecualikan SEMUA baris, bukan cuma yang match, karena PostgREST menerapkannya
+    // sebagai INNER JOIN + NOT filter yang gagal untuk baris dengan relasi null/tidak match
+    // secara konsisten. Filter Super Admin dilakukan MURNI di client (di bawah), yang mana
+    // sudah cukup karena hasil query tetap dibatasi scope (kelompok_id/desa_id) di atas.
     const { data: rows, error: err } = await query
     if (err) console.error('Pengguna load error:', err)
-    // Filter tambahan di client: pastikan super_admin tidak tampil
     const filtered = (rows as unknown as Member[])?.filter(
       m => m.roles?.tingkatan !== 'super_admin'
     ) || []
