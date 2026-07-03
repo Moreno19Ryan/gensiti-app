@@ -1,6 +1,6 @@
 {
-  "name": "RYZA - Smart Organization Management System",
-  "short_name": "RYZA",
+  "name": "GENSITI - Smart Organization Management System",
+  "short_name": "GENSITI",
   "description": "Sistem Manajemen Organisasi Cerdas untuk KMM Bekasi Timur",
   "start_url": "/dashboard",
   "scope": "/",

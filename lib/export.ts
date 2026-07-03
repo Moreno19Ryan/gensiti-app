@@ -8,7 +8,7 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import ExcelJS from 'exceljs'
-import { RYZA_LOGO_BASE64 } from './logo'
+import { GENSITI_LOGO_BASE64 } from './logo'
 
 export interface ExportColumn {
   header: string
@@ -31,7 +31,7 @@ export interface ExportOptions {
 }
 
 const ORG_NAME = 'KMM Bekasi Timur'
-const APP_NAME = 'RYZA - Smart Organization Management System'
+const APP_NAME = 'GENSITI - Smart Organization Management System'
 
 function formatTanggalCetak() {
   return new Date().toLocaleString('id-ID', {
@@ -43,11 +43,11 @@ export function exportToPDF(opts: ExportOptions) {
   const doc = new jsPDF({ orientation: opts.columns.length > 5 ? 'landscape' : 'portrait', unit: 'mm' })
   const pageWidth = doc.internal.pageSize.getWidth()
 
-  // Kop laporan -- logo RYZA ditempel di kiri atas, teks org/app name tetap center
+  // Kop laporan -- logo GENSITI ditempel di kiri atas, teks org/app name tetap center
   // supaya rapi walau ada logo. addImage dibungkus try/catch: kalau base64 gagal
   // dirender karena alasan apapun, laporan tetap tercetak tanpa logo daripada gagal total.
   try {
-    doc.addImage(RYZA_LOGO_BASE64, 'PNG', 14, 8, 14, 14)
+    doc.addImage(GENSITI_LOGO_BASE64, 'PNG', 14, 8, 14, 14)
   } catch {
     // non-fatal -- lanjut tanpa logo
   }
@@ -120,13 +120,13 @@ export async function exportToExcel(opts: ExportOptions) {
   const safeSheetName = (opts.title.replace(/[*?:\\/[\]]/g, '-').trim().slice(0, 31)) || 'Laporan'
   const sheet = workbook.addWorksheet(safeSheetName)
 
-  // Kop -- baris 1 dikhususkan untuk logo RYZA (kolom A) supaya tidak menimpa teks org/app
+  // Kop -- baris 1 dikhususkan untuk logo GENSITI (kolom A) supaya tidak menimpa teks org/app
   // name yang di-merge & center di baris 2-3 (baris judul digeser turun 1 dibanding
   // sebelumnya). Row 1 dibuat pendek/kosong secara teks, hanya berisi gambar mengambang.
   // Dibungkus try/catch: kalau addImage gagal karena alasan apapun, laporan tetap
   // ter-generate tanpa logo daripada gagal total.
   try {
-    const imageId = workbook.addImage({ base64: RYZA_LOGO_BASE64, extension: 'png' })
+    const imageId = workbook.addImage({ base64: GENSITI_LOGO_BASE64, extension: 'png' })
     sheet.addImage(imageId, { tl: { col: 0.15, row: 0.1 }, ext: { width: 34, height: 34 } })
     sheet.getRow(1).height = 26
   } catch {

@@ -582,7 +582,7 @@ export default function ProfilPage() {
           {tab === 'notifikasi' && (
             <div className="space-y-4">
               <p className="text-xs text-slate-500 bg-blue-50 p-3 rounded-xl border border-blue-100">
-                Atur jenis notifikasi email yang ingin Anda terima dari RYZA. Perubahan berlaku untuk pengiriman email berikutnya.
+                Atur jenis notifikasi email yang ingin Anda terima dari GENSITI. Perubahan berlaku untuk pengiriman email berikutnya.
               </p>
               <div className="divide-y divide-slate-100">
                 {notifOptions.map(({ key, label, desc }) => (

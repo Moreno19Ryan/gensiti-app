@@ -127,7 +127,7 @@ export async function POST(req: NextRequest) {
           // (biarkan default NULL) supaya tidak error "invalid input syntax for type uuid".
           await supabaseAdmin.rpc('notify_email', {
             p_to: [targetUser.email],
-            p_subject: 'Password Akun RYZA Anda Telah Diperbarui',
+            p_subject: 'Password Akun GENSITI Anda Telah Diperbarui',
             p_html: emailHtml.data,
             p_tipe: 'reset_password',
           })

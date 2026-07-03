@@ -34,6 +34,6 @@ export async function logAudit(
     })
     } catch {
     // Audit log gagal tidak boleh menghentikan operasi utama
-    console.warn('[RYZA] Audit log gagal:', { action, module, targetDesc })
+    console.warn('[GENSITI] Audit log gagal:', { action, module, targetDesc })
   }
 }

@@ -13,7 +13,7 @@ export default function ServiceWorkerRegister() {
     // saat first paint.
     const register = () => {
       navigator.serviceWorker.register('/sw.js').catch((err) => {
-        console.warn('[RYZA] Registrasi service worker gagal:', err)
+        console.warn('[GENSITI] Registrasi service worker gagal:', err)
       })
     }
 

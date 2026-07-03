@@ -1,6 +1,6 @@
-// Service Worker RYZA -- caching ringan untuk asset statis saja.
+// Service Worker GENSITI -- caching ringan untuk asset statis saja.
 //
-// PENTING: RYZA adalah aplikasi realtime (presence online, data organisasi yang sering
+// PENTING: GENSITI adalah aplikasi realtime (presence online, data organisasi yang sering
 // berubah dari banyak pengguna sekaligus). Karena itu strategi di sini SENGAJA konservatif:
 // - Asset statis (JS/CSS/gambar/font/ikon Next.js) -> cache-first, supaya load berikutnya
 //   lebih cepat dan shell aplikasi tetap bisa terbuka saat koneksi lemah/putus sesaat.
@@ -8,7 +8,9 @@
 //   di-cache. Data organisasi (kegiatan, keuangan, presensi, dll) harus selalu yang terbaru;
 //   caching data akan menyebabkan user melihat data basi tanpa sadar, yang berbahaya untuk
 //   sistem manajemen organisasi.
-const CACHE_NAME = 'ryza-static-v1'
+// Versi cache di-bump (v1 -> v2) bersamaan dengan rename RYZA -> GENSITI supaya browser
+// membuang cache lama dan tidak ada aset basi tersangkut dari nama aplikasi sebelumnya.
+const CACHE_NAME = 'gensiti-static-v2'
 
 self.addEventListener('install', (event) => {
   self.skipWaiting()

@@ -47,10 +47,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [confirmLogout, setConfirmLogout] = useState(false)
 
   useEffect(() => {
-    const savedCollapse = localStorage.getItem('ryza_sidebar_collapsed')
+    const savedCollapse = localStorage.getItem('gensiti_sidebar_collapsed')
     if (savedCollapse === 'true') setCollapsed(true)
 
-    const savedDark = localStorage.getItem('ryza_dark_mode')
+    const savedDark = localStorage.getItem('gensiti_dark_mode')
     const isDark = savedDark === 'true'
     setDarkMode(isDark)
     if (isDark) document.documentElement.classList.add('dark')
@@ -68,13 +68,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const toggleCollapsed = () => {
     const next = !collapsed
     setCollapsed(next)
-    localStorage.setItem('ryza_sidebar_collapsed', String(next))
+    localStorage.setItem('gensiti_sidebar_collapsed', String(next))
   }
 
   const toggleDarkMode = () => {
     const next = !darkMode
     setDarkMode(next)
-    localStorage.setItem('ryza_dark_mode', String(next))
+    localStorage.setItem('gensiti_dark_mode', String(next))
     if (next) document.documentElement.classList.add('dark')
     else document.documentElement.classList.remove('dark')
   }
@@ -155,16 +155,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       ].join(' ')}>
 
         {/* Logo -- kotak putih dipertahankan sebagai wadah kontras karena sidebar berlatar
-            biru tua (bg-blue-900); logo asli RYZA sendiri bergradasi biru-teal jadi kurang
+            biru tua (bg-blue-900); logo asli GENSITI sendiri bergradasi biru-teal jadi kurang
             terlihat kalau ditempel langsung tanpa alas putih. */}
         <div className="px-3 py-4 border-b border-blue-800 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center shrink-0 p-1">
-              <img src="/icons/icon-512.png" alt="RYZA" className="w-full h-full object-contain" />
+              <img src="/icons/icon-512.png" alt="GENSITI" className="w-full h-full object-contain" />
             </div>
             {!collapsed && (
               <div className="min-w-0">
-                <div className="font-black text-lg tracking-tight leading-none">RYZA</div>
+                <div className="font-black text-lg tracking-tight leading-none">GENSITI</div>
                 <div className="text-blue-300 text-xs mt-0.5">Manajemen Organisasi</div>
               </div>
             )}

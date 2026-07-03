@@ -41,9 +41,9 @@ export default function LupaPasswordPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-lg mb-4 p-2">
-            <img src="/icons/icon-512.png" alt="RYZA" className="w-full h-full object-contain" />
+            <img src="/icons/icon-512.png" alt="GENSITI" className="w-full h-full object-contain" />
           </div>
-          <h1 className="text-3xl font-black text-white tracking-tight">RYZA</h1>
+          <h1 className="text-3xl font-black text-white tracking-tight">GENSITI</h1>
           <p className="text-blue-200 mt-1 text-sm">Smart Organization Management System</p>
         </div>
 
@@ -82,7 +82,7 @@ export default function LupaPasswordPage() {
                     value={nama}
                     onChange={(e) => setNama(e.target.value)}
                     required
-                    placeholder="Nama sesuai akun RYZA"
+                    placeholder="Nama sesuai akun GENSITI"
                     className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                   />
                 </div>
@@ -123,7 +123,7 @@ export default function LupaPasswordPage() {
         </div>
 
         <p className="text-center text-blue-300 text-xs mt-6">
-          &copy; {new Date().getFullYear()} RYZA. Semua hak dilindungi.
+          &copy; {new Date().getFullYear()} GENSITI. Semua hak dilindungi.
         </p>
       </div>
     </div>

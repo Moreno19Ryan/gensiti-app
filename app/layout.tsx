@@ -4,13 +4,13 @@ import { UserProvider } from '@/lib/user-context'
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
 
 export const metadata: Metadata = {
-  title: 'RYZA - Smart Organization Management',
+  title: 'GENSITI - Smart Organization Management',
   description: 'Sistem Manajemen Organisasi Cerdas',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'RYZA',
+    title: 'GENSITI',
   },
   icons: {
     icon: '/icons/favicon-32.png',
