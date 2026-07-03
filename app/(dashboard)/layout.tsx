@@ -37,6 +37,7 @@ const navItems: NavItem[] = [
   { href: '/notifikasi', label: 'Notifikasi', icon: '🔔', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
   { href: '/organisasi', label: 'Organisasi', icon: '🏛️', roles: ['super_admin'] },
   { href: '/reset-password-requests', label: 'Reset Password', icon: '🔑', roles: ['super_admin'] },
+  { href: '/backup-data', label: 'Backup Data', icon: '💾', roles: ['super_admin'] },
   { href: '/audit-log', label: 'Audit Log', icon: '📋', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], requiresKvs: true, hideForGenerus: true },
   // Email Log: observability sistem (riwayat kirim notifikasi email), bukan konten organisasi
   // -- cakupan aksesnya sengaja disamakan dgn RLS email_log_select_admin di database
