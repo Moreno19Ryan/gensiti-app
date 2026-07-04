@@ -6,22 +6,23 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { logAudit } from '@/lib/audit'
 import Modal from '@/components/Modal'
-import { AuditLog, EmailLog, EmailStatus } from '@/lib/types'
+import { AuditLog, EmailLog, EmailStatus, SystemConfig } from '@/lib/types'
 import { canManageMembers } from '@/lib/roles'
 
-// Halaman "Monitoring & Log" -- gabungan 4 sumber observability yang sebelumnya terpisah
-// (Kesehatan Sistem & Sesi Aktif dari menu "Administrasi Sistem", plus Audit Log dan Email
-// Log yang masing-masing punya menu sendiri). Digabung supaya sidebar lebih ringkas, TAPI
-// visibilitas tiap tab TETAP mengikuti aturan akses aslinya masing-masing -- BUKAN
-// disamaratakan jadi satu gate akses per halaman:
-// - Kesehatan Sistem & Sesi Aktif: SUPER ADMIN SAJA (murni administrasi teknis sistem)
+// Halaman "Monitoring & Log" -- gabungan sumber observability & kontrol teknis sistem yang
+// sebelumnya terpisah (Kesehatan Sistem & Sesi Aktif dari menu "Administrasi Sistem", plus
+// Audit Log dan Email Log yang masing-masing punya menu sendiri, plus Perawatan Sistem yang
+// baru). Digabung supaya sidebar lebih ringkas, TAPI visibilitas tiap tab TETAP mengikuti
+// aturan akses aslinya masing-masing -- BUKAN disamaratakan jadi satu gate akses per halaman:
+// - Kesehatan Sistem, Sesi Aktif, & Perawatan Sistem: SUPER ADMIN SAJA (murni administrasi
+//   teknis sistem)
 // - Audit Log: super_admin, daerah, desa, kelompok (Ketua/Wakil/Sekretaris semua jenjang +
 //   Super Admin, via canManageMembers) -- desa/kelompok terfilter scope, daerah/SA lihat semua
 // - Email Log: super_admin, daerah SAJA (selaras RLS email_log_select_admin di database)
 // Tab yang tidak diizinkan untuk role yang sedang login otomatis disembunyikan, dan halaman
 // akan redirect ke /dashboard kalau user sama sekali tidak punya akses ke tab manapun.
 
-type Tab = 'kesehatan' | 'audit' | 'email' | 'sesi'
+type Tab = 'kesehatan' | 'audit' | 'email' | 'sesi' | 'maintenance'
 
 const tingkatanColor: Record<string, string> = {
   super_admin: 'bg-red-100 text-red-700',
@@ -48,6 +49,7 @@ export default function MonitoringPage() {
     if (canSeeAudit) tabs.push({ key: 'audit', label: '📋 Audit Log' })
     if (canSeeEmail) tabs.push({ key: 'email', label: '✉️ Email Log' })
     if (isSuperAdmin) tabs.push({ key: 'sesi', label: '🔐 Sesi Aktif' })
+    if (isSuperAdmin) tabs.push({ key: 'maintenance', label: '🛠️ Perawatan Sistem' })
     return tabs
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuperAdmin, canSeeAudit, canSeeEmail])
@@ -93,6 +95,7 @@ export default function MonitoringPage() {
       {tab === 'audit' && canSeeAudit && <AuditTab user={user} />}
       {tab === 'email' && canSeeEmail && <EmailTab />}
       {tab === 'sesi' && isSuperAdmin && <SesiTab user={user} />}
+      {tab === 'maintenance' && isSuperAdmin && <MaintenanceTab user={user} />}
     </div>
   )
 }
@@ -393,6 +396,8 @@ const tipeLabel: Record<string, string> = {
   kegiatan: 'Kegiatan',
   reminder: 'Reminder H-1',
   approval_ppg: 'Approval PPG',
+  reset_password: 'Reset Password',
+  maintenance: 'Perawatan Sistem',
 }
 
 const emailStatusColor: Record<EmailStatus, string> = {
@@ -701,6 +706,144 @@ function SesiTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user'
             <button onClick={paksaLogout} disabled={processing}
               className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:bg-red-300 transition flex items-center justify-center gap-2">
               {processing ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : (confirmTarget?.id === user.id ? 'Ya, Logout Diri Sendiri' : 'Ya, Paksa Logout')}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  )
+}
+
+// ============================= TAB: PERAWATAN SISTEM (SA only) =============================
+
+// Mode Perawatan Sistem -- saat aktif, seluruh pengguna NON-super_admin diarahkan ke halaman
+// publik /maintenance oleh gerbang di app/(dashboard)/layout.tsx (polling tiap 15 detik).
+// Berguna saat Super Admin melakukan operasi berisiko (restore backup manual, migrasi skema)
+// dan ingin memastikan tidak ada race condition dari pengguna aktif lain. Super Admin sendiri
+// TIDAK PERNAH terkena blokir ini -- tetap harus bisa masuk untuk menonaktifkannya kembali.
+function MaintenanceTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user']> }) {
+  const [config, setConfig] = useState<SystemConfig | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [message, setMessage] = useState('')
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [pendingAction, setPendingAction] = useState<'activate' | 'deactivate' | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const loadConfig = useCallback(async () => {
+    setLoading(true)
+    const { data, error } = await supabase.from('system_config').select('*').eq('id', true).maybeSingle()
+    if (error) console.error('Gagal memuat system_config:', error)
+    setConfig(data as SystemConfig | null)
+    setMessage((data as SystemConfig | null)?.maintenance_message || '')
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { loadConfig() }, [loadConfig])
+
+  const openConfirm = (action: 'activate' | 'deactivate') => {
+    setPendingAction(action)
+    setConfirmOpen(true)
+  }
+
+  const applyAction = async () => {
+    if (!pendingAction) return
+    setSaving(true)
+    try {
+      const activating = pendingAction === 'activate'
+      const payload = activating
+        ? {
+            maintenance_mode: true,
+            maintenance_message: message.trim() || null,
+            maintenance_started_at: new Date().toISOString(),
+            maintenance_started_by: user.id,
+          }
+        : { maintenance_mode: false }
+
+      const { error } = await supabase.from('system_config').update(payload).eq('id', true)
+      if (error) { console.error('Gagal ubah mode perawatan:', error); return }
+      await logAudit(
+        user,
+        'UPDATE',
+        'Monitoring & Log - Perawatan Sistem',
+        activating ? 'Aktifkan mode perawatan' : 'Nonaktifkan mode perawatan',
+        activating ? { message: message.trim() || null } : {}
+      )
+      setConfirmOpen(false)
+      loadConfig()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading || !config) {
+    return (
+      <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
+        <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className={`rounded-2xl p-5 border ${config.maintenance_mode ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-100'}`}>
+        <div className="flex items-center gap-3 mb-1">
+          <span className="text-2xl">{config.maintenance_mode ? '🛠️' : '✅'}</span>
+          <div>
+            <p className="font-semibold text-slate-800">
+              {config.maintenance_mode ? 'Mode Perawatan sedang AKTIF' : 'Sistem berjalan normal'}
+            </p>
+            <p className="text-slate-500 text-xs">
+              {config.maintenance_mode
+                ? `Diaktifkan ${config.maintenance_started_at ? new Date(config.maintenance_started_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : ''} -- seluruh pengguna selain Super Admin diarahkan ke halaman perawatan.`
+                : 'Semua pengguna dapat mengakses aplikasi seperti biasa.'}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Pesan untuk pengguna (opsional)</label>
+          <textarea
+            value={message}
+            onChange={e => setMessage(e.target.value)}
+            rows={2}
+            disabled={config.maintenance_mode}
+            placeholder="mis. Sedang backup rutin, kembali normal sekitar 30 menit lagi."
+            className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none disabled:opacity-60"
+          />
+          <p className="text-[11px] text-slate-400 mt-1">Ditampilkan di halaman /maintenance yang dilihat pengguna lain. Kosongkan untuk memakai pesan bawaan.</p>
+        </div>
+
+        {config.maintenance_mode ? (
+          <button onClick={() => openConfirm('deactivate')}
+            className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition">
+            ✅ Nonaktifkan Mode Perawatan
+          </button>
+        ) : (
+          <button onClick={() => openConfirm('activate')}
+            className="w-full sm:w-auto px-5 py-2.5 bg-amber-600 text-white rounded-xl text-sm font-semibold hover:bg-amber-700 transition">
+            🛠️ Aktifkan Mode Perawatan
+          </button>
+        )}
+      </div>
+
+      <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700">
+        💡 Berguna saat melakukan operasi berisiko (restore backup manual, migrasi skema database) supaya tidak ada pengguna lain yang mengubah data secara bersamaan. Super Admin tidak pernah ikut terblokir. Perubahan status terdeteksi pengguna lain dalam ±15 detik.
+      </div>
+
+      <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title={pendingAction === 'activate' ? 'Aktifkan Mode Perawatan?' : 'Nonaktifkan Mode Perawatan?'} size="sm">
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            {pendingAction === 'activate'
+              ? 'Seluruh pengguna selain Super Admin akan diarahkan ke halaman perawatan dan tidak bisa mengakses aplikasi sampai dinonaktifkan kembali.'
+              : 'Seluruh pengguna akan bisa mengakses aplikasi seperti biasa kembali.'}
+          </p>
+          <div className="flex gap-3 pt-2 border-t border-slate-100">
+            <button onClick={() => setConfirmOpen(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">Batal</button>
+            <button onClick={applyAction} disabled={saving}
+              className={`flex-1 py-2.5 text-white rounded-xl text-sm font-medium transition flex items-center justify-center gap-2 ${pendingAction === 'activate' ? 'bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300' : 'bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300'}`}>
+              {saving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'Ya, Lanjutkan'}
             </button>
           </div>
         </div>

@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { useUser } from '@/lib/user-context'
 import { signOut } from '@/lib/auth'
+import { supabase } from '@/lib/supabase'
 import { isGenerusBiasa, canManageMembers as checkCanManageMembers, canManagePresensi as checkCanManagePresensi } from '@/lib/roles'
 
 interface NavItem {
@@ -58,6 +59,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [collapsed, setCollapsed] = useState(false)
   const [darkMode, setDarkMode] = useState(false)
   const [confirmLogout, setConfirmLogout] = useState(false)
+  // Mode Perawatan Sistem -- null = belum dicek (jangan render apapun dulu supaya non-SA
+  // tidak sempat "mengintip" dashboard sebelum redirect). Super Admin dikecualikan total
+  // (selalu diizinkan lanjut) supaya tetap bisa menonaktifkan mode ini atau menyelesaikan
+  // operasi berisiko yang jadi alasan mode ini diaktifkan.
+  const [maintenanceOk, setMaintenanceOk] = useState<boolean | null>(null)
 
   useEffect(() => {
     const savedCollapse = localStorage.getItem('gensiti_sidebar_collapsed')
@@ -73,6 +79,30 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     if (!loading && !user) router.replace('/login')
   }, [user, loading, router])
+
+  // Gerbang Mode Perawatan Sistem -- dicek sekali saat user siap, lalu polling ringan tiap
+  // 15 detik (pola sama seperti checkSessionMasihValid di lib/user-context.tsx) supaya
+  // pengguna yang sedang membuka aplikasi otomatis terdorong ke /maintenance begitu Super
+  // Admin mengaktifkannya, tanpa perlu refresh manual. Super Admin SELALU lolos gerbang ini.
+  useEffect(() => {
+    if (!user) return
+    if (user.role?.tingkatan === 'super_admin') { setMaintenanceOk(true); return }
+
+    let cancelled = false
+    const cekMaintenance = async () => {
+      const { data } = await supabase.from('system_config').select('maintenance_mode').eq('id', true).maybeSingle()
+      if (cancelled) return
+      if (data?.maintenance_mode) {
+        router.replace('/maintenance')
+        setMaintenanceOk(false)
+      } else {
+        setMaintenanceOk(true)
+      }
+    }
+    cekMaintenance()
+    const interval = setInterval(cekMaintenance, 15_000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [user, router])
 
   useEffect(() => {
     setSidebarOpen(false)
@@ -98,7 +128,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     router.replace('/login')
   }
 
-  if (loading) {
+  if (loading || (user && maintenanceOk === null)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-100 dark:bg-slate-900">
         <div className="flex items-center gap-3">
@@ -110,6 +140,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   if (!user) return null
+  if (maintenanceOk === false) return null
 
   const tingkatan = user.role?.tingkatan
   const isSuperAdmin = tingkatan === 'super_admin'

@@ -160,7 +160,10 @@ export interface Notifikasi {
   created_at: string
 }
 
-export type EmailTipe = 'pengumuman' | 'kegiatan' | 'reminder' | 'approval_ppg'
+// Selaras CHECK constraint email_log_tipe_check di database. 'reset_password' dipakai alur
+// reset password (app/api/reset-password-requests/route.ts), 'maintenance' dipakai trigger
+// trg_notify_email_maintenance saat Mode Perawatan Sistem diaktifkan/dinonaktifkan.
+export type EmailTipe = 'pengumuman' | 'kegiatan' | 'reminder' | 'approval_ppg' | 'reset_password' | 'maintenance'
 export type EmailStatus = 'pending' | 'sent' | 'failed'
 
 export interface EmailLog {
@@ -216,4 +219,16 @@ export interface ResetPasswordRequest {
   processed_at: string | null
   processed_by: string | null
   notes: string | null
+}
+
+// Baris tunggal konfigurasi teknis sistem (id selalu `true`) -- dipakai fitur Mode Perawatan
+// Sistem. RLS: SELECT terbuka untuk semua user terautentikasi (supaya layout.tsx bisa
+// redirect ke /maintenance untuk role manapun), UPDATE hanya super_admin.
+export interface SystemConfig {
+  id: true
+  maintenance_mode: boolean
+  maintenance_message: string | null
+  maintenance_started_at: string | null
+  maintenance_started_by: string | null
+  updated_at: string
 }
