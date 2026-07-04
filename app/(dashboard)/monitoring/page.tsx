@@ -748,6 +748,9 @@ function MaintenanceTab({ user }: { user: NonNullable<ReturnType<typeof useUser>
   const [pendingAction, setPendingAction] = useState<'activate' | 'deactivate' | 'schedule' | 'cancel_schedule' | null>(null)
   const [selectedDelay, setSelectedDelay] = useState<number>(60)
   const [saving, setSaving] = useState(false)
+  // Detik tersisa sampai jadwal aktif -- dihitung ulang tiap detik dari config.scheduled_activation_at
+  // supaya tampil sebagai hitung mundur, bukan cuma tanggal/jam statis.
+  const [countdown, setCountdown] = useState<string | null>(null)
 
   const loadConfig = useCallback(async () => {
     setLoading(true)
@@ -762,10 +765,55 @@ function MaintenanceTab({ user }: { user: NonNullable<ReturnType<typeof useUser>
 
   // Polling ringan supaya UI (khususnya hitung mundur jadwal) tetap ter-update tanpa refresh
   // manual, sama seperti tab lain di halaman ini yang menampilkan status real-time.
+  //
+  // PENTING: Super Admin SENGAJA ikut memicu endpoint /api/maintenance/activate-scheduled
+  // begitu waktu jadwal terlewati -- sebelumnya endpoint ini HANYA dipanggil oleh gerbang di
+  // app/(dashboard)/layout.tsx untuk user non-SA, tapi Super Admin early-return dari gerbang
+  // itu (lihat komentar di sana) sehingga tidak pernah ikut memicunya. Akibatnya kalau Super
+  // Admin sedang membuka tab ini sendirian (tanpa ada user lain yang online), jadwal yang
+  // sudah lewat waktunya TIDAK PERNAH benar-benar dieksekusi -- scheduled_activation_at tetap
+  // terisi dan maintenance_mode tetap false, sehingga tombol di UI salah menampilkan
+  // "Batalkan Jadwal" padahal seharusnya sudah aktif. Endpoint ini idempotent & aman dipanggil
+  // siapapun (lihat komentarnya), jadi Super Admin ikut memicu tidak berisiko.
   useEffect(() => {
-    const interval = setInterval(loadConfig, 15_000)
+    const interval = setInterval(async () => {
+      const { data: cfg } = await supabase.from('system_config').select('scheduled_activation_at, maintenance_mode').eq('id', true).maybeSingle()
+      if (cfg?.scheduled_activation_at && !cfg.maintenance_mode && new Date(cfg.scheduled_activation_at) <= new Date()) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          await fetch('/api/maintenance/activate-scheduled', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          }).catch(() => {})
+        }
+      }
+      loadConfig()
+    }, 15_000)
     return () => clearInterval(interval)
   }, [loadConfig])
+
+  // Hitung mundur per detik untuk jadwal yang masih pending -- murni tampilan, tidak memicu
+  // network request (data aslinya tetap dari polling 15 detik di atas).
+  useEffect(() => {
+    if (!config?.scheduled_activation_at || config.maintenance_mode) { setCountdown(null); return }
+    const target = new Date(config.scheduled_activation_at).getTime()
+    const tick = () => {
+      const diff = target - Date.now()
+      if (diff <= 0) { setCountdown('Sebentar lagi...'); return }
+      const totalSeconds = Math.floor(diff / 1000)
+      const h = Math.floor(totalSeconds / 3600)
+      const m = Math.floor((totalSeconds % 3600) / 60)
+      const s = totalSeconds % 60
+      const parts = []
+      if (h > 0) parts.push(`${h} jam`)
+      if (h > 0 || m > 0) parts.push(`${m} menit`)
+      parts.push(`${s} detik`)
+      setCountdown(parts.join(' '))
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [config?.scheduled_activation_at, config?.maintenance_mode])
 
   const openConfirm = (action: 'activate' | 'deactivate' | 'schedule' | 'cancel_schedule') => {
     setPendingAction(action)
@@ -868,6 +916,9 @@ function MaintenanceTab({ user }: { user: NonNullable<ReturnType<typeof useUser>
                   ? `Akan otomatis aktif pada ${new Date(config.scheduled_activation_at!).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}. Email peringatan sudah dikirim ke semua pengguna.`
                   : 'Semua pengguna dapat mengakses aplikasi seperti biasa.'}
             </p>
+            {hasSchedule && countdown && (
+              <p className="text-indigo-600 text-xs font-semibold mt-1">⏳ {countdown}</p>
+            )}
           </div>
         </div>
       </div>

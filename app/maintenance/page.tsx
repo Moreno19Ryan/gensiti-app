@@ -7,7 +7,7 @@
 // menonaktifkan mode ini kembali atau menyelesaikan operasi berisiko (restore backup, dsb).
 // Halaman ini sengaja di luar folder app/(dashboard) supaya tidak ikut tunduk pada gerbang
 // auth/maintenance-nya sendiri (mencegah redirect loop).
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { SystemConfig } from '@/lib/types'
@@ -16,14 +16,28 @@ export default function MaintenancePage() {
   const router = useRouter()
   const [config, setConfig] = useState<SystemConfig | null>(null)
   const [checking, setChecking] = useState(false)
+  // Hitung berapa kali BERTURUT-TURUT terdeteksi maintenance_mode = false, sebelum benar-benar
+  // redirect ke dashboard. Mencegah bug redirect loop /maintenance <-> /dashboard yang terjadi
+  // sebelumnya: kalau langsung redirect di pengecekan pertama yang false, dan ternyata itu
+  // hasil baca stale/race (mis. sesaat sebelum trigger DB benar-benar commit, atau delay
+  // propagasi antar koneksi PostgREST), pengguna terlempar ke /dashboard, lalu gerbang di
+  // app/(dashboard)/layout.tsx mendeteksi maintenance_mode masih true dan melempar balik ke
+  // sini -- berulang terus tanpa henti. Dengan syarat 2x berturut-turut (~15 detik jeda),
+  // false-positive tunggal tidak lagi memicu redirect.
+  const falseStreakRef = useRef(0)
 
-  const loadConfig = useCallback(async () => {
+  const loadConfig = useCallback(async (opts?: { forceRedirect?: boolean }) => {
     const { data } = await supabase.from('system_config').select('*').eq('id', true).maybeSingle()
     setConfig(data as SystemConfig | null)
-    // Kalau ternyata maintenance sudah dinonaktifkan (mis. Super Admin baru saja
-    // mematikannya), otomatis kembalikan pengguna ke dashboard tanpa perlu refresh manual.
     if (data && !(data as SystemConfig).maintenance_mode) {
-      router.replace('/dashboard')
+      falseStreakRef.current += 1
+      // Kalau ini dipicu oleh tombol "Cek Status Sekarang" (klik manual), pengguna sudah
+      // sengaja minta re-check -- percaya hasilnya langsung tanpa perlu menunggu streak.
+      if (falseStreakRef.current >= 2 || opts?.forceRedirect) {
+        router.replace('/dashboard')
+      }
+    } else {
+      falseStreakRef.current = 0
     }
   }, [router])
 
@@ -32,13 +46,13 @@ export default function MaintenancePage() {
     // Polling ringan tiap 15 detik -- pola sama seperti checkSessionMasihValid di
     // lib/user-context.tsx, supaya pengguna tidak perlu me-refresh manual saat maintenance
     // selesai.
-    const interval = setInterval(loadConfig, 15_000)
+    const interval = setInterval(() => loadConfig(), 15_000)
     return () => clearInterval(interval)
   }, [loadConfig])
 
   const cekSekarang = async () => {
     setChecking(true)
-    await loadConfig()
+    await loadConfig({ forceRedirect: true })
     setChecking(false)
   }
 
