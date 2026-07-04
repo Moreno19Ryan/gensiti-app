@@ -398,6 +398,7 @@ const tipeLabel: Record<string, string> = {
   approval_ppg: 'Approval PPG',
   reset_password: 'Reset Password',
   maintenance: 'Perawatan Sistem',
+  maintenance_scheduled: 'Jadwal Perawatan',
 }
 
 const emailStatusColor: Record<EmailStatus, string> = {
@@ -716,17 +717,36 @@ function SesiTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user'
 
 // ============================= TAB: PERAWATAN SISTEM (SA only) =============================
 
+// Pilihan delay untuk "Jadwalkan Perawatan" -- durasi tetap (bukan input bebas) supaya UI
+// sederhana dan hasil selalu dalam kelipatan wajar, cukup untuk kasus umum (mis. beri waktu
+// pengguna menyimpan pekerjaan sebelum sistem diblokir).
+const DELAY_OPTIONS = [
+  { label: '15 menit', minutes: 15 },
+  { label: '30 menit', minutes: 30 },
+  { label: '1 jam', minutes: 60 },
+  { label: '2 jam', minutes: 120 },
+] as const
+
 // Mode Perawatan Sistem -- saat aktif, seluruh pengguna NON-super_admin diarahkan ke halaman
 // publik /maintenance oleh gerbang di app/(dashboard)/layout.tsx (polling tiap 15 detik).
 // Berguna saat Super Admin melakukan operasi berisiko (restore backup manual, migrasi skema)
 // dan ingin memastikan tidak ada race condition dari pengguna aktif lain. Super Admin sendiri
 // TIDAK PERNAH terkena blokir ini -- tetap harus bisa masuk untuk menonaktifkannya kembali.
+//
+// Mendukung 2 mode pengaktifan:
+// - Langsung: maintenance_mode = true seketika (perilaku lama).
+// - Terjadwal: hanya isi scheduled_activation_at + scheduled_message, TANPA mengubah
+//   maintenance_mode sama sekali -- trigger DB trg_notify_email_maintenance_scheduled kirim
+//   email peringatan segera, lalu polling client (layout.tsx & /maintenance, lewat endpoint
+//   /api/maintenance/activate-scheduled) yang akan otomatis mengaktifkan blocking begitu
+//   waktunya tiba, tanpa Super Admin perlu klik lagi.
 function MaintenanceTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user']> }) {
   const [config, setConfig] = useState<SystemConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [pendingAction, setPendingAction] = useState<'activate' | 'deactivate' | null>(null)
+  const [pendingAction, setPendingAction] = useState<'activate' | 'deactivate' | 'schedule' | 'cancel_schedule' | null>(null)
+  const [selectedDelay, setSelectedDelay] = useState<number>(60)
   const [saving, setSaving] = useState(false)
 
   const loadConfig = useCallback(async () => {
@@ -734,13 +754,20 @@ function MaintenanceTab({ user }: { user: NonNullable<ReturnType<typeof useUser>
     const { data, error } = await supabase.from('system_config').select('*').eq('id', true).maybeSingle()
     if (error) console.error('Gagal memuat system_config:', error)
     setConfig(data as SystemConfig | null)
-    setMessage((data as SystemConfig | null)?.maintenance_message || '')
+    setMessage((data as SystemConfig | null)?.maintenance_message || (data as SystemConfig | null)?.scheduled_message || '')
     setLoading(false)
   }, [])
 
   useEffect(() => { loadConfig() }, [loadConfig])
 
-  const openConfirm = (action: 'activate' | 'deactivate') => {
+  // Polling ringan supaya UI (khususnya hitung mundur jadwal) tetap ter-update tanpa refresh
+  // manual, sama seperti tab lain di halaman ini yang menampilkan status real-time.
+  useEffect(() => {
+    const interval = setInterval(loadConfig, 15_000)
+    return () => clearInterval(interval)
+  }, [loadConfig])
+
+  const openConfirm = (action: 'activate' | 'deactivate' | 'schedule' | 'cancel_schedule') => {
     setPendingAction(action)
     setConfirmOpen(true)
   }
@@ -749,25 +776,38 @@ function MaintenanceTab({ user }: { user: NonNullable<ReturnType<typeof useUser>
     if (!pendingAction) return
     setSaving(true)
     try {
-      const activating = pendingAction === 'activate'
-      const payload = activating
-        ? {
-            maintenance_mode: true,
-            maintenance_message: message.trim() || null,
-            maintenance_started_at: new Date().toISOString(),
-            maintenance_started_by: user.id,
-          }
-        : { maintenance_mode: false }
+      let payload: Record<string, unknown>
+      let auditAction: string
+
+      if (pendingAction === 'activate') {
+        payload = {
+          maintenance_mode: true,
+          maintenance_message: message.trim() || null,
+          maintenance_started_at: new Date().toISOString(),
+          maintenance_started_by: user.id,
+          scheduled_activation_at: null,
+          scheduled_message: null,
+        }
+        auditAction = 'Aktifkan mode perawatan (langsung)'
+      } else if (pendingAction === 'deactivate') {
+        payload = { maintenance_mode: false, scheduled_activation_at: null, scheduled_message: null }
+        auditAction = 'Nonaktifkan mode perawatan'
+      } else if (pendingAction === 'schedule') {
+        const target = new Date(Date.now() + selectedDelay * 60_000)
+        payload = {
+          scheduled_activation_at: target.toISOString(),
+          scheduled_message: message.trim() || null,
+          scheduled_by: user.id,
+        }
+        auditAction = `Jadwalkan mode perawatan (${DELAY_OPTIONS.find(d => d.minutes === selectedDelay)?.label || `${selectedDelay} menit`} lagi)`
+      } else {
+        payload = { scheduled_activation_at: null, scheduled_message: null }
+        auditAction = 'Batalkan jadwal mode perawatan'
+      }
 
       const { error } = await supabase.from('system_config').update(payload).eq('id', true)
       if (error) { console.error('Gagal ubah mode perawatan:', error); return }
-      await logAudit(
-        user,
-        'UPDATE',
-        'Monitoring & Log - Perawatan Sistem',
-        activating ? 'Aktifkan mode perawatan' : 'Nonaktifkan mode perawatan',
-        activating ? { message: message.trim() || null } : {}
-      )
+      await logAudit(user, 'UPDATE', 'Monitoring & Log - Perawatan Sistem', auditAction, { message: message.trim() || null })
       setConfirmOpen(false)
       loadConfig()
     } finally {
@@ -783,19 +823,50 @@ function MaintenanceTab({ user }: { user: NonNullable<ReturnType<typeof useUser>
     )
   }
 
+  const hasSchedule = !!config.scheduled_activation_at && !config.maintenance_mode
+  const confirmCopy: Record<string, { title: string; body: string; confirmLabel: string; confirmClass: string }> = {
+    activate: {
+      title: 'Aktifkan Mode Perawatan?',
+      body: 'Seluruh pengguna selain Super Admin akan diarahkan ke halaman perawatan SEKARANG dan tidak bisa mengakses aplikasi sampai dinonaktifkan kembali.',
+      confirmLabel: 'Ya, Aktifkan Sekarang',
+      confirmClass: 'bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300',
+    },
+    deactivate: {
+      title: 'Nonaktifkan Mode Perawatan?',
+      body: 'Seluruh pengguna akan bisa mengakses aplikasi seperti biasa kembali.',
+      confirmLabel: 'Ya, Nonaktifkan',
+      confirmClass: 'bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300',
+    },
+    schedule: {
+      title: 'Jadwalkan Mode Perawatan?',
+      body: `Email peringatan akan dikirim ke semua pengguna SEKARANG. Sistem akan otomatis terblokir ${DELAY_OPTIONS.find(d => d.minutes === selectedDelay)?.label || ''} lagi, tanpa perlu Anda aktifkan manual.`,
+      confirmLabel: 'Ya, Jadwalkan',
+      confirmClass: 'bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300',
+    },
+    cancel_schedule: {
+      title: 'Batalkan Jadwal Perawatan?',
+      body: 'Jadwal yang sudah ditetapkan akan dibatalkan. Pengguna TIDAK akan menerima email pemberitahuan pembatalan -- pertimbangkan untuk menginformasikan secara manual kalau jadwal sempat diumumkan.',
+      confirmLabel: 'Ya, Batalkan Jadwal',
+      confirmClass: 'bg-red-600 hover:bg-red-700 disabled:bg-red-300',
+    },
+  }
+  const copy = pendingAction ? confirmCopy[pendingAction] : null
+
   return (
     <div className="space-y-4">
-      <div className={`rounded-2xl p-5 border ${config.maintenance_mode ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-100'}`}>
+      <div className={`rounded-2xl p-5 border ${config.maintenance_mode ? 'bg-amber-50 border-amber-200' : hasSchedule ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-100'}`}>
         <div className="flex items-center gap-3 mb-1">
-          <span className="text-2xl">{config.maintenance_mode ? '🛠️' : '✅'}</span>
+          <span className="text-2xl">{config.maintenance_mode ? '🛠️' : hasSchedule ? '🗓️' : '✅'}</span>
           <div>
             <p className="font-semibold text-slate-800">
-              {config.maintenance_mode ? 'Mode Perawatan sedang AKTIF' : 'Sistem berjalan normal'}
+              {config.maintenance_mode ? 'Mode Perawatan sedang AKTIF' : hasSchedule ? 'Perawatan Terjadwal' : 'Sistem berjalan normal'}
             </p>
             <p className="text-slate-500 text-xs">
               {config.maintenance_mode
                 ? `Diaktifkan ${config.maintenance_started_at ? new Date(config.maintenance_started_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : ''} -- seluruh pengguna selain Super Admin diarahkan ke halaman perawatan.`
-                : 'Semua pengguna dapat mengakses aplikasi seperti biasa.'}
+                : hasSchedule
+                  ? `Akan otomatis aktif pada ${new Date(config.scheduled_activation_at!).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}. Email peringatan sudah dikirim ke semua pengguna.`
+                  : 'Semua pengguna dapat mengakses aplikasi seperti biasa.'}
             </p>
           </div>
         </div>
@@ -808,42 +879,65 @@ function MaintenanceTab({ user }: { user: NonNullable<ReturnType<typeof useUser>
             value={message}
             onChange={e => setMessage(e.target.value)}
             rows={2}
-            disabled={config.maintenance_mode}
+            disabled={config.maintenance_mode || hasSchedule}
             placeholder="mis. Sedang backup rutin, kembali normal sekitar 30 menit lagi."
             className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none disabled:opacity-60"
           />
-          <p className="text-[11px] text-slate-400 mt-1">Ditampilkan di halaman /maintenance yang dilihat pengguna lain. Kosongkan untuk memakai pesan bawaan.</p>
+          <p className="text-[11px] text-slate-400 mt-1">Ditampilkan di halaman /maintenance dan email peringatan yang dilihat pengguna lain. Kosongkan untuk memakai pesan bawaan.</p>
         </div>
 
-        {config.maintenance_mode ? (
-          <button onClick={() => openConfirm('deactivate')}
-            className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition">
-            ✅ Nonaktifkan Mode Perawatan
-          </button>
-        ) : (
-          <button onClick={() => openConfirm('activate')}
-            className="w-full sm:w-auto px-5 py-2.5 bg-amber-600 text-white rounded-xl text-sm font-semibold hover:bg-amber-700 transition">
-            🛠️ Aktifkan Mode Perawatan
-          </button>
+        {!config.maintenance_mode && !hasSchedule && (
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Delay sebelum aktif (untuk jadwal)</label>
+            <div className="flex flex-wrap gap-2">
+              {DELAY_OPTIONS.map(opt => (
+                <button key={opt.minutes} onClick={() => setSelectedDelay(opt.minutes)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${selectedDelay === opt.minutes ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
+
+        <div className="flex flex-wrap gap-2">
+          {config.maintenance_mode ? (
+            <button onClick={() => openConfirm('deactivate')}
+              className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition">
+              ✅ Nonaktifkan Mode Perawatan
+            </button>
+          ) : hasSchedule ? (
+            <button onClick={() => openConfirm('cancel_schedule')}
+              className="px-5 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition">
+              ✕ Batalkan Jadwal
+            </button>
+          ) : (
+            <>
+              <button onClick={() => openConfirm('schedule')}
+                className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition">
+                🗓️ Jadwalkan Perawatan
+              </button>
+              <button onClick={() => openConfirm('activate')}
+                className="px-5 py-2.5 bg-amber-600 text-white rounded-xl text-sm font-semibold hover:bg-amber-700 transition">
+                🛠️ Aktifkan Sekarang
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700">
-        💡 Berguna saat melakukan operasi berisiko (restore backup manual, migrasi skema database) supaya tidak ada pengguna lain yang mengubah data secara bersamaan. Super Admin tidak pernah ikut terblokir. Perubahan status terdeteksi pengguna lain dalam ±15 detik.
+        💡 Jadwalkan memberi jeda supaya pengguna sempat menyimpan pekerjaan sebelum sistem terblokir -- email peringatan terkirim segera, lalu blocking aktif otomatis saat waktunya tiba. Berguna saat melakukan operasi berisiko (restore backup manual, migrasi skema database). Super Admin tidak pernah ikut terblokir. Perubahan status terdeteksi pengguna lain dalam ±15 detik.
       </div>
 
-      <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title={pendingAction === 'activate' ? 'Aktifkan Mode Perawatan?' : 'Nonaktifkan Mode Perawatan?'} size="sm">
+      <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title={copy?.title || ''} size="sm">
         <div className="space-y-4">
-          <p className="text-sm text-slate-600">
-            {pendingAction === 'activate'
-              ? 'Seluruh pengguna selain Super Admin akan diarahkan ke halaman perawatan dan tidak bisa mengakses aplikasi sampai dinonaktifkan kembali.'
-              : 'Seluruh pengguna akan bisa mengakses aplikasi seperti biasa kembali.'}
-          </p>
+          <p className="text-sm text-slate-600">{copy?.body}</p>
           <div className="flex gap-3 pt-2 border-t border-slate-100">
             <button onClick={() => setConfirmOpen(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">Batal</button>
             <button onClick={applyAction} disabled={saving}
-              className={`flex-1 py-2.5 text-white rounded-xl text-sm font-medium transition flex items-center justify-center gap-2 ${pendingAction === 'activate' ? 'bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300' : 'bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300'}`}>
-              {saving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'Ya, Lanjutkan'}
+              className={`flex-1 py-2.5 text-white rounded-xl text-sm font-medium transition flex items-center justify-center gap-2 ${copy?.confirmClass || ''}`}>
+              {saving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : (copy?.confirmLabel || 'Ya, Lanjutkan')}
             </button>
           </div>
         </div>

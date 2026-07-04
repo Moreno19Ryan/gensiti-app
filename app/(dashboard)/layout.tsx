@@ -84,20 +84,45 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // 15 detik (pola sama seperti checkSessionMasihValid di lib/user-context.tsx) supaya
   // pengguna yang sedang membuka aplikasi otomatis terdorong ke /maintenance begitu Super
   // Admin mengaktifkannya, tanpa perlu refresh manual. Super Admin SELALU lolos gerbang ini.
+  // Sekaligus menangani JADWAL: kalau scheduled_activation_at sudah lewat tapi maintenance_mode
+  // masih false, client yang sedang polling ini akan memicu UPDATE untuk mengaktifkannya --
+  // tidak ada cron job di proyek ini, jadi auto-aktivasi bergantung pada client aktif (Super
+  // Admin sendiri tidak memicu ini karena dia early-return duluan di atas).
   useEffect(() => {
     if (!user) return
     if (user.role?.tingkatan === 'super_admin') { setMaintenanceOk(true); return }
 
     let cancelled = false
     const cekMaintenance = async () => {
-      const { data } = await supabase.from('system_config').select('maintenance_mode').eq('id', true).maybeSingle()
+      const { data } = await supabase.from('system_config').select('maintenance_mode, scheduled_activation_at, scheduled_message').eq('id', true).maybeSingle()
       if (cancelled) return
+
       if (data?.maintenance_mode) {
         router.replace('/maintenance')
         setMaintenanceOk(false)
-      } else {
-        setMaintenanceOk(true)
+        return
       }
+
+      if (data?.scheduled_activation_at && new Date(data.scheduled_activation_at) <= new Date()) {
+        // Jadwal sudah lewat -- panggil endpoint service-role untuk mengaktifkan (client
+        // biasa tidak punya izin UPDATE lewat RLS system_config_update_superadmin, dan memang
+        // sengaja begitu -- lihat app/api/maintenance/activate-scheduled/route.ts). Trigger
+        // trg_notify_email_maintenance yang sudah ada otomatis kirim email "mode perawatan
+        // aktif" ke semua user non-SA setelah baris ini ter-update.
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          await fetch('/api/maintenance/activate-scheduled', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          }).catch(() => {})
+        }
+        if (cancelled) return
+        router.replace('/maintenance')
+        setMaintenanceOk(false)
+        return
+      }
+
+      setMaintenanceOk(true)
     }
     cekMaintenance()
     const interval = setInterval(cekMaintenance, 15_000)
