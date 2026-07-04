@@ -16,6 +16,17 @@ interface Stats {
   pengeluaran: number
 }
 
+// Ringkasan actionable khusus Super Admin -- angka-angka ini sudah dihitung masing-masing
+// di /reset-password-requests dan /monitoring (tab Email), tapi sebelumnya "terkubur" di
+// menu terpisah sehingga Super Admin harus buka 2 halaman lain hanya untuk tahu ada tugas
+// yang perlu ditangani. Dipindahkan ke depan (dashboard) sebagai sinyal proaktif.
+interface AdminAlert {
+  resetPasswordPending: number
+  emailErrorRate: number
+  emailFailedCount: number
+  emailTotal: number
+}
+
 interface ArusKasBulan { bulan: string; pemasukan: number; pengeluaran: number }
 interface KehadiranBulan { bulan: string; persentase: number }
 interface PertumbuhanBulan { bulan: string; generus_baru: number }
@@ -40,6 +51,7 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<Stats>({ generus: 0, kegiatan_aktif: 0, pemasukan: 0, pengeluaran: 0 })
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(new Date())
+  const [adminAlert, setAdminAlert] = useState<AdminAlert | null>(null)
 
   const [arusKas, setArusKas] = useState<ArusKasBulan[]>([])
   const [kehadiran, setKehadiran] = useState<KehadiranBulan[]>([])
@@ -100,6 +112,27 @@ export default function DashboardPage() {
         pemasukan,
         pengeluaran,
       })
+
+      // Ringkasan actionable khusus Super Admin -- query ringan (count + status email 90 hari
+      // terakhir), tidak menarik data mentah dalam jumlah besar ke client.
+      if (isSuper) {
+        const ninetyDaysAgo = new Date()
+        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
+        const [{ count: pendingCount }, { data: emailRows }] = await Promise.all([
+          supabase.from('reset_password_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+          supabase.from('email_log').select('status').gte('created_at', ninetyDaysAgo.toISOString()),
+        ])
+        const rows = emailRows || []
+        const emailTotal = rows.length
+        const emailFailedCount = rows.filter(r => r.status === 'failed').length
+        const emailErrorRate = emailTotal > 0 ? Math.round((emailFailedCount / emailTotal) * 100) : 0
+        setAdminAlert({
+          resetPasswordPending: pendingCount || 0,
+          emailErrorRate,
+          emailFailedCount,
+          emailTotal,
+        })
+      }
     } catch (err) {
       console.error(err)
     } finally {
@@ -272,7 +305,7 @@ export default function DashboardPage() {
     {
       label: 'Pengguna Online',
       value: loading ? '...' : onlineCount.toString(),
-      sub: 'Realtime aktif',
+      sub: 'Tab browser terbuka sekarang',
       icon: '🟢',
       color: 'bg-blue-500',
     },
@@ -335,6 +368,51 @@ export default function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* Perlu Perhatian -- ringkasan actionable khusus Super Admin, supaya reset password
+          pending & error email tidak "terkubur" di menu lain dan terlewat berhari-hari. */}
+      {isSuper && adminAlert && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+          <a
+            href="/reset-password-requests"
+            className={`rounded-2xl p-4 sm:p-5 border transition-colors flex items-center gap-4 ${
+              adminAlert.resetPasswordPending > 0
+                ? 'bg-amber-50 border-amber-200 hover:bg-amber-100'
+                : 'bg-white border-slate-100 hover:bg-slate-50'
+            }`}
+          >
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 ${adminAlert.resetPasswordPending > 0 ? 'bg-amber-500' : 'bg-slate-300'}`}>
+              🔑
+            </div>
+            <div className="min-w-0">
+              <div className="text-lg font-bold text-slate-800">{adminAlert.resetPasswordPending} permintaan</div>
+              <div className="text-slate-600 text-sm font-medium">Reset Password Menunggu</div>
+              <div className="text-slate-400 text-xs">{adminAlert.resetPasswordPending > 0 ? 'Klik untuk proses' : 'Tidak ada yang menunggu'}</div>
+            </div>
+          </a>
+          <a
+            href="/monitoring?tab=email"
+            className={`rounded-2xl p-4 sm:p-5 border transition-colors flex items-center gap-4 ${
+              adminAlert.emailErrorRate > 10
+                ? 'bg-red-50 border-red-200 hover:bg-red-100'
+                : adminAlert.emailErrorRate > 0
+                ? 'bg-amber-50 border-amber-200 hover:bg-amber-100'
+                : 'bg-white border-slate-100 hover:bg-slate-50'
+            }`}
+          >
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 ${
+              adminAlert.emailErrorRate > 10 ? 'bg-red-500' : adminAlert.emailErrorRate > 0 ? 'bg-amber-500' : 'bg-slate-300'
+            }`}>
+              ✉️
+            </div>
+            <div className="min-w-0">
+              <div className="text-lg font-bold text-slate-800">{adminAlert.emailErrorRate}% gagal</div>
+              <div className="text-slate-600 text-sm font-medium">Error Rate Email (90 hari)</div>
+              <div className="text-slate-400 text-xs">{adminAlert.emailFailedCount} gagal dari {adminAlert.emailTotal} email</div>
+            </div>
+          </a>
+        </div>
+      )}
 
       {/* Quick Actions */}
       <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100">

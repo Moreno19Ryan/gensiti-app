@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useUser } from '@/lib/user-context'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { logAudit } from '@/lib/audit'
 import Modal from '@/components/Modal'
@@ -34,6 +34,7 @@ const tingkatanColor: Record<string, string> = {
 export default function MonitoringPage() {
   const { user } = useUser()
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   const tingkatan = user?.role?.tingkatan
   const isSuperAdmin = tingkatan === 'super_admin'
@@ -56,9 +57,16 @@ export default function MonitoringPage() {
   useEffect(() => {
     if (!user) return
     if (availableTabs.length === 0) { router.replace('/dashboard'); return }
-    // Set tab default ke tab pertama yang tersedia untuk role ini, kalau belum dipilih
-    // atau tab yang sedang aktif ternyata tidak lagi valid untuk role tsb.
-    setTab(prev => (prev && availableTabs.some(t => t.key === prev)) ? prev : availableTabs[0].key)
+    // Tab dari query string (?tab=email) untuk deep-link dari Dashboard -- hanya dipakai
+    // sekali di awal kalau tabnya valid & tersedia untuk role ini, supaya link "Perlu
+    // Perhatian" di dashboard bisa langsung membuka tab yang relevan.
+    const fromQuery = searchParams.get('tab') as Tab | null
+    setTab(prev => {
+      if (prev && availableTabs.some(t => t.key === prev)) return prev
+      if (fromQuery && availableTabs.some(t => t.key === fromQuery)) return fromQuery
+      return availableTabs[0].key
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, availableTabs, router])
 
   if (!user || availableTabs.length === 0 || !tab) return null
@@ -173,8 +181,8 @@ function KesehatanTab() {
         </div>
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
           <div className="text-2xl font-black text-emerald-600">{stats.sesiAktifCount}</div>
-          <div className="text-slate-500 text-sm">Sesi Login Aktif</div>
-          <div className="text-slate-400 text-xs">via form login</div>
+          <div className="text-slate-500 text-sm">Sesi Tersimpan</div>
+          <div className="text-slate-400 text-xs">Belum logout -- beda dari &quot;Pengguna Online&quot; di Dashboard (itu real-time, ini token belum dikosongkan)</div>
         </div>
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
           <div className={`text-2xl font-black ${emailErrorRate > 10 ? 'text-red-600' : emailErrorRate > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>{emailErrorRate}%</div>
@@ -647,7 +655,12 @@ function SesiTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user'
               {filtered.map(r => (
                 <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50 transition">
                   <td className="px-4 py-3">
-                    <div className="font-medium text-slate-800">{r.nama_lengkap}</div>
+                    <div className="font-medium text-slate-800 flex items-center gap-2">
+                      {r.nama_lengkap}
+                      {r.id === user.id && (
+                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700">Sesi Anda</span>
+                      )}
+                    </div>
                     <div className="text-slate-400 text-xs">{r.login_username || r.email}</div>
                   </td>
                   <td className="px-4 py-3">
@@ -674,14 +687,20 @@ function SesiTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user'
 
       <Modal open={!!confirmTarget} onClose={() => setConfirmTarget(null)} title="Paksa Logout Sesi?" size="sm">
         <div className="space-y-4">
-          <p className="text-sm text-slate-600">
-            Sesi login <strong>{confirmTarget?.nama_lengkap}</strong> akan dikosongkan. Akunnya TIDAK dinonaktifkan -- yang bersangkutan bisa login kembali kapan saja lewat form login.
-          </p>
+          {confirmTarget?.id === user.id ? (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm">
+              ⚠️ Ini adalah sesi login Anda sendiri. Melanjutkan akan membuat Anda otomatis keluar dari sistem dalam waktu singkat dan harus login ulang.
+            </div>
+          ) : (
+            <p className="text-sm text-slate-600">
+              Sesi login <strong>{confirmTarget?.nama_lengkap}</strong> akan dikosongkan. Akunnya TIDAK dinonaktifkan -- yang bersangkutan bisa login kembali kapan saja lewat form login.
+            </p>
+          )}
           <div className="flex gap-3 pt-2 border-t border-slate-100">
             <button onClick={() => setConfirmTarget(null)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">Batal</button>
             <button onClick={paksaLogout} disabled={processing}
               className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:bg-red-300 transition flex items-center justify-center gap-2">
-              {processing ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'Ya, Paksa Logout'}
+              {processing ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : (confirmTarget?.id === user.id ? 'Ya, Logout Diri Sendiri' : 'Ya, Paksa Logout')}
             </button>
           </div>
         </div>

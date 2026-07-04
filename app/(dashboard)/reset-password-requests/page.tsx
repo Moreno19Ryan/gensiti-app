@@ -26,12 +26,21 @@ export default function ResetPasswordRequestsPage() {
   const [data, setData] = useState<ResetPasswordRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'pending' | 'all'>('pending')
+  const [search, setSearch] = useState('')
   const [target, setTarget] = useState<ResetPasswordRequest | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [newPassword, setNewPassword] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  // Untuk tolak massal -- checkbox multi-select. Hanya berlaku untuk aksi "reject" (bukan
+  // "process"), karena set password baru butuh input unik per baris yang tidak bisa diisi
+  // otomatis secara massal.
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [rejectTarget, setRejectTarget] = useState<ResetPasswordRequest | null>(null)
+  const [bulkRejectOpen, setBulkRejectOpen] = useState(false)
+  const [rejecting, setRejecting] = useState(false)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -79,27 +88,69 @@ export default function ResetPasswordRequestsPage() {
     }
   }
 
-  const handleReject = async (r: ResetPasswordRequest) => {
-    if (!confirm(`Tolak permintaan reset password dari ${r.nama} (${r.email})?`)) return
+  const confirmReject = async () => {
+    if (!rejectTarget) return
+    setRejecting(true)
     try {
       const res = await authFetch('/api/reset-password-requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requestId: r.id, action: 'reject' }),
+        body: JSON.stringify({ requestId: rejectTarget.id, action: 'reject' }),
       })
       if (res.ok) {
-        if (user) await logAudit(user, 'UPDATE', 'ResetPassword', `Tolak permintaan reset password -- ${r.email}`, undefined, String(r.id))
+        if (user) await logAudit(user, 'UPDATE', 'ResetPassword', `Tolak permintaan reset password -- ${rejectTarget.email}`, undefined, String(rejectTarget.id))
+        setRejectTarget(null)
         loadData()
       }
-    } catch {
-      // diamkan -- daftar akan tetap menampilkan status lama, user bisa coba lagi
+    } finally {
+      setRejecting(false)
     }
+  }
+
+  const confirmBulkReject = async () => {
+    if (selected.size === 0) return
+    setRejecting(true)
+    try {
+      const ids = Array.from(selected)
+      const res = await authFetch('/api/reset-password-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestIds: ids, action: 'reject' }),
+      })
+      if (res.ok) {
+        if (user) await logAudit(user, 'UPDATE', 'ResetPassword', `Tolak massal ${ids.length} permintaan reset password`, { requestIds: ids })
+        setSelected(new Set())
+        setBulkRejectOpen(false)
+        loadData()
+      }
+    } finally {
+      setRejecting(false)
+    }
+  }
+
+  const toggleSelect = (id: number) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
   }
 
   if (!isSuperAdmin) return null
 
-  const filtered = data.filter(r => filter === 'all' || r.status === filter)
+  const filtered = data.filter(r => {
+    if (filter !== 'all' && r.status !== filter) return false
+    const q = search.trim().toLowerCase()
+    if (!q) return true
+    return r.nama?.toLowerCase().includes(q) || r.email?.toLowerCase().includes(q)
+  })
   const pendingCount = data.filter(r => r.status === 'pending').length
+  const selectablePendingIds = filtered.filter(r => r.status === 'pending').map(r => r.id)
+  const allSelectableChecked = selectablePendingIds.length > 0 && selectablePendingIds.every(id => selected.has(id))
+
+  const toggleSelectAll = () => {
+    setSelected(allSelectableChecked ? new Set() : new Set(selectablePendingIds))
+  }
 
   const fmt = (t: string) => new Date(t).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 
@@ -120,6 +171,18 @@ export default function ResetPasswordRequestsPage() {
         </div>
       </div>
 
+      <div className="flex items-center gap-3 flex-wrap">
+        <input type="text" placeholder="Cari nama atau email..."
+          value={search} onChange={e => setSearch(e.target.value)}
+          className="flex-1 min-w-[200px] px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm" />
+        {selected.size > 0 && (
+          <button onClick={() => setBulkRejectOpen(true)}
+            className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-xl text-sm font-medium hover:bg-red-100 transition shrink-0">
+            Tolak {selected.size} yang dipilih
+          </button>
+        )}
+      </div>
+
       {loading ? (
         <div className="bg-white rounded-2xl p-12 text-center">
           <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
@@ -134,6 +197,12 @@ export default function ResetPasswordRequestsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-slate-500 border-b border-slate-100 bg-slate-50">
+                <th className="px-4 py-3 font-medium w-8">
+                  {selectablePendingIds.length > 0 && (
+                    <input type="checkbox" checked={allSelectableChecked} onChange={toggleSelectAll}
+                      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                  )}
+                </th>
                 <th className="px-4 py-3 font-medium">Nama</th>
                 <th className="px-4 py-3 font-medium">Email</th>
                 <th className="px-4 py-3 font-medium">Diajukan</th>
@@ -144,6 +213,12 @@ export default function ResetPasswordRequestsPage() {
             <tbody>
               {filtered.map(r => (
                 <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50 transition">
+                  <td className="px-4 py-3">
+                    {r.status === 'pending' && (
+                      <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleSelect(r.id)}
+                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                    )}
+                  </td>
                   <td className="px-4 py-3 font-medium text-slate-800">{r.nama}</td>
                   <td className="px-4 py-3 text-slate-500">{r.email}</td>
                   <td className="px-4 py-3 text-slate-400 text-xs">{fmt(r.created_at)}</td>
@@ -156,7 +231,7 @@ export default function ResetPasswordRequestsPage() {
                     {r.status === 'pending' ? (
                       <div className="flex gap-3">
                         <button onClick={() => openProcess(r)} className="text-blue-600 hover:text-blue-800 text-xs font-medium">Proses</button>
-                        <button onClick={() => handleReject(r)} className="text-red-400 hover:text-red-600 text-xs font-medium">Tolak</button>
+                        <button onClick={() => setRejectTarget(r)} className="text-red-400 hover:text-red-600 text-xs font-medium">Tolak</button>
                       </div>
                     ) : (
                       <span className="text-slate-300 text-xs">-</span>
@@ -199,6 +274,38 @@ export default function ResetPasswordRequestsPage() {
             <button onClick={handleProcess} disabled={saving}
               className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition flex items-center justify-center gap-2">
               {saving ? 'Memproses...' : 'Set Password Baru'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Konfirmasi Tolak (satu) */}
+      <Modal open={!!rejectTarget} onClose={() => setRejectTarget(null)} title="Tolak Permintaan?" size="sm">
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            Yakin ingin menolak permintaan reset password dari <strong>{rejectTarget?.nama}</strong> ({rejectTarget?.email})?
+          </p>
+          <div className="flex gap-3 pt-2 border-t border-slate-100">
+            <button onClick={() => setRejectTarget(null)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">Batal</button>
+            <button onClick={confirmReject} disabled={rejecting}
+              className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:bg-red-300 transition flex items-center justify-center gap-2">
+              {rejecting ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'Ya, Tolak'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Konfirmasi Tolak Massal */}
+      <Modal open={bulkRejectOpen} onClose={() => setBulkRejectOpen(false)} title="Tolak Permintaan Terpilih?" size="sm">
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            Yakin ingin menolak <strong>{selected.size} permintaan</strong> reset password yang dipilih? Aksi ini tidak dapat dibatalkan.
+          </p>
+          <div className="flex gap-3 pt-2 border-t border-slate-100">
+            <button onClick={() => setBulkRejectOpen(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">Batal</button>
+            <button onClick={confirmBulkReject} disabled={rejecting}
+              className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:bg-red-300 transition flex items-center justify-center gap-2">
+              {rejecting ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : `Ya, Tolak ${selected.size} Permintaan`}
             </button>
           </div>
         </div>

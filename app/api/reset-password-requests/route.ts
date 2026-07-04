@@ -57,14 +57,27 @@ export async function GET(req: NextRequest) {
 }
 
 // POST: proses satu permintaan -- set password baru untuk akun bersangkutan (by email) dan
-// tandai permintaan sebagai processed/ditolak.
+// tandai permintaan sebagai processed/ditolak. Action 'reject' juga menerima `requestIds`
+// (array) untuk tolak massal -- sengaja HANYA untuk reject (bukan process), karena process
+// butuh input password baru unik per baris yang tidak bisa diisi otomatis secara massal.
 export async function POST(req: NextRequest) {
   try {
     const supabaseAdmin = adminClient()
     const caller = await requireSuperAdmin(req, supabaseAdmin)
     if (!caller) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-    const { requestId, action, newPassword, notes } = await req.json()
+    const { requestId, requestIds, action, newPassword, notes } = await req.json()
+
+    if (action === 'reject' && Array.isArray(requestIds) && requestIds.length > 0) {
+      const { error, count } = await supabaseAdmin
+        .from('reset_password_requests')
+        .update({ status: 'ditolak', processed_at: new Date().toISOString(), processed_by: caller.id, notes: notes || null }, { count: 'exact' })
+        .in('id', requestIds)
+        .eq('status', 'pending')
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ success: true, count: count || 0 })
+    }
+
     if (!requestId || !action) {
       return NextResponse.json({ error: 'requestId dan action wajib diisi' }, { status: 400 })
     }

@@ -70,30 +70,46 @@ export default function BackupDataPage() {
   const runBackup = async () => {
     setRunning(true)
     setProgress(BACKUP_TABLES.map(t => ({ key: t.key, label: t.label, status: 'pending' })))
+    BACKUP_TABLES.forEach(t => setProgress(prev => prev.map(p => p.key === t.key ? { ...p, status: 'loading' } : p)))
 
+    // Dipanggil lewat /api/backup (service role di server) alih-alih query client-side
+    // langsung -- supaya hasil backup tidak diam-diam terpotong kalau RLS salah satu dari
+    // 10 tabel yang diizinkan berubah di masa depan. Lihat komentar di app/api/backup/route.ts.
     const result: Record<string, unknown[]> = {}
     let totalRows = 0
     let hadError = false
 
-    for (const table of BACKUP_TABLES) {
-      setProgress(prev => prev.map(p => p.key === table.key ? { ...p, status: 'loading' } : p))
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const accessToken = sessionData.session?.access_token
+      const res = await fetch('/api/backup', {
+        method: 'POST',
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+      })
+      const json = await res.json()
 
-      // .select('*') di sini disengaja (bukan bug efisiensi seperti temuan audit kuota
-      // sebelumnya) -- backup memang butuh SEMUA kolom & baris, beda dari halaman biasa
-      // yang cukup ambil kolom terpakai. Ini operasi manual (bukan otomatis/berkala) yang
-      // hanya dijalankan Super Admin saat dibutuhkan, jadi dampak kuotanya terkendali.
-      const { data, error } = await supabase.from(table.key).select('*')
-
-      if (error) {
+      if (!res.ok) {
         hadError = true
-        setProgress(prev => prev.map(p => p.key === table.key ? { ...p, status: 'error', error: error.message } : p))
-        result[table.key] = []
-        continue
+        setProgress(prev => prev.map(p => ({ ...p, status: 'error', error: json.error || 'Gagal memuat backup' })))
+      } else {
+        for (const table of BACKUP_TABLES) {
+          const status = json.tableStatus?.[table.key]
+          if (!status || status.error) {
+            hadError = true
+            setProgress(prev => prev.map(p => p.key === table.key ? { ...p, status: 'error', error: status?.error || 'Tidak ada data' } : p))
+            result[table.key] = []
+            continue
+          }
+          result[table.key] = json.data?.[table.key] || []
+          totalRows += status.count || 0
+          setProgress(prev => prev.map(p => p.key === table.key ? { ...p, status: 'done', count: status.count || 0 } : p))
+        }
+        if (json.hadError) hadError = true
       }
-
-      result[table.key] = data || []
-      totalRows += data?.length || 0
-      setProgress(prev => prev.map(p => p.key === table.key ? { ...p, status: 'done', count: data?.length || 0 } : p))
+    } catch (err) {
+      hadError = true
+      const msg = err instanceof Error ? err.message : 'Gagal menghubungi server'
+      setProgress(prev => prev.map(p => ({ ...p, status: 'error', error: msg })))
     }
 
     const now = new Date()
