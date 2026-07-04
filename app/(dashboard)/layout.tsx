@@ -36,6 +36,7 @@ const navItems: NavItem[] = [
   { href: '/catatan-pembinaan', label: 'Catatan Pembinaan', icon: '📝', roles: ['daerah', 'desa', 'kelompok', 'ppg'], hideForGenerus: true },
   { href: '/notifikasi', label: 'Notifikasi', icon: '🔔', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
   { href: '/organisasi', label: 'Organisasi', icon: '🏛️', roles: ['super_admin'] },
+  { href: '/admin-sistem', label: 'Administrasi Sistem', icon: '⚙️', roles: ['super_admin'] },
   { href: '/reset-password-requests', label: 'Reset Password', icon: '🔑', roles: ['super_admin'] },
   { href: '/backup-data', label: 'Backup Data', icon: '💾', roles: ['super_admin'] },
   { href: '/audit-log', label: 'Audit Log', icon: '📋', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], requiresKvs: true, hideForGenerus: true },
