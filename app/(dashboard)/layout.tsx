@@ -35,15 +35,19 @@ const navItems: NavItem[] = [
   // RLS 'catatan_pembinaan_all_superadmin' juga sudah dicabut total di database).
   { href: '/catatan-pembinaan', label: 'Catatan Pembinaan', icon: '📝', roles: ['daerah', 'desa', 'kelompok', 'ppg'], hideForGenerus: true },
   { href: '/notifikasi', label: 'Notifikasi', icon: '🔔', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
-  { href: '/organisasi', label: 'Organisasi', icon: '🏛️', roles: ['super_admin'] },
-  { href: '/admin-sistem', label: 'Administrasi Sistem', icon: '⚙️', roles: ['super_admin'] },
+  // "Organisasi & Role" -- gabungan Desa/Kelompok (dulu /organisasi) + Role (dulu tab di
+  // menu "Administrasi Sistem" yang sudah dihapus) supaya semua master data struktural ada
+  // di satu menu. Tetap eksklusif Super Admin.
+  { href: '/organisasi', label: 'Organisasi & Role', icon: '🏛️', roles: ['super_admin'] },
   { href: '/reset-password-requests', label: 'Reset Password', icon: '🔑', roles: ['super_admin'] },
   { href: '/backup-data', label: 'Backup Data', icon: '💾', roles: ['super_admin'] },
-  { href: '/audit-log', label: 'Audit Log', icon: '📋', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], requiresKvs: true, hideForGenerus: true },
-  // Email Log: observability sistem (riwayat kirim notifikasi email), bukan konten organisasi
-  // -- cakupan aksesnya sengaja disamakan dgn RLS email_log_select_admin di database
-  // (super_admin + daerah saja, TIDAK sampai desa/kelompok seperti Audit Log).
-  { href: '/email-log', label: 'Email Log', icon: '✉️', roles: ['super_admin', 'daerah'], hideForGenerus: true },
+  // "Monitoring & Log" -- gabungan Kesehatan Sistem + Sesi Aktif (dulu di menu "Administrasi
+  // Sistem") + Audit Log + Email Log, jadi satu menu observability. Visibilitas TIAP TAB di
+  // dalam halaman ini tetap mengikuti aturan lama masing-masing (lihat komentar di
+  // app/(dashboard)/monitoring/page.tsx) -- requiresKvs di sini memastikan menu ini muncul
+  // di sidebar untuk siapapun yang setidaknya berhak atas Audit Log (kriteria paling longgar
+  // di antara 4 sumber gabungan), sisanya baru disaring per-tab di dalam halaman.
+  { href: '/monitoring', label: 'Monitoring & Log', icon: '📊', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], requiresKvs: true, hideForGenerus: true },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
