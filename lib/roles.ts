@@ -41,10 +41,12 @@ export function isPengurus(user: Pick<UserProfile, 'role'> | null | undefined): 
 }
 
 /**
- * Hanya Ketua/Wakil Ketua (di jenjang manapun) dan Super Admin yang boleh
- * mengelola Generus lain (tambah/edit/nonaktifkan/arsip).
- * Role pengurus lain (Sekretaris, Bendahara, Kemandirian, Keputrian, dll),
- * Generus biasa, dan PPG hanya bisa melihat.
+ * Hanya Ketua/Wakil Ketua/Sekretaris (di jenjang manapun) dan Super Admin yang boleh
+ * mengelola Generus lain (tambah pengguna baru, edit, nonaktifkan/aktifkan akun, arsip
+ * saat status berubah jadi menikah/meninggal dunia/pindah sambung).
+ * Role pengurus lain (Bendahara, Kemandirian, Keputrian, dll), Generus biasa, dan PPG
+ * hanya bisa melihat. Sekretaris sengaja disertakan (beda dari sebelumnya yang hanya
+ * Ketua/Wakil) karena tugas administrasi keanggotaan lazimnya didelegasikan ke Sekretaris.
  *
  * KHUSUS UNTUK MODUL PENGGUNA/GENERUS -- Super Admin sengaja diberi akses penuh di sini
  * (beda dari konten operasional organisasi lain seperti Kegiatan/Dokumen/Pengumuman,
@@ -56,7 +58,8 @@ export function canManageMembers(user: Pick<UserProfile, 'role'> | null | undefi
   if (!user?.role) return false
   if (isPPG(user)) return false
   if (user.role.tingkatan === 'super_admin') return true
-  return user.role.nama_role.toLowerCase().includes('ketua')
+  const nama = user.role.nama_role.toLowerCase()
+  return nama.includes('ketua') || nama.includes('sekretaris')
 }
 
 /**

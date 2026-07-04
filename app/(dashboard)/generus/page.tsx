@@ -27,10 +27,14 @@ interface Member {
   generus: {
     id: string
     nomor_generus: string
+    nama_panggilan: string | null
     tanggal_lahir: string | null
     tempat_lahir: string | null
     jenis_kelamin: string | null
     alamat: string | null
+    tinggi_badan: number | null
+    berat_badan: number | null
+    kelas_ngaji: string | null
     nama_ayah: string | null
     nama_ibu: string | null
     nama_wali: string | null
@@ -55,6 +59,7 @@ const emptyForm = {
   email: '',
   password: '',
   nama_lengkap: '',
+  nama_panggilan: '',
   no_hp: '',
   role_id: '',
   desa_id: '',
@@ -64,6 +69,9 @@ const emptyForm = {
   tanggal_lahir: '',
   jenis_kelamin: '',
   alamat: '',
+  tinggi_badan: '',
+  berat_badan: '',
+  kelas_ngaji: '',
   status_anggota: 'aktif',
   nama_ayah: '',
   nama_ibu: '',
@@ -75,6 +83,12 @@ const emptyForm = {
   pindah_kelompok_id: '',
   anak_ke: '',
   jumlah_saudara: '',
+}
+
+const kelasNgajiLabel: Record<string, string> = {
+  pra_remaja: 'Pra Remaja (SMP)',
+  remaja_muda: 'Remaja Muda (SMA)',
+  remaja_dewasa: 'Remaja Dewasa (Lulus SMA - Usia Mandiri)',
 }
 
 const statusPenggunaBadge: Record<string, string> = {
@@ -142,6 +156,11 @@ export default function PenggunaPage() {
   const [confirmStep, setConfirmStep] = useState<1 | 2>(1)
   const [confirmType, setConfirmType] = useState<ConfirmType | null>(null)
   const [exporting, setExporting] = useState(false)
+  // Ditampilkan sekali setelah berhasil membuat pengguna baru -- berisi Nama Pengguna
+  // (login_username) & password default (tanggal lahir) hasil generate server, supaya
+  // admin bisa langsung mencatat/menyampaikan ke pengguna baru. Tidak disimpan di
+  // state lain manapun setelah modal ini ditutup (sesuai sifat password sekali-lihat).
+  const [newCredentials, setNewCredentials] = useState<{ nama: string; username: string; password: string } | null>(null)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -152,7 +171,7 @@ export default function PenggunaPage() {
         roles:role_id(id, nama_role, tingkatan),
         desa:desa_id(id, nama_desa),
         kelompok:kelompok_id(id, nama_kelompok),
-        generus(id, nomor_generus, tanggal_lahir, tempat_lahir, jenis_kelamin, alamat, nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali, nama_orang_tua, no_hp_orang_tua, status, status_pengguna, pindah_desa_id, pindah_kelompok_id, pindah_ke_daerah_lain, anak_ke, jumlah_saudara)
+        generus(id, nomor_generus, nama_panggilan, tanggal_lahir, tempat_lahir, jenis_kelamin, alamat, tinggi_badan, berat_badan, kelas_ngaji, nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali, nama_orang_tua, no_hp_orang_tua, status, status_pengguna, pindah_desa_id, pindah_kelompok_id, pindah_ke_daerah_lain, anak_ke, jumlah_saudara)
       `)
       .order('nama_lengkap')
 
@@ -194,7 +213,9 @@ export default function PenggunaPage() {
 
   const openAdd = () => {
     setEditTarget(null)
-    setActiveTab('info')
+    // Alur baru: untuk pengguna BARU, wajib pilih Role & isi Email dulu (tab "akun")
+    // sebelum mengisi data diri lengkap -- sesuai permintaan supaya role ditentukan di awal.
+    setActiveTab('akun')
     setError('')
     setForm({ ...emptyForm, desa_id: user?.desa_id || '', kelompok_id: user?.kelompok_id || '' })
     setModalOpen(true)
@@ -209,6 +230,7 @@ export default function PenggunaPage() {
       email: m.email,
       password: '',
       nama_lengkap: m.nama_lengkap,
+      nama_panggilan: a?.nama_panggilan || '',
       no_hp: m.no_hp || '',
       role_id: m.roles?.id || '',
       desa_id: m.desa?.id || '',
@@ -218,6 +240,9 @@ export default function PenggunaPage() {
       tanggal_lahir: a?.tanggal_lahir || '',
       jenis_kelamin: a?.jenis_kelamin || '',
       alamat: a?.alamat || '',
+      tinggi_badan: a?.tinggi_badan?.toString() || '',
+      berat_badan: a?.berat_badan?.toString() || '',
+      kelas_ngaji: a?.kelas_ngaji || '',
       status_anggota: a?.status || 'aktif',
       nama_ayah: a?.nama_ayah || a?.nama_orang_tua || '',
       nama_ibu: a?.nama_ibu || '',
@@ -243,10 +268,14 @@ export default function PenggunaPage() {
       )
 
       const generusFields = {
+        nama_panggilan: form.nama_panggilan || null,
         tempat_lahir: form.tempat_lahir,
         tanggal_lahir: form.tanggal_lahir,
         jenis_kelamin: form.jenis_kelamin,
         alamat: form.alamat,
+        tinggi_badan: form.tinggi_badan ? parseFloat(form.tinggi_badan) : null,
+        berat_badan: form.berat_badan ? parseFloat(form.berat_badan) : null,
+        kelas_ngaji: form.kelas_ngaji || null,
         status_anggota: form.status_anggota,
         nama_ayah: form.nama_ayah,
         nama_ibu: form.nama_ibu,
@@ -263,12 +292,14 @@ export default function PenggunaPage() {
       let userId = editTarget?.id
 
       if (!editTarget) {
+        // password TIDAK dikirim -- server men-generate otomatis dari tanggal_lahir
+        // (lihat app/api/users/route.ts, passwordFromTanggalLahir). login_username juga
+        // di-generate server-side dari nama_panggilan (fallback nama_lengkap).
         const res = await authFetch('/api/users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             email: form.email,
-            password: form.password,
             nama_lengkap: form.nama_lengkap,
             no_hp: form.no_hp,
             role_id: form.role_id,
@@ -280,6 +311,13 @@ export default function PenggunaPage() {
         const json = await res.json()
         if (json.error) { setError(json.error); return }
         userId = json.userId
+        // Tampilkan kredensial default sekali ke admin -- tidak ada cara lain untuk
+        // melihat password ini lagi setelah modal ditutup (sesuai desain, bukan disimpan).
+        setNewCredentials({
+          nama: form.nama_lengkap,
+          username: json.loginUsername,
+          password: json.defaultPassword,
+        })
       } else {
         const existingGenerus = editTarget.generus?.[0]
 
@@ -343,15 +381,25 @@ export default function PenggunaPage() {
 
   const handleSave = async () => {
     setError('')
+    // Role & email divalidasi duluan (tab "akun") karena alur baru: pilih role & isi
+    // email dulu sebelum data diri -- kalau salah satunya kosong, arahkan balik ke tab itu.
+    if (!editTarget && !form.role_id) { setError('Role wajib dipilih'); setActiveTab('akun'); return }
+    if (!form.email) { setError('Email wajib diisi (dipakai untuk notifikasi sistem)'); setActiveTab('akun'); return }
     if (!form.nama_lengkap) { setError('Nama lengkap wajib diisi'); return }
-    if (!editTarget && (!form.email || !form.password)) { setError('Email dan password wajib untuk pengguna baru'); return }
+    if (!form.nama_panggilan) { setError('Nama panggilan wajib diisi'); return }
     if (!form.tempat_lahir) { setError('Tempat lahir wajib diisi'); return }
     if (!form.tanggal_lahir) { setError('Tanggal lahir wajib diisi'); return }
     if (!form.jenis_kelamin) { setError('Jenis kelamin wajib diisi'); return }
     if (!form.alamat) { setError('Alamat wajib diisi'); return }
+    if (!form.no_hp) { setError('No. HP pribadi wajib diisi (jika tidak punya, isi dengan no. HP aktif lain)'); return }
+    // Kelas ngaji tidak relevan untuk PPG (pembina, bukan muda-mudi) -- lihat
+    // isKelasNgajiRelevant, field-nya juga disembunyikan dari UI kalau role = PPG.
+    if (isKelasNgajiRelevant && !form.kelas_ngaji) { setError('Kelas ngaji wajib dipilih'); return }
     if (!form.nama_ayah) { setError('Nama ayah kandung wajib diisi'); return }
     if (!form.nama_ibu) { setError('Nama ibu kandung wajib diisi'); return }
-    if (!form.no_hp_orangtua_wali) { setError('No. HP orang tua/wali wajib diisi'); return }
+    if (!form.no_hp_orangtua_wali) { setError('No. HP orang tua wajib diisi'); return }
+    if (!form.desa_id) { setError('Alamat sambung: desa wajib dipilih'); setActiveTab('akun'); return }
+    if (!form.kelompok_id) { setError('Alamat sambung: kelompok wajib dipilih'); setActiveTab('akun'); return }
 
     // Validasi pindah sambung Bekasi Timur
     if (editTarget && form.status_pengguna === 'pindah_sambung' && form.pindah_jenis === 'bekasi_timur') {
@@ -399,6 +447,13 @@ export default function PenggunaPage() {
   const set = (key: string, val: string | boolean) => setForm(f => ({ ...f, [key]: val }))
   const setUpper = (key: string, val: string) => setForm(f => ({ ...f, [key]: toUpperWords(val) }))
 
+  // PPG (Penggerak Pembina Generus) adalah pembina, bukan muda-mudi/generus yang mengikuti
+  // jenjang kelas ngaji -- field ini disembunyikan & tidak wajib kalau role yang dipilih
+  // bertingkatan ppg. Dihitung dari role_id yang sedang dipilih di form (bukan role user
+  // yang sedang login), supaya reaktif begitu admin ganti pilihan role di tab "1. Role & Email".
+  const selectedRoleTingkatan = roleList.find(r => r.id === form.role_id)?.tingkatan
+  const isKelasNgajiRelevant = selectedRoleTingkatan !== 'ppg'
+
   const filtered = data
     .filter(m => {
       const q = search.toLowerCase()
@@ -420,11 +475,16 @@ export default function PenggunaPage() {
 
   const isSuperAdmin = user?.role?.tingkatan === 'super_admin'
 
-  // Hanya Ketua Muda-Mudi dan Wakil Ketua (semua scope) yang bisa mengelola Generus.
-  // Role lain (Sekretaris, Bendahara, Kemandirian, Keputrian, dll) dan Generus biasa hanya bisa melihat daftar.
+  // Hanya Ketua/Wakil Ketua/Sekretaris (semua scope) dan Super Admin yang bisa mengelola
+  // Generus -- lihat canManageMembers di lib/roles.ts untuk definisi lengkapnya (sumber
+  // kebenaran tunggal, jangan duplikasi logika "includes ketua/sekretaris" di sini).
+  // Role pengurus lain (Bendahara, Kemandirian, Keputrian, dll) dan Generus biasa hanya
+  // bisa melihat daftar.
   const canManageMembers = checkCanManageMembers(user)
 
-  // Cek apakah user bisa edit/tambah member tertentu — hanya Ketua/Wakil sesuai scope
+  // Cek apakah user bisa edit/tambah member tertentu (termasuk mengubah status
+  // aktif/nonaktif saat status berubah jadi menikah/meninggal dunia/pindah sambung) --
+  // gabungan hak akses role (canManageMembers) DAN scope (desa/kelompok yang sama).
   const canActOn = (m: Member): boolean => {
     if (!canManageMembers) return false
     if (isSuperAdmin || user?.role?.tingkatan === 'daerah') return true
@@ -433,7 +493,7 @@ export default function PenggunaPage() {
     return false
   }
 
-  // Tombol Tambah Pengguna: hanya Ketua/Wakil Ketua/Super Admin
+  // Tombol Tambah Pengguna: hanya Ketua/Wakil Ketua/Sekretaris/Super Admin
   const canManage = canManageMembers
 
   // Export daftar Generus -- pakai `filtered` (pencarian + filter role yang sedang aktif),
@@ -441,8 +501,10 @@ export default function PenggunaPage() {
   const exportColumns = [
     { header: 'No. Generus', key: 'no', width: 14 },
     { header: 'Nama Lengkap', key: 'nama', width: 26 },
+    { header: 'Nama Panggilan', key: 'panggilan', width: 18 },
     { header: 'Jenis Kelamin', key: 'jk', width: 14 },
     { header: 'Tempat, Tgl Lahir', key: 'ttl', width: 24 },
+    { header: 'Kelas Ngaji', key: 'kelas_ngaji', width: 24 },
     { header: 'Role', key: 'role', width: 20 },
     { header: 'Desa', key: 'desa', width: 18 },
     { header: 'Kelompok', key: 'kelompok', width: 18 },
@@ -458,8 +520,10 @@ export default function PenggunaPage() {
     return {
       no: a?.nomor_generus || '-',
       nama: m.nama_lengkap,
+      panggilan: a?.nama_panggilan || '-',
       jk: a?.jenis_kelamin || '-',
       ttl,
+      kelas_ngaji: a?.kelas_ngaji ? (kelasNgajiLabel[a.kelas_ngaji] || a.kelas_ngaji) : '-',
       role: m.roles?.nama_role || '-',
       desa: m.desa?.nama_desa || '-',
       kelompok: m.kelompok?.nama_kelompok || '-',
@@ -687,6 +751,7 @@ export default function PenggunaPage() {
             <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-100">
               {[
                 { label: 'No. Generus', val: detailModal.generus?.[0]?.nomor_generus },
+                { label: 'Nama Panggilan', val: detailModal.generus?.[0]?.nama_panggilan },
                 { label: 'Email', val: detailModal.email },
                 { label: 'No. HP', val: detailModal.no_hp },
                 { label: 'Status Generus', val: detailModal.generus?.[0]?.status },
@@ -694,6 +759,9 @@ export default function PenggunaPage() {
                 { label: 'Tempat Lahir', val: detailModal.generus?.[0]?.tempat_lahir },
                 { label: 'Tanggal Lahir', val: detailModal.generus?.[0]?.tanggal_lahir ? new Date(detailModal.generus[0].tanggal_lahir).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : null },
                 { label: 'Jenis Kelamin', val: detailModal.generus?.[0]?.jenis_kelamin },
+                { label: 'Tinggi Badan', val: detailModal.generus?.[0]?.tinggi_badan ? `${detailModal.generus[0].tinggi_badan} cm` : null },
+                { label: 'Berat Badan', val: detailModal.generus?.[0]?.berat_badan ? `${detailModal.generus[0].berat_badan} kg` : null },
+                { label: 'Kelas Ngaji', val: detailModal.generus?.[0]?.kelas_ngaji ? kelasNgajiLabel[detailModal.generus[0].kelas_ngaji] || detailModal.generus[0].kelas_ngaji : null },
                 { label: 'Desa', val: detailModal.desa?.nama_desa },
                 { label: 'Kelompok', val: detailModal.kelompok?.nama_kelompok },
                 { label: 'Anak Ke-', val: (detailModal.generus?.[0]?.anak_ke != null && detailModal.generus?.[0]?.jumlah_saudara != null) ? `${detailModal.generus[0].anak_ke} dari ${detailModal.generus[0].jumlah_saudara} bersaudara` : detailModal.generus?.[0]?.anak_ke != null ? `Anak ke-${detailModal.generus[0].anak_ke}` : null },
@@ -740,10 +808,10 @@ export default function PenggunaPage() {
 
           {/* Tabs */}
           <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
-            {(['info', 'akun'] as const).map(tab => (
+            {(['akun', 'info'] as const).map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab)}
                 className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition ${activeTab === tab ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
-                {tab === 'info' ? 'Data Diri' : 'Akun & Akses'}
+                {tab === 'akun' ? '1. Role & Email' : '2. Data Diri'}
               </button>
             ))}
           </div>
@@ -758,16 +826,27 @@ export default function PenggunaPage() {
                 </div>
               ) : !editTarget && (
                 <div className="p-2 bg-blue-50 rounded-xl border border-blue-100">
-                  <span className="text-xs text-blue-500">No. Generus akan dibuat otomatis (format: GEN-[kode kelompok/desa]-XXX)</span>
+                  <span className="text-xs text-blue-500">
+                    No. Generus akan dibuat otomatis sesuai role: GEN- (Generus), KLO-/DSA-/DRA- (pengurus Kelompok/Desa/Daerah), atau PPG- (PPG)
+                  </span>
                 </div>
               )}
 
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Nama Lengkap * (huruf kapital)</label>
-                <input value={form.nama_lengkap}
-                  onChange={e => setUpper('nama_lengkap', e.target.value)}
-                  placeholder="NAMA LENGKAP"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Nama Lengkap * (huruf kapital)</label>
+                  <input value={form.nama_lengkap}
+                    onChange={e => setUpper('nama_lengkap', e.target.value)}
+                    placeholder="NAMA LENGKAP"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Nama Panggilan * (huruf kapital)</label>
+                  <input value={form.nama_panggilan}
+                    onChange={e => setUpper('nama_panggilan', e.target.value)}
+                    placeholder="NAMA PANGGILAN"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -782,6 +861,9 @@ export default function PenggunaPage() {
                   <label className="block text-xs font-medium text-slate-600 mb-1">Tanggal Lahir *</label>
                   <input type="date" value={form.tanggal_lahir} onChange={e => set('tanggal_lahir', e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  {!editTarget && (
+                    <p className="text-[11px] text-blue-500 mt-1">Dipakai juga sebagai password awal akun (format DDMMYYYY)</p>
+                  )}
                 </div>
               </div>
 
@@ -796,8 +878,24 @@ export default function PenggunaPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">No. HP</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">No. HP Pribadi *</label>
                   <input value={form.no_hp} onChange={e => set('no_hp', e.target.value)} placeholder="08xx-xxxx-xxxx"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <p className="text-[11px] text-slate-400 mt-1">Jika tidak punya HP pribadi, isi No. HP lain yang aktif</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Tinggi Badan (cm)</label>
+                  <input type="number" min="0" step="0.1" value={form.tinggi_badan} onChange={e => set('tinggi_badan', e.target.value)}
+                    placeholder="opsional"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Berat Badan (kg)</label>
+                  <input type="number" min="0" step="0.1" value={form.berat_badan} onChange={e => set('berat_badan', e.target.value)}
+                    placeholder="opsional"
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
@@ -808,6 +906,19 @@ export default function PenggunaPage() {
                   rows={2} placeholder="ALAMAT LENGKAP"
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none uppercase" />
               </div>
+
+              {isKelasNgajiRelevant && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Kelas Ngaji *</label>
+                  <select value={form.kelas_ngaji} onChange={e => set('kelas_ngaji', e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">-- Pilih --</option>
+                    <option value="pra_remaja">Pra Remaja (SMP)</option>
+                    <option value="remaja_muda">Remaja Muda (SMA)</option>
+                    <option value="remaja_dewasa">Remaja Dewasa (Lulus SMA - Usia Mandiri)</option>
+                  </select>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -849,7 +960,7 @@ export default function PenggunaPage() {
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">No. HP Orang Tua/Wali *</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">No. HP Orang Tua *</label>
                     <input value={form.no_hp_orangtua_wali} onChange={e => set('no_hp_orangtua_wali', e.target.value)}
                       placeholder="08xx-xxxx-xxxx"
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -858,22 +969,18 @@ export default function PenggunaPage() {
               </div>
 
               <div className="pt-2 border-t border-slate-100 space-y-3">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Status Akun</label>
-                    <select value={form.status_anggota} onChange={e => set('status_anggota', e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                      <option value="aktif">Aktif</option>
-                      <option value="non-aktif">Non-aktif</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Status Pengguna</label>
-                    {!editTarget ? (
-                      <div className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-100 text-sm text-slate-500">
-                        Lajang (auto)
-                      </div>
-                    ) : (
+                {editTarget && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Status Akun</label>
+                      <select value={form.status_anggota} onChange={e => set('status_anggota', e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="aktif">Aktif</option>
+                        <option value="non-aktif">Non-aktif</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Status Pengguna</label>
                       <select value={form.status_pengguna}
                         onChange={e => setForm(f => ({
                           ...f,
@@ -888,9 +995,9 @@ export default function PenggunaPage() {
                         <option value="pindah_sambung">Pindah Sambung</option>
                         <option value="meninggal_dunia">Meninggal Dunia</option>
                       </select>
-                    )}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {editTarget && form.status_pengguna === 'pindah_sambung' && (
                   <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3">
@@ -956,25 +1063,16 @@ export default function PenggunaPage() {
 
           {activeTab === 'akun' && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Email {!editTarget && '*'}</label>
-                  <input type="email" value={form.email} onChange={e => set('email', e.target.value)}
-                    disabled={!!editTarget} placeholder="email@domain.com"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60" />
+              {!editTarget && (
+                <div className="p-2 bg-blue-50 rounded-xl border border-blue-100">
+                  <span className="text-xs text-blue-500">
+                    Tentukan role & alamat sambung dulu di sini, baru lengkapi data diri di tab &quot;2. Data Diri&quot;.
+                  </span>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Password {editTarget ? '(kosongkan jika tidak diubah)' : '*'}
-                  </label>
-                  <input type="password" value={form.password} onChange={e => set('password', e.target.value)}
-                    placeholder={editTarget ? 'Password baru (opsional)' : 'Min. 6 karakter'}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
+              )}
 
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Role / Hak Akses</label>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Role / Hak Akses *</label>
                 <select value={form.role_id} onChange={e => set('role_id', e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                   <option value="">-- Pilih Role --</option>
@@ -982,33 +1080,54 @@ export default function PenggunaPage() {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Desa</label>
-                  <select value={form.desa_id} onChange={e => { set('desa_id', e.target.value); set('kelompok_id', '') }}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="">-- Tidak ada --</option>
-                    {desaList.map(d => <option key={d.id} value={d.id}>{d.nama_desa}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Kelompok</label>
-                  <select value={form.kelompok_id} onChange={e => set('kelompok_id', e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="">-- Tidak ada --</option>
-                    {kelompokList.filter(k => !form.desa_id || k.desa_id === form.desa_id).map(k => (
-                      <option key={k.id} value={k.id}>{k.nama_kelompok}</option>
-                    ))}
-                  </select>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Email * (untuk notifikasi sistem)</label>
+                <input type="email" value={form.email} onChange={e => set('email', e.target.value)}
+                  placeholder="email@domain.com"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Login sehari-hari memakai Nama Pengguna, bukan email ini — email hanya dipakai sistem untuk mengirim notifikasi (pengumuman, kegiatan, dsb).
+                </p>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold text-slate-500 mb-2">Alamat Sambung</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Desa *</label>
+                    <select value={form.desa_id} onChange={e => { set('desa_id', e.target.value); set('kelompok_id', '') }}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <option value="">-- Pilih Desa --</option>
+                      {desaList.map(d => <option key={d.id} value={d.id}>{d.nama_desa}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Kelompok *</label>
+                    <select value={form.kelompok_id} onChange={e => set('kelompok_id', e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <option value="">-- Pilih Kelompok --</option>
+                      {kelompokList.filter(k => !form.desa_id || k.desa_id === form.desa_id).map(k => (
+                        <option key={k.id} value={k.id}>{k.nama_kelompok}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
 
               {editTarget && (
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={form.is_active} onChange={e => set('is_active', e.target.checked)}
-                    className="w-4 h-4 rounded accent-blue-600" />
-                  <span className="text-sm text-slate-600">Akun aktif (bisa login)</span>
-                </label>
+                <div className="pt-2 border-t border-slate-100 space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Ganti Password (opsional)</label>
+                    <input type="password" value={form.password} onChange={e => set('password', e.target.value)}
+                      placeholder="Kosongkan jika tidak diubah"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={form.is_active} onChange={e => set('is_active', e.target.checked)}
+                      className="w-4 h-4 rounded accent-blue-600" />
+                    <span className="text-sm text-slate-600">Akun aktif (bisa login)</span>
+                  </label>
+                </div>
               )}
             </div>
           )}
@@ -1051,6 +1170,36 @@ export default function PenggunaPage() {
                 </button>
               )}
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal kredensial akun baru -- ditampilkan SEKALI setelah berhasil membuat pengguna,
+          tidak disimpan di manapun setelah ditutup. Admin wajib mencatat/menyampaikan info
+          ini secara manual ke pengguna baru (mis. lewat WhatsApp/lisan). */}
+      {newCredentials && (
+        <Modal open={!!newCredentials} onClose={() => setNewCredentials(null)} title="Pengguna Berhasil Dibuat" size="sm">
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Akun <span className="font-semibold">{newCredentials.nama}</span> berhasil dibuat. Catat dan sampaikan kredensial berikut ke pengguna:
+            </p>
+            <div className="space-y-2">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <p className="text-xs text-slate-400 mb-0.5">Nama Pengguna (untuk login)</p>
+                <p className="font-mono font-semibold text-slate-800">{newCredentials.username}</p>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <p className="text-xs text-slate-400 mb-0.5">Password Awal</p>
+                <p className="font-mono font-semibold text-slate-800">{newCredentials.password}</p>
+              </div>
+            </div>
+            <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-700">
+              Password ini hanya ditampilkan sekali dan tidak tersimpan di sistem dalam bentuk terbaca. Untuk mengganti password, pengguna dapat mengajukan permintaan lewat halaman &quot;Lupa Password&quot;.
+            </div>
+            <button onClick={() => setNewCredentials(null)}
+              className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition">
+              Sudah Dicatat
+            </button>
           </div>
         </Modal>
       )}

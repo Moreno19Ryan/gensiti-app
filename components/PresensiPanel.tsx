@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Kegiatan } from '@/lib/types'
-import { canManagePresensi } from '@/lib/roles'
+import { canManagePresensi, isPPG } from '@/lib/roles'
 import { UserProfile } from '@/lib/types'
 
 interface Props {
@@ -145,6 +145,18 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
     return (
       <div className="mt-3 pt-3 border-t border-slate-100">
         <p className="text-xs text-slate-400 italic text-center">Presensi dikelola oleh Ketua/Wakil Ketua/Sekretaris.</p>
+      </div>
+    )
+  }
+
+  // PPG adalah pembina Muda-Mudi se-Daerah Bekasi Timur, BUKAN peserta kegiatan KMM/Generus
+  // -- meskipun PPG punya alamat sambung & nomor identitas (format PPG-{scope}-XXX), mereka
+  // sengaja dikecualikan dari absensi/presensi kegiatan (beda dari Generus/pengurus lain yang
+  // wajib presensi). Ditangani sama seperti Super Admin: tidak tampil form self check-in.
+  if (isPPG(user)) {
+    return (
+      <div className="mt-3 pt-3 border-t border-slate-100">
+        <p className="text-xs text-slate-400 italic text-center">PPG tidak termasuk peserta presensi kegiatan.</p>
       </div>
     )
   }

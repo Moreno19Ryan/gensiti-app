@@ -48,10 +48,16 @@ async function getCaller(req: NextRequest, supabaseAdmin: ReturnType<typeof admi
   }
 }
 
-// Hanya Ketua/Wakil Ketua (semua scope) dan Super Admin yang boleh mengelola Generus lain.
+// Hanya Ketua/Wakil Ketua/Sekretaris (semua scope) dan Super Admin yang boleh mengelola
+// Generus lain -- termasuk membuat pengguna baru dan mengubah status aktif/nonaktif akun
+// (mis. saat status berubah jadi menikah/meninggal dunia/pindah sambung). Harus SELALU
+// konsisten dengan canManageMembers() di lib/roles.ts (yang mengatur visibilitas UI) --
+// ini adalah enforcement sesungguhnya di server, UI hanya cerminan agar tidak menyesatkan.
 function canManageMembers(caller: Caller): boolean {
   if (caller.tingkatan === 'super_admin') return true
-  return !!caller.nama_role && caller.nama_role.toLowerCase().includes('ketua')
+  if (!caller.nama_role) return false
+  const nama = caller.nama_role.toLowerCase()
+  return nama.includes('ketua') || nama.includes('sekretaris')
 }
 
 // Cek apakah caller berwenang bertindak atas target berdasarkan scope desa/kelompok.
@@ -70,6 +76,49 @@ async function isSuperAdminRole(supabaseAdmin: ReturnType<typeof adminClient>, r
   if (!roleId) return false
   const { data } = await supabaseAdmin.from('roles').select('tingkatan').eq('id', roleId).single()
   return data?.tingkatan === 'super_admin'
+}
+
+// Generate login_username unik dari nama panggilan (fallback nama lengkap). Login sekarang
+// pakai nama (bukan email) karena banyak Generus di bawah umur belum punya email sendiri --
+// lihat app/api/resolve-login/route.ts & app/login/page.tsx. Kalau nama sudah dipakai user
+// lain, tambahkan suffix angka menaik (mis. "AHMAD FAUZI" -> "AHMAD FAUZI (2)") sesuai
+// keputusan produk: otomatis, tidak perlu campur tangan admin tiap kali ada nama bentrok.
+async function generateUniqueLoginUsername(
+  supabaseAdmin: ReturnType<typeof adminClient>,
+  baseName: string
+): Promise<string> {
+  // Normalisasi HARUS identik dengan app/login/page.tsx & app/api/resolve-login/route.ts
+  // (trim + collapse spasi ganda + uppercase) -- supaya nama dengan spasi tidak rapi saat
+  // input form Tambah Pengguna tetap menghasilkan login_username yang bisa dicocokkan
+  // persis saat login nanti.
+  const base = baseName.trim().replace(/\s+/g, ' ').toUpperCase()
+  let candidate = base
+  let suffix = 2
+  // Batas wajar (100 percobaan) supaya tidak infinite loop kalau ada anomali data.
+  for (let i = 0; i < 100; i++) {
+    const { data } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .eq('login_username', candidate)
+      .maybeSingle()
+    if (!data) return candidate
+    candidate = `${base} (${suffix})`
+    suffix++
+  }
+  // Fallback ekstrem: tempel sebagian id acak supaya tetap unik.
+  return `${base} (${Date.now()})`
+}
+
+// Password default akun baru = tanggal lahir format DDMMYYYY (mis. 17081998 utk 17 Agustus
+// 1998). Alasan: banyak Generus di bawah umur, tanggal lahir mudah diingat & tetap aman
+// dalam konteks organisasi kekeluargaan ini. User yang ingin password lebih aman bisa
+// mengajukan revisi/reset lewat halaman /lupa-password (diproses manual oleh Super Admin).
+function passwordFromTanggalLahir(tanggalLahir: string): string {
+  const d = new Date(tanggalLahir)
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const yyyy = d.getFullYear()
+  return `${dd}${mm}${yyyy}`
 }
 
 // GET: Ambil data Generus by userId (server-side, bypass RLS)
@@ -113,9 +162,10 @@ export async function POST(req: NextRequest) {
     if (!canManageMembers(caller)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const {
-      email, password, nama_lengkap, no_hp,
+      email, nama_lengkap, nama_panggilan, no_hp,
       role_id, desa_id, kelompok_id,
       tempat_lahir, tanggal_lahir, jenis_kelamin, alamat,
+      tinggi_badan, berat_badan, kelas_ngaji,
       nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali,
       nama_orang_tua, no_hp_orang_tua,
       status_anggota,
@@ -124,9 +174,15 @@ export async function POST(req: NextRequest) {
       jumlah_saudara,
     } = await req.json()
 
-    if (!email || !password || !nama_lengkap) {
-      return NextResponse.json({ error: 'Email, password, dan nama wajib diisi' }, { status: 400 })
+    // password TIDAK LAGI diterima dari client -- selalu di-generate server-side dari
+    // tanggal_lahir (lihat passwordFromTanggalLahir), supaya konsisten & tidak bisa
+    // dipalsukan/diskip dari form. tanggal_lahir karena itu WAJIB diisi untuk akun baru
+    // (beda dari sebelumnya yang opsional), sesuai keputusan produk: password default =
+    // tanggal lahir, ganti password hanya lewat pengajuan revisi/reset manual.
+    if (!email || !nama_lengkap || !tanggal_lahir) {
+      return NextResponse.json({ error: 'Email, nama lengkap, dan tanggal lahir wajib diisi' }, { status: 400 })
     }
+    const password = passwordFromTanggalLahir(tanggal_lahir)
 
     // Admin desa/kelompok hanya boleh membuat user dalam scope-nya sendiri
     if (!canActOnScope(caller, desa_id || null, kelompok_id || null)) {
@@ -147,14 +203,20 @@ export async function POST(req: NextRequest) {
 
     const userId = authData.user.id
 
+    const loginUsername = await generateUniqueLoginUsername(supabaseAdmin, nama_panggilan || nama_lengkap)
+
     const { error: profileError } = await supabaseAdmin.from('users').insert({
       id: userId,
       email,
       nama_lengkap,
+      login_username: loginUsername,
       no_hp: no_hp || null,
       role_id: role_id || null,
       desa_id: desa_id || null,
       kelompok_id: kelompok_id || null,
+      // Status akun baru SELALU aktif & lajang secara default -- ini bukan pilihan yang
+      // ditampilkan di form (dihapus dari UI sesuai permintaan), murni nilai awal wajar
+      // untuk pengguna yang baru dibuat.
       is_active: true,
       is_archived: false,
     })
@@ -167,10 +229,14 @@ export async function POST(req: NextRequest) {
     const { error: generusError } = await supabaseAdmin.from('generus').insert({
       user_id: userId,
       nama_lengkap,
+      nama_panggilan: nama_panggilan || null,
       tempat_lahir: tempat_lahir || null,
       tanggal_lahir: tanggal_lahir || null,
       jenis_kelamin: jenis_kelamin || null,
       alamat: alamat || null,
+      tinggi_badan: tinggi_badan || null,
+      berat_badan: berat_badan || null,
+      kelas_ngaji: kelas_ngaji || null,
       desa_id: desa_id || null,
       kelompok_id: kelompok_id || null,
       status: status_anggota || 'aktif',
@@ -190,7 +256,7 @@ export async function POST(req: NextRequest) {
       console.error('Generus insert error:', generusError.message)
     }
 
-    return NextResponse.json({ success: true, userId })
+    return NextResponse.json({ success: true, userId, loginUsername, defaultPassword: password })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }
@@ -206,7 +272,8 @@ export async function PATCH(req: NextRequest) {
     const {
       id, nama_lengkap, no_hp, role_id, desa_id, kelompok_id, is_active, password,
       avatar_url,
-      generus_id, tempat_lahir, tanggal_lahir, jenis_kelamin, alamat,
+      generus_id, nama_panggilan, tempat_lahir, tanggal_lahir, jenis_kelamin, alamat,
+      tinggi_badan, berat_badan, kelas_ngaji,
       nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali,
       nama_orang_tua, no_hp_orang_tua,
       status_anggota,
@@ -295,10 +362,14 @@ export async function PATCH(req: NextRequest) {
     }
 
     const hasGenerusFields = generus_id != null
+      || nama_panggilan !== undefined
       || tempat_lahir !== undefined
       || tanggal_lahir !== undefined
       || jenis_kelamin !== undefined
       || alamat !== undefined
+      || tinggi_badan !== undefined
+      || berat_badan !== undefined
+      || kelas_ngaji !== undefined
       || nama_ayah !== undefined
       || nama_ibu !== undefined
       || nama_wali !== undefined
@@ -313,10 +384,14 @@ export async function PATCH(req: NextRequest) {
     if (hasGenerusFields) {
       const generusPayload: Record<string, unknown> = {}
       if (nama_lengkap !== undefined) generusPayload.nama_lengkap = nama_lengkap || null
+      if (nama_panggilan !== undefined) generusPayload.nama_panggilan = nama_panggilan || null
       if (tempat_lahir !== undefined) generusPayload.tempat_lahir = tempat_lahir || null
       if (tanggal_lahir !== undefined) generusPayload.tanggal_lahir = tanggal_lahir || null
       if (jenis_kelamin !== undefined) generusPayload.jenis_kelamin = jenis_kelamin || null
       if (alamat !== undefined) generusPayload.alamat = alamat || null
+      if (tinggi_badan !== undefined) generusPayload.tinggi_badan = tinggi_badan || null
+      if (berat_badan !== undefined) generusPayload.berat_badan = berat_badan || null
+      if (kelas_ngaji !== undefined) generusPayload.kelas_ngaji = kelas_ngaji || null
       if (desa_id !== undefined) generusPayload.desa_id = desa_id || null
       if (kelompok_id !== undefined) generusPayload.kelompok_id = kelompok_id || null
       if (status_anggota !== undefined) generusPayload.status = status_anggota

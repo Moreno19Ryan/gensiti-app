@@ -482,6 +482,12 @@ export default function ProfilPage() {
                 </div>
               )}
               <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Nama Pengguna (untuk login)</label>
+                <input value={user.login_username || '-'} disabled
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-sm text-slate-400 cursor-not-allowed" />
+                <p className="text-xs text-slate-400 mt-1">Dipakai untuk masuk ke aplikasi, bukan email</p>
+              </div>
+              <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">No. HP</label>
                 <input value={form.no_hp} onChange={e => setForm(f => ({ ...f, no_hp: e.target.value }))}
                   placeholder="08xx-xxxx-xxxx"
@@ -491,7 +497,7 @@ export default function ProfilPage() {
                 <label className="block text-xs font-medium text-slate-600 mb-1">Email</label>
                 <input value={user.email} disabled
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-sm text-slate-400 cursor-not-allowed" />
-                <p className="text-xs text-slate-400 mt-1">Email tidak dapat diubah</p>
+                <p className="text-xs text-slate-400 mt-1">Untuk notifikasi sistem, tidak dapat diubah</p>
               </div>
               <button onClick={saveAkun} disabled={saving}
                 className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition flex items-center justify-center gap-2">

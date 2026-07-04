@@ -5,6 +5,15 @@ export type StatusApproval = 'menunggu_ppg' | 'disetujui' | 'ditolak'
 export interface UserProfile {
   id: string
   email: string
+  // Nama pengguna untuk login (uppercase, unik) -- dipakai halaman /login lewat
+  // /api/resolve-login untuk diterjemahkan jadi email asli. Bisa null untuk akun lama
+  // yang belum di-backfill. Email di atas TETAP jadi identitas Supabase Auth &
+  // tujuan notifikasi, tidak berubah oleh fitur ini.
+  login_username: string | null
+  // Token sesi aktif saat ini (dibuat ulang setiap kali form login berhasil submit --
+  // lihat app/api/session/claim). Dipakai lib/user-context.tsx untuk mendeteksi apakah
+  // sesi browser ini sudah "digantikan" oleh login baru di browser/perangkat lain.
+  active_session_token: string | null
   nama_lengkap: string
   no_hp: string | null
   foto_url: string | null
@@ -28,14 +37,20 @@ export interface UserProfile {
   } | null
 }
 
+export type KelasNgaji = 'pra_remaja' | 'remaja_muda' | 'remaja_dewasa'
+
 export interface Generus {
   id: string
   nomor_generus: string
   nama_lengkap: string
+  nama_panggilan: string | null
   tanggal_lahir: string | null
   jenis_kelamin: 'laki-laki' | 'perempuan' | null
   alamat: string | null
   no_hp: string | null
+  tinggi_badan: number | null
+  berat_badan: number | null
+  kelas_ngaji: KelasNgaji | null
   kelompok_id: string | null
   desa_id: string | null
   foto_url: string | null
