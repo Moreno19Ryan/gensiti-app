@@ -2,11 +2,19 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { signIn } from '@/lib/auth'
+import { signIn, authFetch } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
+import { PPG_LOGO_LOGIN_BASE64 } from '@/lib/logo'
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('')
+  // Login memakai NAMA PENGGUNA (bukan email) -- keputusan produk karena banyak Generus
+  // di bawah umur belum punya email sendiri. Nama diketik apa adanya lalu di-uppercase
+  // otomatis (konsisten dgn login_username yg tersimpan selalu UPPERCASE), dikirim ke
+  // /api/resolve-login untuk diterjemahkan jadi email asli, baru email itu dipakai
+  // signInWithPassword ke Supabase Auth seperti biasa. Email TETAP wajib diisi saat
+  // pembuatan akun (lihat form Tambah Pengguna) -- fungsinya murni utk notifikasi &
+  // sebagai identitas asli di Supabase Auth, bukan lagi utk login sehari-hari.
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -16,6 +24,17 @@ export default function LoginPage() {
   // (artinya menekan back button dari dalam app), auto-logout
   useEffect(() => {
     const checkAndLogout = async () => {
+      // Prioritaskan pesan "sesi digantikan" (single-session login) kalau ada -- ditandai
+      // oleh lib/user-context.tsx SAAT mendeteksi token lokal tidak cocok lagi dgn token di
+      // database (artinya akun ini baru saja login di browser/perangkat lain). Konsumsi flag
+      // ini sekali pakai (hapus setelah dibaca) supaya tidak muncul berulang di reload berikutnya.
+      const superseded = localStorage.getItem('gensiti_session_superseded')
+      if (superseded) {
+        localStorage.removeItem('gensiti_session_superseded')
+        setInfo('Akun ini baru saja login di perangkat/browser lain, jadi sesi di sini dikeluarkan otomatis. Masuk lagi kalau ini bukan Anda.')
+        return
+      }
+
       const { data: { session } } = await supabase.auth.getSession()
       if (session) {
         await supabase.auth.signOut()
@@ -31,15 +50,52 @@ export default function LoginPage() {
     setError('')
     setInfo('')
 
+    // Normalisasi spasi SEBELUM dikirim -- trim ujung + collapse spasi ganda jadi satu
+    // spasi, supaya "  MORENO   RYANDIKA  " tetap cocok dengan login_username tersimpan
+    // ("MORENO RYANDIKA"). Endpoint /api/resolve-login melakukan normalisasi yang SAMA
+    // PERSIS sebagai jaring pengaman kedua (jangan diubah salah satu tanpa yang lain).
+    const normalizedUsername = username.trim().replace(/\s+/g, ' ').toUpperCase()
+
     try {
-      await signIn(email, password)
+      const res = await fetch('/api/resolve-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: normalizedUsername }),
+      })
+      const resolved = await res.json()
+      if (!res.ok || !resolved.email) {
+        setError('Nama pengguna atau password salah')
+        setLoading(false)
+        return
+      }
+
+      await signIn(resolved.email, password)
+
+      // Klaim sesi tunggal: generate token sesi baru & simpan ke localStorage browser
+      // ini. Ini akan MENGGANTIKAN status "aktif" milik sesi manapun yang sedang login
+      // dgn akun yang sama di browser/perangkat lain -- lihat lib/user-context.tsx untuk
+      // sisi deteksinya. Kalau klaim gagal karena alasan apapun (mis. jaringan), login
+      // tetap dilanjutkan (non-fatal) -- lebih baik user tetap bisa masuk daripada
+      // terhalang oleh fitur pelengkap ini. Pakai authFetch supaya Bearer token diambil
+      // langsung dari sesi Supabase yang baru saja tersimpan (bukan dari objek respons
+      // signIn), konsisten dengan cara semua API route internal lain dipanggil.
+      try {
+        const claimRes = await authFetch('/api/session/claim', { method: 'POST' })
+        const claimJson = await claimRes.json()
+        if (claimJson.sessionToken) {
+          localStorage.setItem('gensiti_session_token', claimJson.sessionToken)
+        }
+      } catch {
+        // non-fatal, lihat komentar di atas
+      }
+
       window.location.href = '/dashboard'
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Login gagal'
       if (message.includes('Invalid login credentials')) {
-        setError('Email atau password salah')
+        setError('Nama pengguna atau password salah')
       } else if (message.includes('Email not confirmed')) {
-        setError('Email belum dikonfirmasi')
+        setError('Akun belum dikonfirmasi')
       } else {
         setError(message)
       }
@@ -52,7 +108,16 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-lg mb-4 p-2">
+          {/* Logo PPG (organisasi induk) ditampilkan LEBIH BESAR dan DI ATAS logo GENSITI,
+              sesuai keputusan desain: PPG adalah identitas resmi organisasi, sementara
+              GENSITI adalah nama aplikasi/sistemnya. Logo PPG dipakai transparan (tanpa
+              kotak putih) supaya menyatu dengan latar gradient biru halaman login. */}
+          <img
+            src={PPG_LOGO_LOGIN_BASE64}
+            alt="PPG"
+            className="mx-auto mb-4 h-28 w-auto object-contain drop-shadow-lg"
+          />
+          <div className="inline-flex items-center justify-center w-12 h-12 bg-white rounded-xl shadow-lg mb-3 p-1.5">
             <img src="/icons/icon-512.png" alt="GENSITI" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-3xl font-black text-white tracking-tight">GENSITI</h1>
@@ -83,14 +148,15 @@ export default function LoginPage() {
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Email</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Nama Pengguna</label>
               <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value.toUpperCase())}
                 required
-                placeholder="nama@email.com"
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                autoCapitalize="characters"
+                placeholder="NAMA LENGKAP ATAU NAMA PANGGILAN"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition uppercase"
               />
             </div>
 
