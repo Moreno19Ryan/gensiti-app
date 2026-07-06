@@ -446,18 +446,30 @@ export async function PATCH(req: NextRequest) {
           .eq('user_id', id)
           .single()
 
+        // PENTING -- sebelumnya error dari update/insert generus HANYA di-console.error dan
+        // endpoint tetap balas {success:true}. Ini menyebabkan bug nyata: saat CHECK constraint
+        // database menolak value jenis_kelamin yang salah format, biodata Generus GAGAL TOTAL
+        // tersimpan tapi UI & audit log tetap melaporkan "berhasil" -- pengguna (dan admin) tidak
+        // pernah tahu datanya sebenarnya tidak tersimpan. Sekarang error ini dikembalikan ke
+        // client sebagai response error yang jelas, konsisten dengan bagian lain endpoint ini.
         if (existingGenerus?.id) {
           const { error: generusErr } = await supabaseAdmin
             .from('generus')
             .update(generusPayload)
             .eq('id', existingGenerus.id)
-          if (generusErr) console.error('Generus update error:', generusErr.message)
+          if (generusErr) {
+            console.error('Generus update error:', generusErr.message)
+            return NextResponse.json({ error: `Gagal menyimpan data Generus: ${generusErr.message}` }, { status: 500 })
+          }
         } else {
           // Buat record generus baru jika belum ada
           const { error: generusErr } = await supabaseAdmin
             .from('generus')
             .insert({ ...generusPayload, user_id: id, status: 'aktif', status_pengguna: 'lajang' })
-          if (generusErr) console.error('Generus insert error:', generusErr.message)
+          if (generusErr) {
+            console.error('Generus insert error:', generusErr.message)
+            return NextResponse.json({ error: `Gagal menyimpan data Generus: ${generusErr.message}` }, { status: 500 })
+          }
         }
       }
     }

@@ -808,8 +808,12 @@ export default function PenggunaPage() {
                     <select value={form.jenis_kelamin} onChange={e => set('jenis_kelamin', e.target.value)}
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                       <option value="">-- Pilih --</option>
-                      <option value="LAKI-LAKI">LAKI-LAKI</option>
-                      <option value="PEREMPUAN">PEREMPUAN</option>
+                      {/* value HARUS lowercase -- kolom generus.jenis_kelamin dibatasi CHECK
+                          constraint anggota_jenis_kelamin_check (hanya 'laki-laki'/'perempuan').
+                          Value uppercase sebelumnya membuat insert generus GAGAL DIAM-DIAM saat
+                          membuat pengguna baru dengan jenis kelamin terisi. */}
+                      <option value="laki-laki">LAKI-LAKI</option>
+                      <option value="perempuan">PEREMPUAN</option>
                     </select>
                   </div>
                 </div>

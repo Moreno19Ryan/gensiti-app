@@ -355,8 +355,14 @@ export default function DataGenerusPage() {
                   <select value={form.jenis_kelamin} onChange={e => set('jenis_kelamin', e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60">
                     <option value="">-- Pilih --</option>
-                    <option value="LAKI-LAKI">LAKI-LAKI</option>
-                    <option value="PEREMPUAN">PEREMPUAN</option>
+                    {/* value HARUS lowercase -- kolom generus.jenis_kelamin dibatasi CHECK
+                        constraint anggota_jenis_kelamin_check (hanya 'laki-laki'/'perempuan').
+                        Value uppercase sebelumnya membuat setiap update GAGAL DIAM-DIAM (server
+                        cuma console.error, tidak pernah melapor balik ke user) -- bug ini
+                        ditemukan dari kasus nyata: 2 akun sudah beberapa kali "berhasil" disimpan
+                        di UI/audit log tapi datanya tidak pernah benar-benar tersimpan. */}
+                    <option value="laki-laki">LAKI-LAKI</option>
+                    <option value="perempuan">PEREMPUAN</option>
                   </select>
                 </div>
                 {editTarget.users?.roles?.tingkatan !== 'ppg' && (
