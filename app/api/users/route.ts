@@ -385,6 +385,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     const hasGenerusFields = generus_id != null
+      || nama_lengkap !== undefined
       || nama_panggilan !== undefined
       || tempat_lahir !== undefined
       || tanggal_lahir !== undefined

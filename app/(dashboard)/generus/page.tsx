@@ -450,7 +450,7 @@ export default function PenggunaPage() {
   // PPG (Penggerak Pembina Generus) adalah pembina, bukan muda-mudi/generus yang mengikuti
   // jenjang kelas ngaji -- field ini disembunyikan & tidak wajib kalau role yang dipilih
   // bertingkatan ppg. Dihitung dari role_id yang sedang dipilih di form (bukan role user
-  // yang sedang login), supaya reaktif begitu admin ganti pilihan role di tab "1. Role & Email".
+  // yang sedang login), supaya reaktif begitu admin ganti pilihan role di tab "1. Akun".
   const selectedRoleTingkatan = roleList.find(r => r.id === form.role_id)?.tingkatan
   const isKelasNgajiRelevant = selectedRoleTingkatan !== 'ppg'
 
@@ -811,7 +811,7 @@ export default function PenggunaPage() {
             {(['akun', 'info'] as const).map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab)}
                 className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition ${activeTab === tab ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
-                {tab === 'akun' ? '1. Role & Email' : '2. Data Diri'}
+                {tab === 'akun' ? '1. Akun' : '2. Data Diri'}
               </button>
             ))}
           </div>
@@ -1066,7 +1066,7 @@ export default function PenggunaPage() {
               {!editTarget && (
                 <div className="p-2 bg-blue-50 rounded-xl border border-blue-100">
                   <span className="text-xs text-blue-500">
-                    Tentukan role & alamat sambung dulu di sini, baru lengkapi data diri di tab &quot;2. Data Diri&quot;.
+                    Tentukan akun (email, role, alamat sambung) dulu di sini, baru lengkapi data diri di tab &quot;2. Data Diri&quot;.
                   </span>
                 </div>
               )}
@@ -1127,6 +1127,11 @@ export default function PenggunaPage() {
                       className="w-4 h-4 rounded accent-blue-600" />
                     <span className="text-sm text-slate-600">Akun aktif (bisa login)</span>
                   </label>
+                  {editTarget.created_at && (
+                    <p className="text-xs text-slate-400">
+                      Bergabung sejak {new Date(editTarget.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -1205,4 +1210,5 @@ export default function PenggunaPage() {
       )}
     </div>
   )
+}
 }

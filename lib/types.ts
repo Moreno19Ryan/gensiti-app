@@ -14,6 +14,8 @@ export interface UserProfile {
   // lihat app/api/session/claim). Dipakai lib/user-context.tsx untuk mendeteksi apakah
   // sesi browser ini sudah "digantikan" oleh login baru di browser/perangkat lain.
   active_session_token: string | null
+  // Kapan akun ini dibuat -- ditampilkan di tab Akun halaman Profil sebagai "Bergabung Sejak".
+  created_at: string
   nama_lengkap: string
   no_hp: string | null
   foto_url: string | null
