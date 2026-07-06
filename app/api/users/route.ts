@@ -20,31 +20,54 @@ interface Caller {
 // Memverifikasi bearer token dari header Authorization dan mengambil profil + role pemanggil.
 // Semua endpoint di file ini memakai service role key (bypass RLS), jadi verifikasi ini WAJIB
 // dilakukan manual di server — tanpa ini siapapun bisa memanggil endpoint tanpa login sama sekali.
-async function getCaller(req: NextRequest, supabaseAdmin: ReturnType<typeof adminClient>): Promise<Caller | null> {
+//
+// Mengembalikan { caller, reason } alih-alih cuma null, supaya pesan "Unauthorized" yang
+// dikirim ke client bisa menyertakan alasan spesifik (token kosong, token invalid/expired,
+// profil tidak ketemu, akun nonaktif, dst) -- sebelumnya semua kegagalan disamakan jadi satu
+// pesan generik "Unauthorized" yang menyulitkan diagnosis dari sisi pengguna/browser.
+async function getCaller(req: NextRequest, supabaseAdmin: ReturnType<typeof adminClient>): Promise<{ caller: Caller | null; reason?: string }> {
   const authHeader = req.headers.get('authorization') || ''
   const token = authHeader.replace(/^Bearer\s+/i, '')
-  if (!token) return null
+  if (!token) {
+    console.error('[getCaller] Tidak ada Authorization header / token kosong')
+    return { caller: null, reason: 'Tidak ada token autentikasi (silakan login ulang).' }
+  }
 
   const { data: userData, error: userErr } = await supabaseAdmin.auth.getUser(token)
-  if (userErr || !userData.user) return null
+  if (userErr || !userData.user) {
+    console.error('[getCaller] auth.getUser gagal:', userErr?.message || 'user null')
+    return { caller: null, reason: `Sesi tidak valid: ${userErr?.message || 'user tidak ditemukan'} (silakan login ulang).` }
+  }
 
-  const { data: profile } = await supabaseAdmin
+  const { data: profile, error: profileErr } = await supabaseAdmin
     .from('users')
     .select('id, desa_id, kelompok_id, is_active, roles:role_id(nama_role, tingkatan)')
     .eq('id', userData.user.id)
     .single()
 
-  if (!profile || profile.is_active === false) return null
+  if (profileErr) {
+    console.error('[getCaller] Query profil users gagal untuk', userData.user.id, ':', profileErr.message)
+    return { caller: null, reason: `Gagal memuat profil: ${profileErr.message}` }
+  }
+
+  if (!profile) {
+    return { caller: null, reason: 'Profil pengguna tidak ditemukan di database.' }
+  }
+  if (profile.is_active === false) {
+    return { caller: null, reason: 'Akun tidak aktif.' }
+  }
 
   const role = profile.roles as { nama_role?: string; tingkatan?: string } | { nama_role?: string; tingkatan?: string }[] | null
   const roleObj = Array.isArray(role) ? role[0] : role
 
   return {
-    id: profile.id,
-    tingkatan: roleObj?.tingkatan || null,
-    nama_role: roleObj?.nama_role || null,
-    desa_id: profile.desa_id,
-    kelompok_id: profile.kelompok_id,
+    caller: {
+      id: profile.id,
+      tingkatan: roleObj?.tingkatan || null,
+      nama_role: roleObj?.nama_role || null,
+      desa_id: profile.desa_id,
+      kelompok_id: profile.kelompok_id,
+    },
   }
 }
 
@@ -126,8 +149,8 @@ function passwordFromTanggalLahir(tanggalLahir: string): string {
 export async function GET(req: NextRequest) {
   try {
     const supabaseAdmin = adminClient()
-    const caller = await getCaller(req, supabaseAdmin)
-    if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { caller, reason } = await getCaller(req, supabaseAdmin)
+    if (!caller) return NextResponse.json({ error: reason || 'Unauthorized' }, { status: 401 })
 
     const { searchParams } = new URL(req.url)
     const userId = searchParams.get('userId')
@@ -157,8 +180,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const supabaseAdmin = adminClient()
-    const caller = await getCaller(req, supabaseAdmin)
-    if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { caller, reason } = await getCaller(req, supabaseAdmin)
+    if (!caller) return NextResponse.json({ error: reason || 'Unauthorized' }, { status: 401 })
     if (!canManageMembers(caller)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const {
@@ -266,8 +289,8 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const supabaseAdmin = adminClient()
-    const caller = await getCaller(req, supabaseAdmin)
-    if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { caller, reason } = await getCaller(req, supabaseAdmin)
+    if (!caller) return NextResponse.json({ error: reason || 'Unauthorized' }, { status: 401 })
 
     const {
       id, nama_lengkap, no_hp, role_id, desa_id, kelompok_id, is_active, password,
