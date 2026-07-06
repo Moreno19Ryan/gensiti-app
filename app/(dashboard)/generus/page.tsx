@@ -38,8 +38,6 @@ interface Member {
     nama_ibu: string | null
     nama_wali: string | null
     no_hp_orangtua_wali: string | null
-    nama_orang_tua: string | null
-    no_hp_orang_tua: string | null
     status: string
     status_pengguna: string | null
     pindah_desa_id: string | null
@@ -159,7 +157,7 @@ export default function PenggunaPage() {
         roles:role_id(id, nama_role, tingkatan),
         desa:desa_id(id, nama_desa),
         kelompok:kelompok_id(id, nama_kelompok),
-        generus(id, nomor_generus, nama_panggilan, tanggal_lahir, tempat_lahir, jenis_kelamin, alamat, tinggi_badan, berat_badan, kelas_ngaji, nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali, nama_orang_tua, no_hp_orang_tua, status, status_pengguna, pindah_desa_id, pindah_kelompok_id, pindah_ke_daerah_lain, anak_ke, jumlah_saudara)
+        generus(id, nomor_generus, nama_panggilan, tanggal_lahir, tempat_lahir, jenis_kelamin, alamat, tinggi_badan, berat_badan, kelas_ngaji, nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali, status, status_pengguna, pindah_desa_id, pindah_kelompok_id, pindah_ke_daerah_lain, anak_ke, jumlah_saudara)
       `)
       .order('nama_lengkap')
 

@@ -30,8 +30,6 @@ interface GenerusRow {
   nama_ibu: string | null
   nama_wali: string | null
   no_hp_orangtua_wali: string | null
-  nama_orang_tua: string | null
-  no_hp_orang_tua: string | null
   anak_ke: number | null
   jumlah_saudara: number | null
   users: {
@@ -94,7 +92,7 @@ export default function DataGenerusPage() {
       .select(`
         id, user_id, nomor_generus, nama_panggilan, tempat_lahir, tanggal_lahir, jenis_kelamin,
         alamat, tinggi_badan, berat_badan, kelas_ngaji, nama_ayah, nama_ibu, nama_wali,
-        no_hp_orangtua_wali, nama_orang_tua, no_hp_orang_tua, anak_ke, jumlah_saudara,
+        no_hp_orangtua_wali, anak_ke, jumlah_saudara,
         users:user_id(id, nama_lengkap, no_hp, desa:desa_id(id, nama_desa), kelompok:kelompok_id(id, nama_kelompok), roles:role_id(nama_role, tingkatan))
       `)
       .order('nomor_generus')
@@ -143,10 +141,10 @@ export default function DataGenerusPage() {
       tinggi_badan: g.tinggi_badan?.toString() || '',
       berat_badan: g.berat_badan?.toString() || '',
       kelas_ngaji: g.kelas_ngaji || '',
-      nama_ayah: g.nama_ayah || g.nama_orang_tua || '',
+      nama_ayah: g.nama_ayah || '',
       nama_ibu: g.nama_ibu || '',
       nama_wali: g.nama_wali || '',
-      no_hp_orangtua_wali: g.no_hp_orangtua_wali || g.no_hp_orang_tua || '',
+      no_hp_orangtua_wali: g.no_hp_orangtua_wali || '',
       anak_ke: g.anak_ke?.toString() || '',
       jumlah_saudara: g.jumlah_saudara?.toString() || '',
     })
@@ -238,9 +236,9 @@ export default function DataGenerusPage() {
       ttl,
       kelas_ngaji: g.kelas_ngaji ? (kelasNgajiLabel[g.kelas_ngaji] || g.kelas_ngaji) : '-',
       alamat: g.alamat || '-',
-      nama_ayah: g.nama_ayah || g.nama_orang_tua || '-',
+      nama_ayah: g.nama_ayah || '-',
       nama_ibu: g.nama_ibu || '-',
-      hp_ortu: g.no_hp_orangtua_wali || g.no_hp_orang_tua || '-',
+      hp_ortu: g.no_hp_orangtua_wali || '-',
       desa: g.users?.desa?.nama_desa || '-',
       kelompok: g.users?.kelompok?.nama_kelompok || '-',
     }

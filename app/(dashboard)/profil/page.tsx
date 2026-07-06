@@ -52,7 +52,7 @@ export default function ProfilPage() {
     const res = await authFetch(`/api/users?userId=${userId}`)
     const json = await res.json()
     if (json.data) {
-      const data = json.data as GenerusRecord & { nama_orang_tua?: string }
+      const data = json.data as GenerusRecord
       setGenerusData(data)
       setDiriForm({
         tempat_lahir: data.tempat_lahir || '',
@@ -61,7 +61,7 @@ export default function ProfilPage() {
         alamat: data.alamat || '',
         anak_ke: data.anak_ke?.toString() || '',
         jumlah_saudara: data.jumlah_saudara?.toString() || '',
-        nama_ayah: data.nama_ayah || data.nama_orang_tua || '',
+        nama_ayah: data.nama_ayah || '',
         nama_ibu: data.nama_ibu || '',
         nama_wali: data.nama_wali || '',
         no_hp_orangtua_wali: data.no_hp_orangtua_wali || '',

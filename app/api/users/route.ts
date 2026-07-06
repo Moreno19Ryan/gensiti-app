@@ -190,7 +190,6 @@ export async function POST(req: NextRequest) {
       tempat_lahir, tanggal_lahir, jenis_kelamin, alamat,
       tinggi_badan, berat_badan, kelas_ngaji,
       nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali,
-      nama_orang_tua, no_hp_orang_tua,
       status_anggota,
       status_pengguna,
       anak_ke,
@@ -249,9 +248,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: profileError.message }, { status: 500 })
     }
 
+    // CATATAN -- kolom nama_lengkap/no_hp/foto_url TIDAK ditulis ke tabel generus.
+    // Dulu ditulis manual ke dua tabel (users & generus) sekaligus, tapi ini rawan
+    // divergen kalau salah satu insert gagal sebagian (terbukti terjadi di production:
+    // data Moreno & Raihan sempat beda antara users vs generus). Sekarang users adalah
+    // SATU-SATUNYA sumber kebenaran utk 3 kolom itu; generus.desa_id/kelompok_id tetap
+    // ditulis krn punya makna berbeda (tempat sambung generus, lihat komentar di PATCH).
     const { error: generusError } = await supabaseAdmin.from('generus').insert({
       user_id: userId,
-      nama_lengkap,
       nama_panggilan: nama_panggilan || null,
       tempat_lahir: tempat_lahir || null,
       tanggal_lahir: tanggal_lahir || null,
@@ -267,8 +271,6 @@ export async function POST(req: NextRequest) {
       nama_ibu: nama_ibu || null,
       nama_wali: nama_wali || null,
       no_hp_orangtua_wali: no_hp_orangtua_wali || null,
-      nama_orang_tua: nama_ayah || nama_orang_tua || null,
-      no_hp_orang_tua: no_hp_orangtua_wali || no_hp_orang_tua || null,
       status_pengguna: status_pengguna || 'lajang',
       pindah_ke_daerah_lain: false,
       anak_ke: anak_ke || null,
@@ -308,7 +310,6 @@ export async function PATCH(req: NextRequest) {
       generus_id, nama_panggilan, tempat_lahir, tanggal_lahir, jenis_kelamin, alamat,
       tinggi_badan, berat_badan, kelas_ngaji,
       nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali,
-      nama_orang_tua, no_hp_orang_tua,
       status_anggota,
       status_pengguna,
       pindah_desa_id, pindah_kelompok_id, pindah_ke_daerah_lain,
@@ -395,7 +396,6 @@ export async function PATCH(req: NextRequest) {
     }
 
     const hasGenerusFields = generus_id != null
-      || nama_lengkap !== undefined
       || nama_panggilan !== undefined
       || tempat_lahir !== undefined
       || tanggal_lahir !== undefined
@@ -412,12 +412,14 @@ export async function PATCH(req: NextRequest) {
       || jumlah_saudara !== undefined
       || status_pengguna !== undefined
       || status_anggota !== undefined
-      || nama_orang_tua !== undefined
       || pindah_ke_daerah_lain !== undefined
 
+    // CATATAN -- generusPayload TIDAK PERNAH menulis nama_lengkap/no_hp/foto_url. Kolom
+    // itu sudah dihapus dari tabel generus (lihat migrasi hapus_kolom_duplikat_generus)
+    // krn sebelumnya ditulis manual ke dua tabel dan terbukti bikin data divergen di
+    // production. users kini satu-satunya sumber kebenaran utk 3 field itu.
     if (hasGenerusFields) {
       const generusPayload: Record<string, unknown> = {}
-      if (nama_lengkap !== undefined) generusPayload.nama_lengkap = nama_lengkap || null
       if (nama_panggilan !== undefined) generusPayload.nama_panggilan = nama_panggilan || null
       if (tempat_lahir !== undefined) generusPayload.tempat_lahir = tempat_lahir || null
       if (tanggal_lahir !== undefined) generusPayload.tanggal_lahir = tanggal_lahir || null
@@ -429,18 +431,10 @@ export async function PATCH(req: NextRequest) {
       if (desa_id !== undefined) generusPayload.desa_id = desa_id || null
       if (kelompok_id !== undefined) generusPayload.kelompok_id = kelompok_id || null
       if (status_anggota !== undefined) generusPayload.status = status_anggota
-      if (nama_ayah !== undefined) {
-        generusPayload.nama_ayah = nama_ayah || null
-        generusPayload.nama_orang_tua = nama_ayah || null
-      }
+      if (nama_ayah !== undefined) generusPayload.nama_ayah = nama_ayah || null
       if (nama_ibu !== undefined) generusPayload.nama_ibu = nama_ibu || null
       if (nama_wali !== undefined) generusPayload.nama_wali = nama_wali || null
-      if (no_hp_orangtua_wali !== undefined) {
-        generusPayload.no_hp_orangtua_wali = no_hp_orangtua_wali || null
-        generusPayload.no_hp_orang_tua = no_hp_orangtua_wali || null
-      }
-      if (nama_orang_tua !== undefined && !nama_ayah) generusPayload.nama_orang_tua = nama_orang_tua || null
-      if (no_hp_orang_tua !== undefined && !no_hp_orangtua_wali) generusPayload.no_hp_orang_tua = no_hp_orang_tua || null
+      if (no_hp_orangtua_wali !== undefined) generusPayload.no_hp_orangtua_wali = no_hp_orangtua_wali || null
       if (status_pengguna !== undefined) generusPayload.status_pengguna = status_pengguna
       if (pindah_desa_id !== undefined) generusPayload.pindah_desa_id = pindah_desa_id || null
       if (pindah_kelompok_id !== undefined) generusPayload.pindah_kelompok_id = pindah_kelompok_id || null
