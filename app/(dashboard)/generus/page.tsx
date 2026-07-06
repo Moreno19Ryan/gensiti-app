@@ -1211,4 +1211,3 @@ export default function PenggunaPage() {
     </div>
   )
 }
-}
