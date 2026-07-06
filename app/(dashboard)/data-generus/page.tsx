@@ -5,7 +5,7 @@ import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { logAudit } from '@/lib/audit'
 import { authFetch } from '@/lib/auth'
-import { canManageMembers as checkCanManageMembers } from '@/lib/roles'
+import { canManageMembers as checkCanManageMembers, canViewGenerusData } from '@/lib/roles'
 import Modal from '@/components/Modal'
 
 // Halaman ini KHUSUS biodata Generus (data pribadi/sensitif) -- terpisah dari menu "Pengguna"
@@ -78,8 +78,14 @@ export default function DataGenerusPage() {
   const [error, setError] = useState('')
 
   const canManage = checkCanManageMembers(user)
+  // Hak lihat: Super Admin + semua Pengurus Muda-Mudi (Ketua/Wakil/Sekretaris/Bendahara/
+  // Kemandirian/Keputrian/dll) + PPG -- lihat definisi canViewGenerusData(). Generus biasa
+  // TIDAK boleh mengakses halaman ini sama sekali (biodata sensitif). Guard render ada di
+  // bawah, setelah semua hook -- RLS tabel generus juga sudah diperketat sejalan dgn ini.
+  const hasAccess = canViewGenerusData(user)
 
   const loadData = useCallback(async () => {
+    if (!hasAccess) return
     setLoading(true)
     let query = supabase
       .from('generus')
@@ -115,7 +121,7 @@ export default function DataGenerusPage() {
     })
     setData(filtered)
     setLoading(false)
-  }, [user])
+  }, [user, hasAccess])
 
   useEffect(() => {
     if (!user) return
@@ -210,6 +216,17 @@ export default function DataGenerusPage() {
       g.users?.kelompok?.nama_kelompok?.toLowerCase().includes(q)
     )
   })
+
+  // Blokir akses Generus biasa -- biodata sensitif hanya utk Pengurus/PPG/Super Admin.
+  if (!hasAccess) {
+    return (
+      <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
+        <div className="text-4xl mb-3">🔒</div>
+        <p className="font-semibold text-slate-600">Akses Dibatasi</p>
+        <p className="text-sm mt-1">Menu Data Generus hanya tersedia untuk Pengurus dan PPG.</p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">

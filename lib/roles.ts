@@ -63,6 +63,24 @@ export function canManageMembers(user: Pick<UserProfile, 'role'> | null | undefi
 }
 
 /**
+ * Siapa yang boleh MELIHAT menu Data Generus (biodata sensitif: alamat, tanggal lahir,
+ * data orang tua/wali, dll). Beda dari canManageMembers() di atas -- ini gate untuk LIHAT,
+ * bukan EDIT. Super Admin dan semua Pengurus Muda-Mudi (Ketua/Wakil/Sekretaris/Bendahara/
+ * Kemandirian/Keputrian/dll, di jenjang manapun) serta PPG boleh melihat, tapi hanya yang
+ * lolos canManageMembers() yang boleh mengedit -- lihat pola disabled fieldset di
+ * data-generus/page.tsx. Generus biasa TIDAK boleh melihat sama sekali -- data pribadinya
+ * sendiri tetap bisa dilihat lewat halaman Profil (yang mengambil data lewat /api/users,
+ * bukan query langsung ke tabel generus, jadi tidak terpengaruh RLS ini).
+ * RLS tabel generus (migration add_get_user_nama_role_and_restrict_generus_biasa_rls) sudah
+ * diperketat sejalan dengan ini di level database -- proteksi bukan cuma UI.
+ */
+export function canViewGenerusData(user: Pick<UserProfile, 'role'> | null | undefined): boolean {
+  if (!user?.role) return false
+  if (isGenerusBiasa(user)) return false
+  return true
+}
+
+/**
  * Hanya Ketua/Wakil Ketua (di jenjang manapun) yang boleh mengelola KONTEN OPERASIONAL
  * organisasi -- Kegiatan, Dokumen, Pengumuman. Super Admin SENGAJA DIKECUALIKAN di sini,
  * beda dengan canManageMembers() di atas -- perannya murni pengelola sistem/akun, bukan
