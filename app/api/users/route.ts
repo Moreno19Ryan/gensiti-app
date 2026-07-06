@@ -275,8 +275,18 @@ export async function POST(req: NextRequest) {
       jumlah_saudara: jumlah_saudara || null,
     })
 
+    // PENTING -- sama seperti kasus PATCH (lihat komentar di bawah), sebelumnya error di sini
+    // hanya di-console.error dan endpoint tetap balas success:true dengan kredensial akun baru.
+    // Ini berarti akun BISA dibuat dan login, tapi biodata Generus-nya (nama panggilan, tempat/
+    // tanggal lahir, jenis kelamin) gagal tersimpan tanpa admin pernah tahu. Sekarang dilaporkan
+    // sebagai error yang jelas -- akun login sudah terlanjur dibuat (auth + tabel users), tapi
+    // admin diberi tahu agar segera melengkapi biodata lewat menu Data Generus.
     if (generusError) {
       console.error('Generus insert error:', generusError.message)
+      return NextResponse.json({
+        error: `Akun berhasil dibuat, tapi biodata Generus GAGAL disimpan: ${generusError.message}. Silakan lengkapi biodata lewat menu Data Generus.`,
+        userId, loginUsername, defaultPassword: password,
+      }, { status: 207 })
     }
 
     return NextResponse.json({ success: true, userId, loginUsername, defaultPassword: password })

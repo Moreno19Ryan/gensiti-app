@@ -7,6 +7,7 @@ import { logAudit } from '@/lib/audit'
 import { authFetch } from '@/lib/auth'
 import { canManageMembers as checkCanManageMembers, canViewGenerusData } from '@/lib/roles'
 import Modal from '@/components/Modal'
+import { exportToPDF, exportToExcel } from '@/lib/export'
 
 // Halaman ini KHUSUS biodata Generus (data pribadi/sensitif) -- terpisah dari menu "Pengguna"
 // yang murni akun (login, role, hak akses). Pemisahan ini disengaja: supaya yang mengelola
@@ -76,6 +77,7 @@ export default function DataGenerusPage() {
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [exporting, setExporting] = useState(false)
 
   const canManage = checkCanManageMembers(user)
   // Hak lihat: Super Admin + semua Pengurus Muda-Mudi (Ketua/Wakil/Sekretaris/Bendahara/
@@ -206,6 +208,86 @@ export default function DataGenerusPage() {
     }
   }
 
+  // Export biodata lengkap -- dipindah dari menu "Pengguna" ke sini karena di halaman
+  // inilah biodata (TTL, kelas ngaji, data ortu, dll) benar-benar tersedia dan bisa dijamin
+  // terisi. Hanya utk yang boleh mengelola (canManage), sama seperti tombol edit.
+  const exportColumns = [
+    { header: 'No. Generus', key: 'no', width: 14 },
+    { header: 'Nama Lengkap', key: 'nama', width: 26 },
+    { header: 'Nama Panggilan', key: 'panggilan', width: 18 },
+    { header: 'Jenis Kelamin', key: 'jk', width: 14 },
+    { header: 'Tempat, Tgl Lahir', key: 'ttl', width: 24 },
+    { header: 'Kelas Ngaji', key: 'kelas_ngaji', width: 24 },
+    { header: 'Alamat', key: 'alamat', width: 30 },
+    { header: 'Nama Ayah', key: 'nama_ayah', width: 22 },
+    { header: 'Nama Ibu', key: 'nama_ibu', width: 22 },
+    { header: 'No. HP Ortu/Wali', key: 'hp_ortu', width: 18 },
+    { header: 'Desa', key: 'desa', width: 18 },
+    { header: 'Kelompok', key: 'kelompok', width: 18 },
+  ]
+
+  const buildExportData = () => filtered.map(g => {
+    const ttl = g.tempat_lahir && g.tanggal_lahir
+      ? `${g.tempat_lahir}, ${new Date(g.tanggal_lahir).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`
+      : (g.tempat_lahir || '-')
+    return {
+      no: g.nomor_generus || '-',
+      nama: g.users?.nama_lengkap || '-',
+      panggilan: g.nama_panggilan || '-',
+      jk: g.jenis_kelamin?.toUpperCase() || '-',
+      ttl,
+      kelas_ngaji: g.kelas_ngaji ? (kelasNgajiLabel[g.kelas_ngaji] || g.kelas_ngaji) : '-',
+      alamat: g.alamat || '-',
+      nama_ayah: g.nama_ayah || g.nama_orang_tua || '-',
+      nama_ibu: g.nama_ibu || '-',
+      hp_ortu: g.no_hp_orangtua_wali || g.no_hp_orang_tua || '-',
+      desa: g.users?.desa?.nama_desa || '-',
+      kelompok: g.users?.kelompok?.nama_kelompok || '-',
+    }
+  })
+
+  const exportSubtitle = () => {
+    const t = user?.role?.tingkatan
+    const scope = t === 'kelompok' ? user?.kelompok_id && data[0]?.users?.kelompok?.nama_kelompok
+      : t === 'desa' ? user?.desa_id && data[0]?.users?.desa?.nama_desa
+      : 'Se-Bekasi Timur'
+    return `${scope || 'Se-Bekasi Timur'} -- ${filtered.length} Generus`
+  }
+
+  const handleExportPDF = async () => {
+    if (filtered.length === 0) { alert('Tidak ada data untuk diexport.'); return }
+    setExporting(true)
+    try {
+      exportToPDF({
+        title: 'Data Generus (Biodata)',
+        subtitle: exportSubtitle(),
+        columns: exportColumns,
+        rows: buildExportData(),
+        fileName: `Data-Generus-${new Date().toISOString().slice(0, 10)}`,
+      })
+      if (user) await logAudit(user, 'EXPORT', 'Data Generus', `PDF -- ${filtered.length} generus`)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleExportExcel = async () => {
+    if (filtered.length === 0) { alert('Tidak ada data untuk diexport.'); return }
+    setExporting(true)
+    try {
+      await exportToExcel({
+        title: 'Data Generus (Biodata)',
+        subtitle: exportSubtitle(),
+        columns: exportColumns,
+        rows: buildExportData(),
+        fileName: `Data-Generus-${new Date().toISOString().slice(0, 10)}`,
+      })
+      if (user) await logAudit(user, 'EXPORT', 'Data Generus', `Excel -- ${filtered.length} generus`)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const filtered = data.filter(g => {
     const q = search.toLowerCase()
     if (!q) return true
@@ -235,6 +317,18 @@ export default function DataGenerusPage() {
           <h2 className="font-bold text-slate-800">Data Generus</h2>
           <p className="text-slate-400 text-sm">Biodata pribadi {data.length} Generus -- terpisah dari data akun/login (menu Pengguna)</p>
         </div>
+        {canManage && (
+          <div className="flex items-center gap-2">
+            <button onClick={handleExportPDF} disabled={exporting}
+              className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
+              📄 PDF
+            </button>
+            <button onClick={handleExportExcel} disabled={exporting}
+              className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
+              📊 Excel
+            </button>
+          </div>
+        )}
       </div>
 
       <input type="text" placeholder="Cari nama, no. generus, desa, kelompok..."

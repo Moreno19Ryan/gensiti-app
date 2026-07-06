@@ -7,7 +7,6 @@ import { logAudit } from '@/lib/audit'
 import { authFetch } from '@/lib/auth'
 import { canManageMembers as checkCanManageMembers } from '@/lib/roles'
 import Modal from '@/components/Modal'
-import { exportToPDF, exportToExcel } from '@/lib/export'
 
 interface Member {
   id: string
@@ -80,12 +79,8 @@ const emptyForm = {
   pindah_kelompok_id: '',
 }
 
-const kelasNgajiLabel: Record<string, string> = {
-  pra_remaja: 'Pra Remaja (SMP)',
-  remaja_muda: 'Remaja Muda (SMA)',
-  remaja_dewasa: 'Remaja Dewasa (Lulus SMA - Usia Mandiri)',
-}
-
+// kelasNgajiLabel dipindah ke app/(dashboard)/data-generus/page.tsx -- satu-satunya
+// tempat field Kelas Ngaji masih ditampilkan/diedit sejak menu ini jadi murni akun.
 const statusPenggunaBadge: Record<string, string> = {
   lajang: 'bg-blue-100 text-blue-700',
   menikah: 'bg-emerald-100 text-emerald-700',
@@ -149,12 +144,11 @@ export default function PenggunaPage() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [confirmStep, setConfirmStep] = useState<1 | 2>(1)
   const [confirmType, setConfirmType] = useState<ConfirmType | null>(null)
-  const [exporting, setExporting] = useState(false)
   // Ditampilkan sekali setelah berhasil membuat pengguna baru -- berisi Nama Pengguna
   // (login_username) & password default (tanggal lahir) hasil generate server, supaya
   // admin bisa langsung mencatat/menyampaikan ke pengguna baru. Tidak disimpan di
   // state lain manapun setelah modal ini ditutup (sesuai sifat password sekali-lihat).
-  const [newCredentials, setNewCredentials] = useState<{ nama: string; username: string; password: string } | null>(null)
+  const [newCredentials, setNewCredentials] = useState<{ nama: string; username: string; password: string; biodataWarning?: string } | null>(null)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -302,7 +296,13 @@ export default function PenggunaPage() {
           }),
         })
         const json = await res.json()
-        if (json.error) { setError(json.error); return }
+        // Status 207 = akun BERHASIL dibuat tapi biodata Generus gagal tersimpan (lihat
+        // app/api/users/route.ts POST) -- beda dari kegagalan total (mis. email sudah
+        // dipakai), di sini kredensial akun TETAP harus ditampilkan karena akunnya nyata
+        // dan bisa login. Peringatannya disimpan sbg biodataWarning (bukan setError yg
+        // hanya tampil DI DALAM modal ini, yang sudah tertutup begitu newCredentials diisi)
+        // supaya benar-benar terlihat admin di modal kredensial berikutnya.
+        if (json.error && res.status !== 207) { setError(json.error); return }
         userId = json.userId
         // Tampilkan kredensial default sekali ke admin -- tidak ada cara lain untuk
         // melihat password ini lagi setelah modal ditutup (sesuai desain, bukan disimpan).
@@ -310,6 +310,7 @@ export default function PenggunaPage() {
           nama: form.nama_lengkap,
           username: json.loginUsername,
           password: json.defaultPassword,
+          biodataWarning: res.status === 207 ? json.error : undefined,
         })
       } else {
         const existingGenerus = editTarget.generus?.[0]
@@ -477,84 +478,9 @@ export default function PenggunaPage() {
   // Tombol Tambah Pengguna: hanya Ketua/Wakil Ketua/Sekretaris/Super Admin
   const canManage = canManageMembers
 
-  // Export daftar Generus -- pakai `filtered` (pencarian + filter role yang sedang aktif),
-  // supaya laporan selalu konsisten dengan apa yang sedang dilihat user di layar.
-  const exportColumns = [
-    { header: 'No. Generus', key: 'no', width: 14 },
-    { header: 'Nama Lengkap', key: 'nama', width: 26 },
-    { header: 'Nama Panggilan', key: 'panggilan', width: 18 },
-    { header: 'Jenis Kelamin', key: 'jk', width: 14 },
-    { header: 'Tempat, Tgl Lahir', key: 'ttl', width: 24 },
-    { header: 'Kelas Ngaji', key: 'kelas_ngaji', width: 24 },
-    { header: 'Role', key: 'role', width: 20 },
-    { header: 'Desa', key: 'desa', width: 18 },
-    { header: 'Kelompok', key: 'kelompok', width: 18 },
-    { header: 'No. HP', key: 'hp', width: 16 },
-    { header: 'Status', key: 'status', width: 14 },
-  ]
-
-  const buildExportData = () => filtered.map(m => {
-    const a = m.generus?.[0]
-    const ttl = a?.tempat_lahir && a?.tanggal_lahir
-      ? `${a.tempat_lahir}, ${new Date(a.tanggal_lahir).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`
-      : (a?.tempat_lahir || '-')
-    return {
-      no: a?.nomor_generus || '-',
-      nama: m.nama_lengkap,
-      panggilan: a?.nama_panggilan || '-',
-      jk: a?.jenis_kelamin || '-',
-      ttl,
-      kelas_ngaji: a?.kelas_ngaji ? (kelasNgajiLabel[a.kelas_ngaji] || a.kelas_ngaji) : '-',
-      role: m.roles?.nama_role || '-',
-      desa: m.desa?.nama_desa || '-',
-      kelompok: m.kelompok?.nama_kelompok || '-',
-      hp: m.no_hp || '-',
-      status: m.is_archived ? 'Diarsipkan' : m.is_active ? 'Aktif' : 'Non-aktif',
-    }
-  })
-
-  const exportSubtitle = () => {
-    const t = user?.role?.tingkatan
-    const scope = t === 'kelompok' ? user?.kelompok?.nama_kelompok
-      : t === 'desa' ? user?.desa?.nama_desa
-      : filterRole ? `Jenjang ${filterRole}`
-      : 'Se-Bekasi Timur'
-    return `${scope} -- ${filtered.length} pengguna`
-  }
-
-  const handleExportPDF = async () => {
-    if (filtered.length === 0) { alert('Tidak ada data untuk diexport.'); return }
-    setExporting(true)
-    try {
-      exportToPDF({
-        title: 'Daftar Generus / Pengguna',
-        subtitle: exportSubtitle(),
-        columns: exportColumns,
-        rows: buildExportData(),
-        fileName: `Daftar-Generus-${new Date().toISOString().slice(0, 10)}`,
-      })
-      if (user) await logAudit(user, 'EXPORT', 'Pengguna', `PDF -- ${filtered.length} generus`)
-    } finally {
-      setExporting(false)
-    }
-  }
-
-  const handleExportExcel = async () => {
-    if (filtered.length === 0) { alert('Tidak ada data untuk diexport.'); return }
-    setExporting(true)
-    try {
-      await exportToExcel({
-        title: 'Daftar Generus / Pengguna',
-        subtitle: exportSubtitle(),
-        columns: exportColumns,
-        rows: buildExportData(),
-        fileName: `Daftar-Generus-${new Date().toISOString().slice(0, 10)}`,
-      })
-      if (user) await logAudit(user, 'EXPORT', 'Pengguna', `Excel -- ${filtered.length} generus`)
-    } finally {
-      setExporting(false)
-    }
-  }
+  // Fitur export PDF/Excel dipindah ke menu "Data Generus" -- di sana biodata
+  // lengkap (TTL, kelas ngaji, dll) tersedia dan bisa dijamin terisi benar, sedangkan
+  // menu ini sekarang murni akun.
 
   return (
     <div className="space-y-4">
@@ -564,24 +490,10 @@ export default function PenggunaPage() {
           <p className="text-slate-400 text-sm">{data.length} pengguna terdaftar</p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Export berisi data pribadi (TTL, no. HP, dll) seluruh Generus dalam scope --
-              hanya boleh diakses yang berwenang mengelola Generus (Ketua/Wakil/Super Admin),
-              sama seperti tombol "+ Tambah Pengguna". Generus biasa tidak boleh export data
-              Generus lain, hanya boleh melihat profilnya sendiri di halaman ini. */}
           {canManage && (
-            <>
-              <button onClick={handleExportPDF} disabled={exporting}
-                className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
-                📄 PDF
-              </button>
-              <button onClick={handleExportExcel} disabled={exporting}
-                className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
-                📊 Excel
-              </button>
-              <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
-                + Tambah Pengguna
-              </button>
-            </>
+            <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
+              + Tambah Pengguna
+            </button>
           )}
         </div>
       </div>
@@ -1027,6 +939,11 @@ export default function PenggunaPage() {
             <p className="text-sm text-slate-600">
               Akun <span className="font-semibold">{newCredentials.nama}</span> berhasil dibuat. Catat dan sampaikan kredensial berikut ke pengguna:
             </p>
+            {newCredentials.biodataWarning && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
+                ⚠️ {newCredentials.biodataWarning}
+              </div>
+            )}
             <div className="space-y-2">
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
                 <p className="text-xs text-slate-400 mb-0.5">Nama Pengguna (untuk login)</p>
