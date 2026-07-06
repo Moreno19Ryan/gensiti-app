@@ -26,6 +26,10 @@ const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: '🏠', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
   { href: '/ppg', label: 'Dashboard PPG', icon: '🛡️', roles: ['ppg'] },
   { href: '/generus', label: 'Pengguna', icon: '👥', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true },
+  // Data Generus -- biodata pribadi/sensitif (tempat/tanggal lahir, alamat, data orang tua,
+  // dll), sengaja dipisah dari menu "Pengguna" (akun/login) supaya data sensitif tidak
+  // otomatis terlihat setiap kali mengelola akun. Visibilitas sama persis dengan Pengguna.
+  { href: '/data-generus', label: 'Data Generus', icon: '🗂️', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true },
   { href: '/kegiatan', label: 'Kegiatan', icon: '📅', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
   { href: '/presensi', label: 'Presensi', icon: '✅', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, requiresPresensiAccess: true },
   { href: '/keuangan', label: 'Keuangan', icon: '💰', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true },
@@ -365,5 +369,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </main>
     </div>
+  )
+}
+</div>
   )
 }

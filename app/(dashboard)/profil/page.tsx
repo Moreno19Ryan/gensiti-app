@@ -429,26 +429,16 @@ export default function ProfilPage() {
           <div className="mt-5 pt-5 border-t border-slate-100 dark:border-slate-700 grid grid-cols-2 gap-3">
             {[
               { label: 'No. Generus', val: generusData.nomor_generus },
-              { label: 'Status Generus', val: generusData.status },
-              { label: 'Tempat Lahir', val: generusData.tempat_lahir },
-              { label: 'Tanggal Lahir', val: formatDate(generusData.tanggal_lahir) },
-              { label: 'Jenis Kelamin', val: generusData.jenis_kelamin },
-              { label: 'HP Orang Tua/Wali', val: generusData.no_hp_orangtua_wali },
-              { label: 'Nama Ayah', val: generusData.nama_ayah },
-              { label: 'Nama Ibu', val: generusData.nama_ibu },
-              { label: 'Nama Wali', val: generusData.nama_wali },
+              { label: 'Bergabung Sejak', val: formatDate(user.created_at) },
+              { label: 'Status Akun', val: user.is_active ? 'Aktif' : 'Non-aktif' },
+              { label: 'Status Generus', val: generusData.status?.toUpperCase() },
+              { label: 'Jenis Kelamin', val: generusData.jenis_kelamin?.toUpperCase() },
             ].filter(x => x.val).map(({ label, val }) => (
               <div key={label}>
                 <p className="text-xs text-slate-400">{label}</p>
                 <p className="text-sm text-slate-700 dark:text-slate-200">{val}</p>
               </div>
             ))}
-            {generusData.alamat && (
-              <div className="col-span-2">
-                <p className="text-xs text-slate-400">Alamat</p>
-                <p className="text-sm text-slate-700 dark:text-slate-200">{generusData.alamat}</p>
-              </div>
-            )}
           </div>
         )}
       </div>
