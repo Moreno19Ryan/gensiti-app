@@ -74,7 +74,6 @@ export default function DashboardPage() {
       // (PPG tidak punya desa_id/kelompok_id).
       const isPPGUser = user?.role?.tingkatan === 'ppg'
 
-      let generusQuery = supabase.from('generus').select('id', { count: 'exact', head: true }).eq('status', 'aktif')
       let kegiatanQuery = supabase.from('kegiatan').select('id', { count: 'exact', head: true }).in('status', ['upcoming', 'ongoing'])
       // Scope untuk RPC ringkasan keuangan -- dikirim sebagai parameter, BUKAN filter .eq()
       // client-side, karena sekarang penjumlahan dilakukan di database (lihat di bawah).
@@ -83,22 +82,27 @@ export default function DashboardPage() {
 
       if (!isSuper && !isDaerah && !isPPGUser) {
         if (user?.desa_id) {
-          generusQuery = generusQuery.eq('desa_id', user.desa_id)
           kegiatanQuery = kegiatanQuery.eq('desa_id', user.desa_id)
           scopeDesaId = user.desa_id
         }
         if (user?.kelompok_id) {
-          generusQuery = generusQuery.eq('kelompok_id', user.kelompok_id)
           kegiatanQuery = kegiatanQuery.eq('kelompok_id', user.kelompok_id)
           scopeKelompokId = user.kelompok_id
         }
       }
 
-      // Ringkasan keuangan dihitung via RPC get_ringkasan_keuangan (SUM/GROUP BY di database)
-      // alih-alih menarik SEMUA baris tabel keuangan (select 'jenis, jumlah' tanpa limit) ke
-      // client lalu menjumlahkan manual -- hemat bandwidth & tetap tunduk RLS (SECURITY INVOKER).
-      const [{ count: generusCount }, { count: kegiatanCount }, { data: ringkasanKeuangan }] = await Promise.all([
-        generusQuery,
+      // Ringkasan keuangan & jumlah Generus dihitung via RPC SECURITY DEFINER (SUM/COUNT di
+      // database) alih-alih query langsung dari client -- utk keuangan alasannya hemat
+      // bandwidth (get_ringkasan_keuangan, SECURITY INVOKER, tetap tunduk RLS). Utk Generus
+      // alasannya BEDA & lebih penting: RLS tabel generus sekarang memblokir Generus biasa
+      // dari melihat baris Generus lain (lihat migration fix_generus_biasa_self_select_rls) --
+      // kalau count dihitung client-side (select + head:true), Generus biasa yang membuka
+      // Dashboard akan mendapat angka SALAH (cuma menghitung baris dirinya sendiri, bukan
+      // total kelompok/desa). get_jumlah_generus_aktif() SECURITY DEFINER supaya angkanya
+      // akurat lintas role -- RPC ini cuma mengembalikan ANGKA, tidak membocorkan data
+      // pribadi apapun, jadi aman dibuka siapapun.
+      const [{ data: generusCount }, { count: kegiatanCount }, { data: ringkasanKeuangan }] = await Promise.all([
+        supabase.rpc('get_jumlah_generus_aktif', { p_desa_id: scopeDesaId, p_kelompok_id: scopeKelompokId }),
         kegiatanQuery,
         supabase.rpc('get_ringkasan_keuangan', { p_desa_id: scopeDesaId, p_kelompok_id: scopeKelompokId }),
       ])
@@ -107,7 +111,7 @@ export default function DashboardPage() {
       const pengeluaran = Number(ringkasanKeuangan?.[0]?.pengeluaran) || 0
 
       setStats({
-        generus: generusCount || 0,
+        generus: Number(generusCount) || 0,
         kegiatan_aktif: kegiatanCount || 0,
         pemasukan,
         pengeluaran,
@@ -191,13 +195,20 @@ export default function DashboardPage() {
       }
 
       // --- Pertumbuhan Generus per bulan (jumlah Generus baru, bukan kumulatif) ---
-      let aq = supabase.from('generus').select('created_at').gte('created_at', rangeStart).limit(2000)
-      aq = applyScope(aq)
-      const { data: aRows } = await aq
+      // Dihitung via RPC get_pertumbuhan_generus (SECURITY DEFINER), sama alasannya seperti
+      // get_jumlah_generus_aktif di loadStats -- RLS tabel generus memblokir Generus biasa
+      // dari melihat baris Generus lain, jadi query client-side akan menghasilkan grafik
+      // yang salah (nyaris kosong) kalau Generus biasa yang membuka Dashboard.
+      const scopeDesaIdChart = (!isSuper && !isDaerah && !isPPGUser) ? (user?.desa_id || null) : null
+      const scopeKelompokIdChart = (!isSuper && !isDaerah && !isPPGUser) ? (user?.kelompok_id || null) : null
+      const { data: pertumbuhanRows } = await supabase.rpc('get_pertumbuhan_generus', {
+        p_desa_id: scopeDesaIdChart,
+        p_kelompok_id: scopeKelompokIdChart,
+        p_range_start: rangeStart,
+      })
       const tumbuhMap = new Map(bulanList.map(b => [b.key, 0]))
-      aRows?.forEach(r => {
-        const key = r.created_at.slice(0, 7)
-        if (tumbuhMap.has(key)) tumbuhMap.set(key, (tumbuhMap.get(key) || 0) + 1)
+      ;(pertumbuhanRows as { bulan: string; jumlah: number }[] | null)?.forEach(r => {
+        if (tumbuhMap.has(r.bulan)) tumbuhMap.set(r.bulan, r.jumlah)
       })
       setPertumbuhan(bulanList.map(b => ({ bulan: b.label, generus_baru: tumbuhMap.get(b.key) || 0 })))
 
@@ -479,7 +490,7 @@ export default function DashboardPage() {
 
         <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100 xl:col-span-2">
           <h3 className="font-semibold text-slate-700 mb-1">Pertumbuhan Generus 6 Bulan Terakhir</h3>
-          <p className="text-slate-400 text-xs mb-4">Jumlah Generus baru terdaftar per bulan</p>
+          <p className="text-slate-400 text-xs mb-4">Jumlah Generus baru bergabung per bulan</p>
           {loadingChart ? (
             <div className="h-64 flex items-center justify-center text-slate-400">
               <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />

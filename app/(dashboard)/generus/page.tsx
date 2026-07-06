@@ -55,6 +55,11 @@ interface RoleOpt { id: string; nama_role: string; tingkatan: string }
 interface DesaOpt { id: string; nama_desa: string }
 interface KelompokOpt { id: string; nama_kelompok: string; desa_id: string }
 
+// Field biodata (alamat, tinggi/berat badan, kelas ngaji, nama ortu/wali, anak ke-,
+// jumlah saudara) SENGAJA TIDAK ADA di sini lagi -- modal ini murni akun, biodata
+// dikelola di menu "Data Generus" terpisah. tempat_lahir/tanggal_lahir/jenis_kelamin
+// tetap ada karena masih wajib diisi saat membuat pengguna BARU (dipakai server men-
+// generate login_username & password awal), lihat generusFieldsCreateOnly di doActualSave.
 const emptyForm = {
   email: '',
   password: '',
@@ -68,21 +73,11 @@ const emptyForm = {
   tempat_lahir: '',
   tanggal_lahir: '',
   jenis_kelamin: '',
-  alamat: '',
-  tinggi_badan: '',
-  berat_badan: '',
-  kelas_ngaji: '',
   status_anggota: 'aktif',
-  nama_ayah: '',
-  nama_ibu: '',
-  nama_wali: '',
-  no_hp_orangtua_wali: '',
   status_pengguna: 'lajang',
   pindah_jenis: 'bekasi_timur',
   pindah_desa_id: '',
   pindah_kelompok_id: '',
-  anak_ke: '',
-  jumlah_saudara: '',
 }
 
 const kelasNgajiLabel: Record<string, string> = {
@@ -234,21 +229,11 @@ export default function PenggunaPage() {
       tempat_lahir: a?.tempat_lahir || '',
       tanggal_lahir: a?.tanggal_lahir || '',
       jenis_kelamin: a?.jenis_kelamin || '',
-      alamat: a?.alamat || '',
-      tinggi_badan: a?.tinggi_badan?.toString() || '',
-      berat_badan: a?.berat_badan?.toString() || '',
-      kelas_ngaji: a?.kelas_ngaji || '',
       status_anggota: a?.status || 'aktif',
-      nama_ayah: a?.nama_ayah || a?.nama_orang_tua || '',
-      nama_ibu: a?.nama_ibu || '',
-      nama_wali: a?.nama_wali || '',
-      no_hp_orangtua_wali: a?.no_hp_orangtua_wali || a?.no_hp_orang_tua || '',
       status_pengguna: a?.status_pengguna || 'lajang',
       pindah_jenis: a?.pindah_ke_daerah_lain ? 'daerah_lain' : 'bekasi_timur',
       pindah_desa_id: a?.pindah_desa_id || '',
       pindah_kelompok_id: a?.pindah_kelompok_id || '',
-      anak_ke: a?.anak_ke?.toString() || '',
-      jumlah_saudara: a?.jumlah_saudara?.toString() || '',
     })
     setModalOpen(true)
   }
@@ -262,27 +247,40 @@ export default function PenggunaPage() {
         (form.status_pengguna === 'pindah_sambung' && form.pindah_jenis === 'daerah_lain')
       )
 
-      const generusFields = {
+      // PENTING -- pemisahan ini mencegah bug sinkronisasi: modal ini murni akun, field
+      // biodata (alamat, ortu, tinggi/berat, kelas ngaji, dll) TIDAK PUNYA input UI di sini
+      // lagi (sudah dipindah ke menu "Data Generus" terpisah). Sebelumnya field-field itu
+      // masih ikut dikirim di setiap PATCH (dibawa balik dari state form hasil pre-fill
+      // openEdit()) -- meskipun tidak sampai menimpa dengan string kosong (karena di-pre-fill
+      // dulu), ini tetap berisiko race condition: kalau Sekretaris sedang edit biodata di
+      // Data Generus BERSAMAAN Ketua edit akun di Pengguna, siapa yang menyimpan belakangan
+      // akan menimpa balik dengan data biodata versi STALE yang dibawa form Pengguna diam-diam.
+      // Sekarang: field biodata HANYA dikirim saat CREATE user baru (wajib utk generate
+      // login_username & password awal dari tanggal_lahir), TIDAK PERNAH dikirim lagi saat
+      // EDIT/PATCH akun yang sudah ada -- mengedit biodata sesudahnya harus lewat Data Generus.
+      const generusFieldsCreateOnly = !editTarget ? {
         nama_panggilan: form.nama_panggilan || null,
-        tempat_lahir: form.tempat_lahir,
+        tempat_lahir: form.tempat_lahir || null,
         tanggal_lahir: form.tanggal_lahir,
         jenis_kelamin: form.jenis_kelamin,
-        alamat: form.alamat,
-        tinggi_badan: form.tinggi_badan ? parseFloat(form.tinggi_badan) : null,
-        berat_badan: form.berat_badan ? parseFloat(form.berat_badan) : null,
-        kelas_ngaji: form.kelas_ngaji || null,
+      } : {}
+
+      // Field yang MEMANG murni urusan akun/status keanggotaan (bukan biodata pribadi) --
+      // status_anggota (Status Akun Generus: aktif/non-aktif), status_pengguna & pindah_sambung
+      // sengaja tetap di sini (lihat keputusan: menu Pengguna tetap pegang status yang
+      // langsung berdampak ke akses/arsip akun) -- SEMUA field ini masih punya input UI aktif
+      // di modal ini (lihat dropdown "Status Akun" & "Status Pengguna" di bawah), jadi wajib
+      // tetap ikut dikirim, beda dari field biodata murni (alamat, ortu, dll) yang inputnya
+      // sudah tidak ada sama sekali di modal ini.
+      const akunStatusFields = editTarget ? {
         status_anggota: form.status_anggota,
-        nama_ayah: form.nama_ayah,
-        nama_ibu: form.nama_ibu,
-        nama_wali: form.nama_wali || null,
-        no_hp_orangtua_wali: form.no_hp_orangtua_wali,
         status_pengguna: form.status_pengguna,
         pindah_desa_id: (form.status_pengguna === 'pindah_sambung' && form.pindah_jenis === 'bekasi_timur') ? form.pindah_desa_id || null : null,
         pindah_kelompok_id: (form.status_pengguna === 'pindah_sambung' && form.pindah_jenis === 'bekasi_timur') ? form.pindah_kelompok_id || null : null,
         pindah_ke_daerah_lain: form.status_pengguna === 'pindah_sambung' && form.pindah_jenis === 'daerah_lain',
-        anak_ke: form.anak_ke ? parseInt(form.anak_ke) : null,
-        jumlah_saudara: form.jumlah_saudara ? parseInt(form.jumlah_saudara) : null,
-      }
+      } : {}
+
+      const generusFields = { ...generusFieldsCreateOnly, ...akunStatusFields }
 
       let userId = editTarget?.id
 
