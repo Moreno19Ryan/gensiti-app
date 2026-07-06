@@ -49,7 +49,7 @@ export default function ProfilPage() {
   const [savingNotif, setSavingNotif] = useState(false)
 
   const loadGenerus = async (userId: string) => {
-    const res = await authFetch(`/api/users?userId=${userId}`)
+    const res = await authFetch(`/api/generus?userId=${userId}`)
     const json = await res.json()
     if (json.data) {
       const data = json.data as GenerusRecord
@@ -151,12 +151,14 @@ export default function ProfilPage() {
     setSaving(true)
     setMsg(null)
     try {
-      const res = await authFetch('/api/users', {
+      // Dipindah ke /api/generus (biodata murni) -- lihat app/api/generus/route.ts.
+      // nama_lengkap TIDAK perlu dikirim lagi di sini karena endpoint ini sekarang
+      // tidak lagi menyentuh field akun sama sekali.
+      const res = await authFetch('/api/generus', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: user.id,
-          nama_lengkap: user.nama_lengkap,
+          user_id: user.id,
           tempat_lahir: diriForm.tempat_lahir.toUpperCase(),
           tanggal_lahir: diriForm.tanggal_lahir || null,
           jenis_kelamin: diriForm.jenis_kelamin,

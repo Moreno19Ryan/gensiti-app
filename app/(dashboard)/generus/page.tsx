@@ -321,6 +321,7 @@ export default function PenggunaPage() {
           ? form.pindah_kelompok_id
           : form.kelompok_id
 
+        // AKUN (email/no_hp/role/scope/status aktif/password) -- lewat /api/users.
         const body: Record<string, unknown> = {
           id: editTarget.id,
           nama_lengkap: form.nama_lengkap,
@@ -330,8 +331,6 @@ export default function PenggunaPage() {
           kelompok_id: targetKelompokId,
           is_active: needsArchive ? false : form.is_active,
           password: form.password || undefined,
-          generus_id: existingGenerus?.id,
-          ...generusFields,
         }
 
         if (needsArchive) {
@@ -350,6 +349,23 @@ export default function PenggunaPage() {
         })
         const json = await res.json()
         if (json.error) { setError(json.error); return }
+
+        // BIODATA & status keanggotaan (status_anggota/status_pengguna/pindah sambung) --
+        // lewat /api/generus. Dipisah dari body akun di atas krn sekarang dua endpoint
+        // berbeda -- lihat app/api/generus/route.ts.
+        if (Object.keys(generusFields).length > 0) {
+          const resGenerus = await authFetch('/api/generus', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id: editTarget.id,
+              generus_id: existingGenerus?.id,
+              ...generusFields,
+            }),
+          })
+          const jsonGenerus = await resGenerus.json()
+          if (jsonGenerus.error) { setError(jsonGenerus.error); return }
+        }
       }
 
       if (user) {

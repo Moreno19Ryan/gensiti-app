@@ -170,12 +170,23 @@ export default function DataGenerusPage() {
 
     setSaving(true)
     try {
-      const res = await authFetch('/api/users', {
+      // no_hp adalah field AKUN (users.no_hp), bukan biodata -- lewat /api/users.
+      // Sisanya biodata murni -- lewat /api/generus. Dua request terpisah karena kini
+      // dua domain berbeda, tapi tetap dijalankan berurutan dari satu tombol Simpan
+      // supaya pengalaman admin tidak berubah.
+      const resAkun = await authFetch('/api/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editTarget.users.id, no_hp: form.no_hp }),
+      })
+      const jsonAkun = await resAkun.json()
+      if (jsonAkun.error) { setError(jsonAkun.error); return }
+
+      const res = await authFetch('/api/generus', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: editTarget.users.id,
-          no_hp: form.no_hp,
+          user_id: editTarget.users.id,
           generus_id: editTarget.id,
           nama_panggilan: form.nama_panggilan,
           tempat_lahir: form.tempat_lahir,

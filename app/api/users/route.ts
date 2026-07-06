@@ -144,36 +144,11 @@ function passwordFromTanggalLahir(tanggalLahir: string): string {
   return `${dd}${mm}${yyyy}`
 }
 
-// GET: Ambil data Generus by userId (server-side, bypass RLS)
-// Diizinkan untuk: pemilik data sendiri, atau pengguna yang berwenang mengelola Generus (Ketua/Wakil/Super Admin).
-export async function GET(req: NextRequest) {
-  try {
-    const supabaseAdmin = adminClient()
-    const { caller, reason } = await getCaller(req, supabaseAdmin)
-    if (!caller) return NextResponse.json({ error: reason || 'Unauthorized' }, { status: 401 })
-
-    const { searchParams } = new URL(req.url)
-    const userId = searchParams.get('userId')
-    if (!userId) return NextResponse.json({ error: 'userId wajib diisi' }, { status: 400 })
-
-    if (userId !== caller.id && !canManageMembers(caller)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-
-    const { data, error } = await supabaseAdmin
-      .from('generus')
-      .select('*')
-      .eq('user_id', userId)
-      .single()
-
-    if (error && error.code !== 'PGRST116') {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-    return NextResponse.json({ data: data || null })
-  } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 })
-  }
-}
+// CATATAN -- GET (ambil biodata Generus by userId) sudah DIPINDAH ke app/api/generus/route.ts,
+// karena itu murni operasi biodata, bukan akun. File ini sekarang fokus ke akun: membuat user
+// baru (POST, tetap gabungan dgn biodata krn satu transaksi pembuatan) dan update field akun
+// murni (PATCH: email/no_hp/role/status aktif/avatar) -- lihat app/api/generus/route.ts utk
+// PATCH biodata (tempat lahir, nama ortu, dst).
 
 // POST: Buat user baru + generus record
 // Hanya boleh dipanggil oleh Ketua/Wakil Ketua/Super Admin.
@@ -297,7 +272,11 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PATCH: Update user + generus record
+// PATCH: Update field AKUN murni (email/no_hp/role/scope/status aktif/avatar/password).
+// Biodata Generus (tempat lahir, nama ortu, dll) TIDAK lagi ditangani di sini -- lihat
+// app/api/generus/route.ts PATCH. Field desa_id/kelompok_id di sini adalah SCOPE AKUN
+// (dipakai utk otorisasi & filter), beda dari generus.desa_id/kelompok_id yang berarti
+// tempat sambung generus saat ini (lihat komentar di app/api/generus/route.ts).
 export async function PATCH(req: NextRequest) {
   try {
     const supabaseAdmin = adminClient()
@@ -307,14 +286,7 @@ export async function PATCH(req: NextRequest) {
     const {
       id, nama_lengkap, no_hp, role_id, desa_id, kelompok_id, is_active, password,
       avatar_url,
-      generus_id, nama_panggilan, tempat_lahir, tanggal_lahir, jenis_kelamin, alamat,
-      tinggi_badan, berat_badan, kelas_ngaji,
-      nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali,
-      status_anggota,
-      status_pengguna,
-      pindah_desa_id, pindah_kelompok_id, pindah_ke_daerah_lain,
       archive, alasan_arsip,
-      anak_ke, jumlah_saudara,
     } = await req.json()
 
     if (!id) return NextResponse.json({ error: 'ID wajib diisi' }, { status: 400 })
@@ -345,10 +317,6 @@ export async function PATCH(req: NextRequest) {
       const hasProtectedFields = nama_lengkap !== undefined
         || role_id !== undefined || desa_id !== undefined || kelompok_id !== undefined
         || is_active !== undefined || archive !== undefined
-        || tempat_lahir !== undefined || tanggal_lahir !== undefined
-        || jenis_kelamin !== undefined || alamat !== undefined
-        || nama_ayah !== undefined || nama_ibu !== undefined
-        || status_pengguna !== undefined || status_anggota !== undefined
       if (hasProtectedFields) {
         return NextResponse.json({ error: 'Profil Super Admin tidak dapat diubah.' }, { status: 403 })
       }
@@ -393,89 +361,6 @@ export async function PATCH(req: NextRequest) {
     if (Object.keys(userPayload).length > 0) {
       const { error } = await supabaseAdmin.from('users').update(userPayload).eq('id', id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-
-    const hasGenerusFields = generus_id != null
-      || nama_panggilan !== undefined
-      || tempat_lahir !== undefined
-      || tanggal_lahir !== undefined
-      || jenis_kelamin !== undefined
-      || alamat !== undefined
-      || tinggi_badan !== undefined
-      || berat_badan !== undefined
-      || kelas_ngaji !== undefined
-      || nama_ayah !== undefined
-      || nama_ibu !== undefined
-      || nama_wali !== undefined
-      || no_hp_orangtua_wali !== undefined
-      || anak_ke !== undefined
-      || jumlah_saudara !== undefined
-      || status_pengguna !== undefined
-      || status_anggota !== undefined
-      || pindah_ke_daerah_lain !== undefined
-
-    // CATATAN -- generusPayload TIDAK PERNAH menulis nama_lengkap/no_hp/foto_url. Kolom
-    // itu sudah dihapus dari tabel generus (lihat migrasi hapus_kolom_duplikat_generus)
-    // krn sebelumnya ditulis manual ke dua tabel dan terbukti bikin data divergen di
-    // production. users kini satu-satunya sumber kebenaran utk 3 field itu.
-    if (hasGenerusFields) {
-      const generusPayload: Record<string, unknown> = {}
-      if (nama_panggilan !== undefined) generusPayload.nama_panggilan = nama_panggilan || null
-      if (tempat_lahir !== undefined) generusPayload.tempat_lahir = tempat_lahir || null
-      if (tanggal_lahir !== undefined) generusPayload.tanggal_lahir = tanggal_lahir || null
-      if (jenis_kelamin !== undefined) generusPayload.jenis_kelamin = jenis_kelamin || null
-      if (alamat !== undefined) generusPayload.alamat = alamat || null
-      if (tinggi_badan !== undefined) generusPayload.tinggi_badan = tinggi_badan || null
-      if (berat_badan !== undefined) generusPayload.berat_badan = berat_badan || null
-      if (kelas_ngaji !== undefined) generusPayload.kelas_ngaji = kelas_ngaji || null
-      if (desa_id !== undefined) generusPayload.desa_id = desa_id || null
-      if (kelompok_id !== undefined) generusPayload.kelompok_id = kelompok_id || null
-      if (status_anggota !== undefined) generusPayload.status = status_anggota
-      if (nama_ayah !== undefined) generusPayload.nama_ayah = nama_ayah || null
-      if (nama_ibu !== undefined) generusPayload.nama_ibu = nama_ibu || null
-      if (nama_wali !== undefined) generusPayload.nama_wali = nama_wali || null
-      if (no_hp_orangtua_wali !== undefined) generusPayload.no_hp_orangtua_wali = no_hp_orangtua_wali || null
-      if (status_pengguna !== undefined) generusPayload.status_pengguna = status_pengguna
-      if (pindah_desa_id !== undefined) generusPayload.pindah_desa_id = pindah_desa_id || null
-      if (pindah_kelompok_id !== undefined) generusPayload.pindah_kelompok_id = pindah_kelompok_id || null
-      if (pindah_ke_daerah_lain !== undefined) generusPayload.pindah_ke_daerah_lain = pindah_ke_daerah_lain === true
-      if (anak_ke !== undefined) generusPayload.anak_ke = anak_ke || null
-      if (jumlah_saudara !== undefined) generusPayload.jumlah_saudara = jumlah_saudara || null
-
-      if (Object.keys(generusPayload).length > 0) {
-        // Selalu cari generus by user_id dulu (lebih reliable daripada upsert tanpa constraint)
-        const { data: existingGenerus } = await supabaseAdmin
-          .from('generus')
-          .select('id')
-          .eq('user_id', id)
-          .single()
-
-        // PENTING -- sebelumnya error dari update/insert generus HANYA di-console.error dan
-        // endpoint tetap balas {success:true}. Ini menyebabkan bug nyata: saat CHECK constraint
-        // database menolak value jenis_kelamin yang salah format, biodata Generus GAGAL TOTAL
-        // tersimpan tapi UI & audit log tetap melaporkan "berhasil" -- pengguna (dan admin) tidak
-        // pernah tahu datanya sebenarnya tidak tersimpan. Sekarang error ini dikembalikan ke
-        // client sebagai response error yang jelas, konsisten dengan bagian lain endpoint ini.
-        if (existingGenerus?.id) {
-          const { error: generusErr } = await supabaseAdmin
-            .from('generus')
-            .update(generusPayload)
-            .eq('id', existingGenerus.id)
-          if (generusErr) {
-            console.error('Generus update error:', generusErr.message)
-            return NextResponse.json({ error: `Gagal menyimpan data Generus: ${generusErr.message}` }, { status: 500 })
-          }
-        } else {
-          // Buat record generus baru jika belum ada
-          const { error: generusErr } = await supabaseAdmin
-            .from('generus')
-            .insert({ ...generusPayload, user_id: id, status: 'aktif', status_pengguna: 'lajang' })
-          if (generusErr) {
-            console.error('Generus insert error:', generusErr.message)
-            return NextResponse.json({ error: `Gagal menyimpan data Generus: ${generusErr.message}` }, { status: 500 })
-          }
-        }
-      }
     }
 
     return NextResponse.json({ success: true })
