@@ -59,6 +59,7 @@ export default function KeuanganPage() {
   const [saving, setSaving] = useState(false)
   const [desaList, setDesaList] = useState<DesaOpt[]>([])
   const [kelompokList, setKelompokList] = useState<KelompokOpt[]>([])
+  const [error, setError] = useState('')
 
   const loadData = useCallback(async () => {
     if (!hasAccess) return
@@ -71,7 +72,8 @@ export default function KeuanganPage() {
       if (user?.desa_id) query = query.eq('desa_id', user.desa_id)
     }
     // daerah & ppg: lihat semua (PPG lintas Bekasi Timur, read-only)
-    const { data: rows } = await query
+    const { data: rows, error: err } = await query
+    if (err) { console.error('Gagal memuat data keuangan:', err.message) }
     setData(rows || [])
     setLoading(false)
   }, [user, hasAccess])
@@ -91,12 +93,14 @@ export default function KeuanganPage() {
 
   const openAdd = () => {
     setEditTarget(null)
+    setError('')
     setForm({ ...emptyForm, desa_id: user?.desa_id || '', kelompok_id: user?.kelompok_id || '' })
     setModalOpen(true)
   }
 
   const openEdit = (k: Keuangan) => {
     setEditTarget(k)
+    setError('')
     setForm({
       jenis: k.jenis,
       kategori: k.kategori || '',
@@ -111,13 +115,22 @@ export default function KeuanganPage() {
   }
 
   const handleSave = async () => {
+    setError('')
     if (!form.jumlah || !form.tanggal || !form.kategori || !form.deskripsi || !form.desa_id) return
+    const nominal = parseFloat(form.jumlah.replace(/\./g, '').replace(',', '.'))
+    // Sebelumnya nominal 0 atau negatif bisa lolos tersimpan (cuma dicek "truthy"/terisi,
+    // bukan validitas angkanya) -- transaksi keuangan dengan jumlah 0/minus tidak masuk akal
+    // dan akan merusak perhitungan saldo/laporan.
+    if (!Number.isFinite(nominal) || nominal <= 0) {
+      setError('Jumlah harus berupa angka lebih dari 0.')
+      return
+    }
     setSaving(true)
     try {
       const payload = {
         jenis: form.jenis as 'pemasukan' | 'pengeluaran',
         kategori: form.kategori || null,
-        jumlah: parseFloat(form.jumlah.replace(/\./g, '').replace(',', '.')),
+        jumlah: nominal,
         deskripsi: form.deskripsi || null,
         tanggal: form.tanggal,
         tingkatan: form.tingkatan || null,
@@ -126,10 +139,12 @@ export default function KeuanganPage() {
         dibuat_oleh: user?.id,
       }
       if (editTarget) {
-        await supabase.from('keuangan').update(payload).eq('id', editTarget.id)
+        const { error: err } = await supabase.from('keuangan').update(payload).eq('id', editTarget.id)
+        if (err) { setError(`Gagal menyimpan perubahan: ${err.message}`); return }
         if (user) await logAudit(user, 'UPDATE', 'Keuangan', `${form.jenis} - ${form.kategori}`, payload, editTarget.id)
       } else {
-        const { data: ins } = await supabase.from('keuangan').insert(payload).select('id').single()
+        const { data: ins, error: err } = await supabase.from('keuangan').insert(payload).select('id').single()
+        if (err) { setError(`Gagal membuat transaksi: ${err.message}`); return }
         if (user) await logAudit(user, 'CREATE', 'Keuangan', `${form.jenis} - ${form.kategori} - Rp${form.jumlah}`, payload, ins?.id)
       }
       setModalOpen(false)
@@ -141,7 +156,8 @@ export default function KeuanganPage() {
 
   const handleDelete = async (id: string, desc?: string) => {
     if (!confirm('Hapus transaksi ini?')) return
-    await supabase.from('keuangan').delete().eq('id', id)
+    const { error: err } = await supabase.from('keuangan').delete().eq('id', id)
+    if (err) { alert(`Gagal menghapus transaksi: ${err.message}`); return }
     if (user) await logAudit(user, 'DELETE', 'Keuangan', desc || id, {}, id)
     loadData()
   }
@@ -427,7 +443,7 @@ export default function KeuanganPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Jumlah (Rp) *</label>
-              <input type="number" value={form.jumlah} onChange={e => set('jumlah', e.target.value)}
+              <input type="number" min="1" step="1" value={form.jumlah} onChange={e => set('jumlah', e.target.value)}
                 placeholder="0"
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
@@ -467,6 +483,10 @@ export default function KeuanganPage() {
               </select>
             </div>
           </div>
+
+          {error && (
+            <div className="p-2.5 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600">{error}</div>
+          )}
 
           <div className="flex gap-3 pt-2 border-t border-slate-100">
             <button onClick={() => setModalOpen(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">

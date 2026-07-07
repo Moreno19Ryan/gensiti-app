@@ -55,7 +55,8 @@ export default function PresensiPage() {
       if (user?.kelompok_id) query = query.eq('kelompok_id', user.kelompok_id)
       else if (user?.desa_id) query = query.eq('desa_id', user.desa_id)
     }
-    const { data } = await query
+    const { data, error: err } = await query
+    if (err) { console.error('Gagal memuat daftar kegiatan:', err.message) }
     setKegiatanList(data || [])
     setLoadingKegiatan(false)
   }, [user])
@@ -81,12 +82,14 @@ export default function PresensiPage() {
     }
     // tingkatan 'daerah' tanpa desa_id/kelompok_id -> seluruh Generus daerah (tidak difilter tambahan)
 
-    const [{ data: generusRows }, { data: absensiRows }] = await Promise.all([
+    const [{ data: generusRows, error: errGenerus }, { data: absensiRows, error: errAbsensi }] = await Promise.all([
       generusQuery.order('nama_lengkap').limit(1000),
       // Limit 1000 -- absensi per kegiatan dibatasi jumlah Generus dalam scope-nya, tapi
       // tetap diberi pengaman untuk kegiatan tingkat Daerah dengan peserta sangat banyak.
       supabase.from('absensi').select('*').eq('kegiatan_id', kegiatan.id).limit(1000),
     ])
+    if (errGenerus) console.error('Gagal memuat daftar Generus:', errGenerus.message)
+    if (errAbsensi) console.error('Gagal memuat data absensi:', errAbsensi.message)
 
     setGenerusScope(generusRows || [])
     const map: Record<string, Absensi> = {}
@@ -101,29 +104,33 @@ export default function PresensiPage() {
     if (!selectedKegiatan || !status) return
     setSavingId(generusId)
     try {
-      const existing = absensiMap[generusId]
-      if (existing) {
-        const { data: updated } = await supabase
-          .from('absensi')
-          .update({ status, keterangan: 'Koreksi manual pengurus' })
-          .eq('id', existing.id)
-          .select('*')
-          .single()
-        if (updated) setAbsensiMap(prev => ({ ...prev, [generusId]: updated as Absensi }))
-      } else {
-        const { data: inserted } = await supabase
-          .from('absensi')
-          .insert({
+      // Upsert by (kegiatan_id, generus_id) alih-alih cek "existing" dari state client lalu
+      // pilih update/insert manual -- pola lama rawan race condition: kalau ada 2 aksi hampir
+      // bersamaan utk kombinasi kegiatan+generus yg sama (mis. Generus self check-in via
+      // submit_presensi tepat saat pengurus mengoreksi manual di sini), dua-duanya bisa lolos
+      // cek "existing" kosong lalu sama-sama INSERT, menghasilkan baris absensi duplikat.
+      // Sekarang dijamin database via constraint UNIQUE(kegiatan_id, generus_id) + upsert.
+      const { data: saved, error: err } = await supabase
+        .from('absensi')
+        .upsert(
+          {
             kegiatan_id: selectedKegiatan.id,
             generus_id: generusId,
             status,
             keterangan: 'Koreksi manual pengurus',
             waktu_absen: new Date().toISOString(),
-          })
-          .select('*')
-          .single()
-        if (inserted) setAbsensiMap(prev => ({ ...prev, [generusId]: inserted as Absensi }))
+          },
+          { onConflict: 'kegiatan_id,generus_id' }
+        )
+        .select('*')
+        .single()
+
+      if (err) {
+        alert(`Gagal menyimpan koreksi kehadiran: ${err.message}`)
+        return
       }
+      if (saved) setAbsensiMap(prev => ({ ...prev, [generusId]: saved as Absensi }))
+
       if (user) {
         await logAudit(user, 'UPDATE', 'Presensi', selectedKegiatan.nama_kegiatan, { generus_id: generusId, status }, selectedKegiatan.id)
       }

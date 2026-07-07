@@ -52,6 +52,7 @@ export default function KegiatanPage() {
   const [desaList, setDesaList] = useState<DesaOpt[]>([])
   const [kelompokList, setKelompokList] = useState<KelompokOpt[]>([])
   const [exporting, setExporting] = useState(false)
+  const [error, setError] = useState('')
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -61,7 +62,8 @@ export default function KegiatanPage() {
       if (user?.kelompok_id) query = query.eq('kelompok_id', user.kelompok_id)
       else if (user?.desa_id) query = query.eq('desa_id', user.desa_id)
     }
-    const { data: rows } = await query
+    const { data: rows, error: err } = await query
+    if (err) { console.error('Gagal memuat data kegiatan:', err.message) }
     setData(rows || [])
     setLoading(false)
   }, [user])
@@ -79,21 +81,39 @@ export default function KegiatanPage() {
     }
   }, [user, loadData])
 
+  // Pengurus Desa/Kelompok otomatis membuat kegiatan di scope-nya sendiri (tingkatan
+  // ikut scope, tidak pernah kosong). Super Admin/Daerah default ke 'daerah' (lintas
+  // desa/kelompok) tapi tetap bisa pilih Desa/Kelompok tertentu lewat checkbox di form.
+  const inferTingkatan = (): string => {
+    if (tingkatanUser === 'desa' || tingkatanUser === 'kelompok') return tingkatanUser
+    return 'daerah'
+  }
+
   const openAdd = () => {
     setEditTarget(null)
-    setForm({ ...emptyForm, desa_id: user?.desa_id || '', kelompok_id: user?.kelompok_id || '' })
+    setError('')
+    setForm({
+      ...emptyForm,
+      tingkatan: inferTingkatan(),
+      desa_id: user?.desa_id || '',
+      kelompok_id: user?.kelompok_id || '',
+    })
     setModalOpen(true)
   }
 
   const openEdit = (k: Kegiatan) => {
     setEditTarget(k)
+    setError('')
     setForm({
       nama_kegiatan: k.nama_kegiatan,
       deskripsi: k.deskripsi || '',
       tanggal_mulai: k.tanggal_mulai ? k.tanggal_mulai.slice(0, 16) : '',
       tanggal_selesai: k.tanggal_selesai ? k.tanggal_selesai.slice(0, 16) : '',
       lokasi: k.lokasi || '',
-      tingkatan: k.tingkatan || '',
+      // Data lama (sebelum perbaikan ini) bisa saja tersimpan dengan tingkatan kosong --
+      // tebak scope yg paling masuk akal dari desa_id/kelompok_id yg sudah ada, alih-alih
+      // biarkan form terkirim ulang dengan tingkatan kosong.
+      tingkatan: k.tingkatan || (k.kelompok_id ? 'kelompok' : k.desa_id ? 'desa' : 'daerah'),
       desa_id: k.desa_id || '',
       kelompok_id: k.kelompok_id || '',
       status: k.status,
@@ -102,26 +122,40 @@ export default function KegiatanPage() {
   }
 
   const handleSave = async () => {
-    if (!form.nama_kegiatan || !form.deskripsi || !form.tanggal_mulai || !form.tanggal_selesai || !form.lokasi || !form.desa_id || !form.kelompok_id) return
+    setError('')
+    const isDaerah = form.tingkatan === 'daerah'
+    if (!form.nama_kegiatan || !form.deskripsi || !form.tanggal_mulai || !form.tanggal_selesai || !form.lokasi) return
+    // Kegiatan tingkat Daerah SENGAJA tidak terikat 1 desa/kelompok (lintas Se-Bekasi Timur),
+    // jadi desa/kelompok wajib KOSONG. Selain itu (desa/kelompok), keduanya tetap wajib diisi.
+    if (!isDaerah && (!form.desa_id || !form.kelompok_id)) return
     setSaving(true)
     try {
+      // tingkatan SELALU eksplisit (tidak pernah null/kosong) -- sebelumnya field ini tidak
+      // pernah terisi lewat form (tidak ada input-nya), sehingga SEMUA kegiatan tersimpan
+      // dengan tingkatan NULL. Ini bug serius: trigger set_status_approval_kegiatan hanya
+      // mewajibkan approval PPG kalau tingkatan = 'daerah' PERSIS -- tingkatan NULL selalu
+      // lolos dengan status_approval default 'disetujui', jadi validasi PPG untuk kegiatan
+      // Daerah bisa ter-bypass total tanpa siapapun sadar. Sekarang tingkatan diisi otomatis
+      // sesuai scope pembuat (desa/kelompok), atau eksplisit 'daerah' kalau checkbox dicentang.
       const payload = {
         nama_kegiatan: form.nama_kegiatan,
         deskripsi: form.deskripsi,
         tanggal_mulai: form.tanggal_mulai,
         tanggal_selesai: form.tanggal_selesai,
         lokasi: form.lokasi,
-        tingkatan: form.tingkatan || null,
-        desa_id: form.desa_id,
-        kelompok_id: form.kelompok_id,
+        tingkatan: form.tingkatan,
+        desa_id: isDaerah ? null : form.desa_id,
+        kelompok_id: isDaerah ? null : form.kelompok_id,
         status: form.status,
         dibuat_oleh: user?.id,
       }
       if (editTarget) {
-        await supabase.from('kegiatan').update(payload).eq('id', editTarget.id)
+        const { error: err } = await supabase.from('kegiatan').update(payload).eq('id', editTarget.id)
+        if (err) { setError(`Gagal menyimpan perubahan: ${err.message}`); return }
         if (user) await logAudit(user, 'UPDATE', 'Kegiatan', form.nama_kegiatan, payload, editTarget.id)
       } else {
-        const { data: inserted } = await supabase.from('kegiatan').insert(payload).select('id').single()
+        const { data: inserted, error: err } = await supabase.from('kegiatan').insert(payload).select('id').single()
+        if (err) { setError(`Gagal membuat kegiatan: ${err.message}`); return }
         if (user) await logAudit(user, 'CREATE', 'Kegiatan', form.nama_kegiatan, payload, inserted?.id)
       }
       setModalOpen(false)
@@ -134,7 +168,8 @@ export default function KegiatanPage() {
   const handleDelete = async (id: string) => {
     if (!confirm('Hapus kegiatan ini?')) return
     const target = data.find(k => k.id === id)
-    await supabase.from('kegiatan').delete().eq('id', id)
+    const { error: err } = await supabase.from('kegiatan').delete().eq('id', id)
+    if (err) { alert(`Gagal menghapus kegiatan: ${err.message}`); return }
     if (user) await logAudit(user, 'DELETE', 'Kegiatan', target?.nama_kegiatan || id, undefined, id)
     loadData()
   }
@@ -388,29 +423,51 @@ export default function KegiatanPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Desa *</label>
-              <select value={form.desa_id} onChange={e => { set('desa_id', e.target.value); set('kelompok_id', '') }}
-                disabled={!canPickScope}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed">
-                <option value="">-- Pilih Desa --</option>
-                {desaList.map(d => <option key={d.id} value={d.id}>{d.nama_desa}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Kelompok *</label>
-              <select value={form.kelompok_id} onChange={e => set('kelompok_id', e.target.value)}
-                disabled={!canPickScope && tingkatanUser === 'kelompok'}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed">
-                <option value="">-- Pilih Kelompok --</option>
-                {kelompokList.filter(k => !form.desa_id || k.desa_id === form.desa_id).map(k => (
-                  <option key={k.id} value={k.id}>{k.nama_kelompok}</option>
-                ))}
-              </select>
-            </div>
-          </div>
+          {canPickScope && (
+            <label className="flex items-center gap-2 p-2.5 bg-amber-50 border border-amber-100 rounded-xl cursor-pointer">
+              <input type="checkbox" checked={form.tingkatan === 'daerah'}
+                onChange={e => {
+                  if (e.target.checked) {
+                    setForm(f => ({ ...f, tingkatan: 'daerah', desa_id: '', kelompok_id: '' }))
+                  } else {
+                    setForm(f => ({ ...f, tingkatan: 'desa' }))
+                  }
+                }}
+                className="w-4 h-4 accent-amber-600" />
+              <span className="text-xs font-medium text-amber-800">Kegiatan Tingkat Daerah (lintas Desa/Kelompok, wajib persetujuan PPG)</span>
+            </label>
+          )}
 
+          {form.tingkatan !== 'daerah' && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Desa *</label>
+                <select value={form.desa_id}
+                  onChange={e => setForm(f => ({ ...f, desa_id: e.target.value, kelompok_id: '', tingkatan: 'desa' }))}
+                  disabled={!canPickScope}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed">
+                  <option value="">-- Pilih Desa --</option>
+                  {desaList.map(d => <option key={d.id} value={d.id}>{d.nama_desa}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Kelompok *</label>
+                <select value={form.kelompok_id}
+                  onChange={e => setForm(f => ({ ...f, kelompok_id: e.target.value, tingkatan: e.target.value ? 'kelompok' : 'desa' }))}
+                  disabled={!canPickScope && tingkatanUser === 'kelompok'}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed">
+                  <option value="">-- Pilih Kelompok --</option>
+                  {kelompokList.filter(k => !form.desa_id || k.desa_id === form.desa_id).map(k => (
+                    <option key={k.id} value={k.id}>{k.nama_kelompok}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="p-2.5 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600">{error}</div>
+          )}
 
           <div className="flex gap-3 pt-2 border-t border-slate-100">
             <button onClick={() => setModalOpen(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">

@@ -97,7 +97,8 @@ export default function DokumenPage() {
       query = query.eq('is_public', true)
     }
 
-    const { data: rows } = await query
+    const { data: rows, error: err } = await query
+    if (err) { console.error('Gagal memuat data dokumen:', err.message) }
     setData((rows as unknown as Dokumen[]) || [])
     setLoading(false)
   }, [user])
@@ -157,10 +158,12 @@ export default function DokumenPage() {
       dibuat_oleh: user?.id,
     }
     if (editTarget) {
-      await supabase.from('dokumen').update(payload).eq('id', editTarget.id)
+      const { error: err } = await supabase.from('dokumen').update(payload).eq('id', editTarget.id)
+      if (err) { setError(`Gagal menyimpan perubahan: ${err.message}`); setSaving(false); return }
       if (user) await logAudit(user, 'UPDATE', 'Dokumen', form.judul, payload, editTarget.id)
     } else {
-      const { data: ins } = await supabase.from('dokumen').insert(payload).select('id').single()
+      const { data: ins, error: err } = await supabase.from('dokumen').insert(payload).select('id').single()
+      if (err) { setError(`Gagal membuat dokumen: ${err.message}`); setSaving(false); return }
       if (user) await logAudit(user, 'CREATE', 'Dokumen', form.judul, payload, ins?.id)
     }
     setSaving(false)
@@ -170,7 +173,8 @@ export default function DokumenPage() {
 
   const handleDelete = async (id: string, judul?: string) => {
     if (!confirm('Hapus dokumen ini?')) return
-    await supabase.from('dokumen').delete().eq('id', id)
+    const { error: err } = await supabase.from('dokumen').delete().eq('id', id)
+    if (err) { alert(`Gagal menghapus dokumen: ${err.message}`); return }
     if (user) await logAudit(user, 'DELETE', 'Dokumen', judul || id, {}, id)
     loadData()
   }
