@@ -114,3 +114,35 @@ export function canManagePresensi(user: Pick<UserProfile, 'role'> | null | undef
   const nama = user.role.nama_role.toLowerCase()
   return nama.includes('ketua') || nama.includes('sekretaris')
 }
+
+/**
+ * True jika user adalah Bendahara di jenjang manapun (Kelompok/Desa/Daerah). Sejak audit
+ * relasi hak akses lintas wilayah, HANYA Bendahara yang boleh mencatat transaksi Keuangan
+ * langsung (tambah/edit/hapus) -- sebelumnya isPengurus() dipakai di sini yang keliru
+ * meloloskan SEMUA role pengurus (Kemandirian, Keputrian, dll), padahal RLS database
+ * hanya pernah mengizinkan Ketua/Wakil Ketua. Sekarang diperbaiki agar konsisten dgn
+ * jobdesk organisasi: Bendahara kelola langsung, pengurus lain WAJIB lewat alur pengajuan
+ * reimbursement (lihat canAjukanReimbursement) yang perlu di-ACC Bendahara.
+ * Super Admin & PPG SENGAJA TIDAK termasuk -- konsisten dgn prinsip yang sama seperti
+ * modul operasional lain (Kegiatan/Dokumen/Pengumuman/Presensi).
+ */
+export function isBendahara(user: Pick<UserProfile, 'role'> | null | undefined): boolean {
+  if (!user?.role) return false
+  return user.role.nama_role.toLowerCase().includes('bendahara')
+}
+
+/**
+ * True jika user boleh MENGAJUKAN reimbursement (minta approval Bendahara) -- semua
+ * pengurus operasional selain Bendahara sendiri (Ketua, Wakil Ketua, Sekretaris,
+ * Kemandirian, Keputrian, dll) di jenjang Kelompok/Desa/Daerah. Bendahara tidak perlu
+ * mengajukan (dia input langsung ke Keuangan), Generus biasa & PPG bukan pengurus
+ * operasional sehingga tidak berwenang mengajukan transaksi apapun.
+ */
+export function canAjukanReimbursement(user: Pick<UserProfile, 'role'> | null | undefined): boolean {
+  if (!user?.role) return false
+  if (isPPG(user)) return false
+  if (user.role.tingkatan === 'super_admin') return false
+  if (isGenerusBiasa(user)) return false
+  if (isBendahara(user)) return false
+  return true
+}

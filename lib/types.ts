@@ -98,6 +98,28 @@ export interface Keuangan {
   nomor_transaksi: string | null
 }
 
+export interface PengajuanReimbursement {
+  id: string
+  nomor_pengajuan: string | null
+  kategori: string | null
+  jumlah: number
+  deskripsi: string
+  tanggal: string
+  bukti_url: string | null
+  tingkatan: 'daerah' | 'desa' | 'kelompok'
+  desa_id: string | null
+  kelompok_id: string | null
+  diajukan_oleh: string
+  status: 'menunggu' | 'disetujui' | 'ditolak'
+  catatan_bendahara: string | null
+  diproses_oleh: string | null
+  diproses_at: string | null
+  keuangan_id: string | null
+  created_at: string
+  // Relasi opsional (di-join saat query utk tampilan -- nama pengaju/pemroses)
+  pengaju?: { nama_lengkap: string } | null
+}
+
 export interface Pengumuman {
   id: string
   judul: string
