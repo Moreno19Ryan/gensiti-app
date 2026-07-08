@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
-import { Kegiatan, Absensi } from '@/lib/types'
+import { Kegiatan, Absensi, PengajuanIzinPresensi } from '@/lib/types'
 import { logAudit } from '@/lib/audit'
 import { canManagePresensi } from '@/lib/roles'
 import { ExportOptions } from '@/lib/export'
@@ -66,6 +66,11 @@ export default function PresensiPage() {
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
+  // Pengajuan izin dari Generus yang masih menunggu keputusan pengurus, utk kegiatan yang
+  // sedang dibuka -- ditampilkan sbg panel terpisah di atas daftar Generus, HANYA utk yang
+  // berwenang KELOLA presensi (canManage), sama seperti dropdown koreksi status di bawah.
+  const [pengajuanIzinList, setPengajuanIzinList] = useState<PengajuanIzinPresensi[]>([])
+  const [prosesIzinId, setProsesIzinId] = useState<string | null>(null)
 
   // Daftar desa/kelompok dipakai utk (1) label nama pada filter cetak & (2) menerjemahkan
   // desa_id/kelompok_id Generus jadi nama yang bisa dibaca manusia di daftar & export.
@@ -186,6 +191,22 @@ export default function PresensiPage() {
       setKoreksiUserMap({})
     }
 
+    // Daftar pengajuan izin yang masih menunggu keputusan, khusus kegiatan ini -- ditampilkan
+    // sbg panel approval terpisah. RLS pengajuan_izin_select_pengurus sudah membatasi hanya
+    // baris dalam scope pengurus yang login, query di sini tinggal filter status+kegiatan.
+    const { data: pengajuanRows, error: errPengajuan } = await supabase
+      .from('pengajuan_izin_presensi')
+      .select('*, generus:generus_id(id, nomor_generus, users:user_id(nama_lengkap))')
+      .eq('kegiatan_id', kegiatan.id)
+      .eq('status', 'menunggu')
+      .order('diajukan_at', { ascending: true })
+    if (errPengajuan) console.error('Gagal memuat pengajuan izin:', errPengajuan.message)
+    const normalizedPengajuan: PengajuanIzinPresensi[] = (pengajuanRows || []).map((p) => ({
+      ...p,
+      generus: Array.isArray(p.generus) ? (p.generus[0] ?? null) : p.generus,
+    }))
+    setPengajuanIzinList(normalizedPengajuan)
+
     setLoadingDetail(false)
   }, [])
 
@@ -244,6 +265,43 @@ export default function PresensiPage() {
       )
     } finally {
       setSavingId(null)
+    }
+  }
+
+  // Setuju/tolak pengajuan izin -- panggil RPC proses_izin_presensi (bukan update tabel
+  // langsung) supaya insert/update absensi + notifikasi ke Generus terjadi atomik di sisi
+  // server (lihat migrasi rpc_ajukan_dan_proses_izin_presensi), konsisten dgn pola
+  // proses_reimbursement yang sudah ada utk alur approval keuangan.
+  const prosesIzin = async (pengajuan: PengajuanIzinPresensi, keputusan: 'disetujui' | 'ditolak') => {
+    setProsesIzinId(pengajuan.id)
+    try {
+      const { error: err } = await supabase.rpc('proses_izin_presensi', {
+        p_pengajuan_id: pengajuan.id,
+        p_keputusan: keputusan,
+      })
+      if (err) {
+        alert(`Gagal memproses pengajuan izin: ${err.message}`)
+        return
+      }
+      setPengajuanIzinList(prev => prev.filter(p => p.id !== pengajuan.id))
+      // Kalau disetujui, absensi Generus ybs berubah jadi 'izin' di server -- refresh detail
+      // supaya daftar Generus & badge status di bawah langsung mencerminkan perubahan itu,
+      // tanpa perlu pengurus pindah halaman lalu balik lagi.
+      if (keputusan === 'disetujui' && selectedKegiatan) {
+        await loadDetail(selectedKegiatan)
+      }
+      if (user) {
+        await logAudit(
+          user,
+          'UPDATE',
+          'Presensi',
+          selectedKegiatan?.nama_kegiatan || '',
+          { pengajuan_izin_id: pengajuan.id, generus_id: pengajuan.generus_id, keputusan },
+          selectedKegiatan?.id
+        )
+      }
+    } finally {
+      setProsesIzinId(null)
     }
   }
 
@@ -463,6 +521,43 @@ export default function PresensiPage() {
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {/* Panel approval pengajuan izin -- hanya utk yang berwenang KELOLA presensi
+              (Ketua/Wapon/Sekretaris), sama seperti dropdown koreksi status di bawah.
+              Muncul di atas daftar Generus supaya pengurus langsung lihat & proses pengajuan
+              yang menunggu tanpa perlu scroll cari satu per satu di daftar Generus. */}
+          {canManage && pengajuanIzinList.length > 0 && (
+            <div className="bg-amber-50 rounded-2xl border border-amber-100 divide-y divide-amber-100">
+              <div className="px-4 py-2.5">
+                <h4 className="text-sm font-semibold text-amber-800">📋 Pengajuan Izin Menunggu ({pengajuanIzinList.length})</h4>
+              </div>
+              {pengajuanIzinList.map(p => (
+                <div key={p.id} className="flex items-center justify-between gap-3 p-3">
+                  <div className="min-w-0">
+                    <p className="font-medium text-slate-700 text-sm truncate">{p.generus?.users?.nama_lengkap || '(nama tidak ditemukan)'}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{p.alasan}</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">{new Date(p.diajukan_at).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => prosesIzin(p, 'disetujui')}
+                      disabled={prosesIzinId === p.id}
+                      className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 transition"
+                    >
+                      Setujui
+                    </button>
+                    <button
+                      onClick={() => prosesIzin(p, 'ditolak')}
+                      disabled={prosesIzinId === p.id}
+                      className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-50 disabled:opacity-50 transition"
+                    >
+                      Tolak
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 

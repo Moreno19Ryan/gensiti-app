@@ -8,6 +8,7 @@ import { logAudit } from '@/lib/audit'
 import { canManageKontenOrganisasi } from '@/lib/roles'
 import Modal from '@/components/Modal'
 import PresensiPanel from '@/components/PresensiPanel'
+import PengajuanIzinPanel from '@/components/PengajuanIzinPanel'
 import { exportToPDF, exportToExcel } from '@/lib/export'
 
 interface DesaOpt { id: string; nama_desa: string }
@@ -26,6 +27,30 @@ const approvalLabel: Record<string, { label: string; color: string }> = {
   ditolak: { label: '✕ Ditolak PPG', color: 'bg-red-100 text-red-600' },
 }
 
+// Kategori kegiatan -- HANYA relevan/berlaku utk tingkatan='daerah'. Memilih kategori apapun
+// selain 'bukan_daerah' otomatis men-set tingkatan='daerah' di belakang layar (menggantikan
+// checkbox generik "Kegiatan Tingkat Daerah" yang sebelumnya dipakai).
+const kategoriKegiatanLabel: Record<string, string> = {
+  pengajian_rutin: 'Pengajian Muda-Mudi Rutin',
+  pegasus: 'PEGASUS',
+  penerobosan_pusat: 'Penerobosan Muda-Mudi Pusat',
+  pengajian_gabungan: 'Pengajian Muda-Mudi Daerah Gabungan',
+}
+
+// Target peserta -- menentukan siapa yang wajib presensi utk kegiatan ini, berlaku di semua
+// tingkatan (bukan hanya Daerah).
+const targetPesertaLabel: Record<string, string> = {
+  semua_generus: 'Semua Generus',
+  hanya_pengurus: 'Hanya Pengurus',
+  kelas_ngaji_tertentu: 'Kelas Ngaji Tertentu',
+}
+
+const kelasNgajiLabel: Record<string, string> = {
+  pra_remaja: 'Pra Remaja',
+  remaja_muda: 'Remaja Muda',
+  remaja_dewasa: 'Remaja Dewasa',
+}
+
 const emptyForm = {
   nama_kegiatan: '',
   deskripsi: '',
@@ -36,6 +61,9 @@ const emptyForm = {
   desa_id: '',
   kelompok_id: '',
   status: 'upcoming',
+  kategori_kegiatan: '',
+  target_peserta: 'semua_generus',
+  target_kelas_ngaji: '',
 }
 
 export default function KegiatanPage() {
@@ -117,6 +145,9 @@ export default function KegiatanPage() {
       desa_id: k.desa_id || '',
       kelompok_id: k.kelompok_id || '',
       status: k.status,
+      kategori_kegiatan: k.kategori_kegiatan || '',
+      target_peserta: k.target_peserta || 'semua_generus',
+      target_kelas_ngaji: k.target_kelas_ngaji || '',
     })
     setModalOpen(true)
   }
@@ -128,6 +159,13 @@ export default function KegiatanPage() {
     // Kegiatan tingkat Daerah SENGAJA tidak terikat 1 desa/kelompok (lintas Se-Bekasi Timur),
     // jadi desa/kelompok wajib KOSONG. Selain itu (desa/kelompok), keduanya tetap wajib diisi.
     if (!isDaerah && (!form.desa_id || !form.kelompok_id)) return
+    // Kategori kegiatan wajib dipilih utk tingkat Daerah (menggantikan checkbox lama) --
+    // menentukan jenis acara Daerah spesifik (Pengajian Rutin/PEGASUS/dst).
+    if (isDaerah && !form.kategori_kegiatan) { setError('Pilih kategori kegiatan Daerah.'); return }
+    if (form.target_peserta === 'kelas_ngaji_tertentu' && !form.target_kelas_ngaji) {
+      setError('Pilih kelas ngaji untuk target peserta.')
+      return
+    }
     setSaving(true)
     try {
       // tingkatan SELALU eksplisit (tidak pernah null/kosong) -- sebelumnya field ini tidak
@@ -148,6 +186,9 @@ export default function KegiatanPage() {
         kelompok_id: isDaerah ? null : form.kelompok_id,
         status: form.status,
         dibuat_oleh: user?.id,
+        kategori_kegiatan: isDaerah ? (form.kategori_kegiatan || null) : null,
+        target_peserta: form.target_peserta,
+        target_kelas_ngaji: form.target_peserta === 'kelas_ngaji_tertentu' ? form.target_kelas_ngaji : null,
       }
       if (editTarget) {
         const { error: err } = await supabase.from('kegiatan').update(payload).eq('id', editTarget.id)
@@ -340,6 +381,18 @@ export default function KegiatanPage() {
                         {approvalLabel[k.status_approval]?.label}
                       </span>
                     )}
+                    {k.kategori_kegiatan && (
+                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+                        {kategoriKegiatanLabel[k.kategori_kegiatan] || k.kategori_kegiatan}
+                      </span>
+                    )}
+                    {k.target_peserta !== 'semua_generus' && (
+                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
+                        {k.target_peserta === 'kelas_ngaji_tertentu' && k.target_kelas_ngaji
+                          ? `Target: ${kelasNgajiLabel[k.target_kelas_ngaji] || k.target_kelas_ngaji}`
+                          : `Target: ${targetPesertaLabel[k.target_peserta]}`}
+                      </span>
+                    )}
                   </div>
                   {k.deskripsi && <p className="text-slate-500 text-sm mt-1 line-clamp-2">{k.deskripsi}</p>}
                   <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
@@ -364,6 +417,7 @@ export default function KegiatanPage() {
                 user={user}
                 onUpdated={updated => setData(prev => prev.map(item => item.id === updated.id ? updated : item))}
               />
+              <PengajuanIzinPanel kegiatan={k} user={user} />
             </div>
           ))}
         </div>
@@ -424,19 +478,56 @@ export default function KegiatanPage() {
           </div>
 
           {canPickScope && (
-            <label className="flex items-center gap-2 p-2.5 bg-amber-50 border border-amber-100 rounded-xl cursor-pointer">
-              <input type="checkbox" checked={form.tingkatan === 'daerah'}
+            <div className="p-2.5 bg-amber-50 border border-amber-100 rounded-xl space-y-2">
+              <label className="block text-xs font-medium text-amber-800">Kategori Kegiatan Daerah</label>
+              <select
+                value={form.tingkatan === 'daerah' ? (form.kategori_kegiatan || '') : 'bukan_daerah'}
                 onChange={e => {
-                  if (e.target.checked) {
-                    setForm(f => ({ ...f, tingkatan: 'daerah', desa_id: '', kelompok_id: '' }))
+                  const val = e.target.value
+                  if (val === 'bukan_daerah') {
+                    setForm(f => ({ ...f, tingkatan: 'desa', kategori_kegiatan: '' }))
                   } else {
-                    setForm(f => ({ ...f, tingkatan: 'desa' }))
+                    setForm(f => ({ ...f, tingkatan: 'daerah', desa_id: '', kelompok_id: '', kategori_kegiatan: val }))
                   }
                 }}
-                className="w-4 h-4 accent-amber-600" />
-              <span className="text-xs font-medium text-amber-800">Kegiatan Tingkat Daerah (lintas Desa/Kelompok, wajib persetujuan PPG)</span>
-            </label>
+                className="w-full px-3 py-2 rounded-xl border border-amber-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+                <option value="bukan_daerah">-- Bukan Kegiatan Daerah (pilih Desa/Kelompok di bawah) --</option>
+                <option value="pengajian_rutin">{kategoriKegiatanLabel.pengajian_rutin}</option>
+                <option value="pegasus">{kategoriKegiatanLabel.pegasus}</option>
+                <option value="penerobosan_pusat">{kategoriKegiatanLabel.penerobosan_pusat}</option>
+                <option value="pengajian_gabungan">{kategoriKegiatanLabel.pengajian_gabungan}</option>
+              </select>
+              {form.tingkatan === 'daerah' && (
+                <p className="text-xs text-amber-700">Kegiatan tingkat Daerah (lintas Desa/Kelompok) -- wajib persetujuan PPG sebelum tampil ke semua orang.</p>
+              )}
+            </div>
           )}
+
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Target Peserta</label>
+            <div className="grid grid-cols-2 gap-4">
+              <select
+                value={form.target_peserta}
+                onChange={e => setForm(f => ({ ...f, target_peserta: e.target.value, target_kelas_ngaji: e.target.value === 'kelas_ngaji_tertentu' ? f.target_kelas_ngaji : '' }))}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="semua_generus">{targetPesertaLabel.semua_generus}</option>
+                <option value="hanya_pengurus">{targetPesertaLabel.hanya_pengurus}</option>
+                <option value="kelas_ngaji_tertentu">{targetPesertaLabel.kelas_ngaji_tertentu}</option>
+              </select>
+              {form.target_peserta === 'kelas_ngaji_tertentu' && (
+                <select
+                  value={form.target_kelas_ngaji}
+                  onChange={e => setForm(f => ({ ...f, target_kelas_ngaji: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="">-- Pilih Kelas Ngaji --</option>
+                  <option value="pra_remaja">{kelasNgajiLabel.pra_remaja}</option>
+                  <option value="remaja_muda">{kelasNgajiLabel.remaja_muda}</option>
+                  <option value="remaja_dewasa">{kelasNgajiLabel.remaja_dewasa}</option>
+                </select>
+              )}
+            </div>
+            <p className="text-xs text-slate-400 mt-1">Menentukan siapa yang wajib presensi untuk kegiatan ini.</p>
+          </div>
 
           {form.tingkatan !== 'daerah' && (
             <div className="grid grid-cols-2 gap-4">

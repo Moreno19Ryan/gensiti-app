@@ -80,6 +80,30 @@ export interface Kegiatan {
   approved_by: string | null
   approved_at: string | null
   catatan_ppg: string | null
+  kategori_kegiatan: 'pengajian_rutin' | 'pegasus' | 'penerobosan_pusat' | 'pengajian_gabungan' | null
+  target_peserta: 'semua_generus' | 'hanya_pengurus' | 'kelas_ngaji_tertentu'
+  target_kelas_ngaji: 'pra_remaja' | 'remaja_muda' | 'remaja_dewasa' | null
+}
+
+export type StatusPengajuanIzin = 'menunggu' | 'disetujui' | 'ditolak'
+
+export interface PengajuanIzinPresensi {
+  id: string
+  kegiatan_id: string
+  generus_id: string
+  alasan: string
+  status: StatusPengajuanIzin
+  diajukan_oleh: string | null
+  diajukan_at: string
+  diproses_oleh: string | null
+  diproses_at: string | null
+  catatan_pengurus: string | null
+  created_at: string
+  generus?: {
+    id: string
+    nomor_generus: string
+    users: { nama_lengkap: string } | null
+  } | null
 }
 
 export interface Keuangan {
