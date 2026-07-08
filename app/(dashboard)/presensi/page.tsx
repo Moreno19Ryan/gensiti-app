@@ -6,7 +6,8 @@ import { supabase } from '@/lib/supabase'
 import { Kegiatan, Absensi } from '@/lib/types'
 import { logAudit } from '@/lib/audit'
 import { canManagePresensi } from '@/lib/roles'
-import { exportToPDF, exportToExcel } from '@/lib/export'
+import { ExportOptions } from '@/lib/export'
+import ExportPreviewModal from '@/components/ExportPreviewModal'
 
 const statusLabel: Record<string, { label: string; color: string }> = {
   upcoming: { label: 'Akan Datang', color: 'bg-blue-100 text-blue-700' },
@@ -60,7 +61,7 @@ export default function PresensiPage() {
   const [absensiMap, setAbsensiMap] = useState<Record<string, Absensi>>({})
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [savingId, setSavingId] = useState<string | null>(null)
-  const [exporting, setExporting] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
 
   // Daftar desa/kelompok dipakai utk (1) label nama pada filter cetak & (2) menerjemahkan
   // desa_id/kelompok_id Generus jadi nama yang bisa dibaca manusia di daftar & export.
@@ -305,40 +306,33 @@ export default function PresensiPage() {
     return `Presensi-${base}${wilayah ? `-${wilayah}` : ''}`
   }
 
-  const handleExportPDF = async () => {
-    if (!selectedKegiatan || scopedGenerus.length === 0) { alert('Tidak ada data Generus untuk diexport.'); return }
-    setExporting(true)
-    try {
-      exportToPDF({
-        title: 'Rekap Presensi Kegiatan',
-        subtitle: exportSubtitle(),
-        columns: exportColumns,
-        rows: buildExportData(),
-        summary: exportSummary(),
-        fileName: exportFileName(),
-      })
-      if (user) await logAudit(user, 'EXPORT', 'Presensi', `PDF -- ${selectedKegiatan.nama_kegiatan}${namaWilayahDipilih() ? ` (${namaWilayahDipilih()})` : ''}`, undefined, selectedKegiatan.id)
-    } finally {
-      setExporting(false)
-    }
+  // Opsi export yang sedang aktif, dihitung ulang setiap filter wilayah berubah -- diteruskan
+  // ke ExportPreviewModal supaya pratinjau PDF selalu mencerminkan filter TERKINI, termasuk
+  // saat user mengubah filter wilayah sambil modal preview masih terbuka.
+  const previewOptions: ExportOptions = {
+    title: 'Rekap Presensi Kegiatan',
+    subtitle: exportSubtitle(),
+    columns: exportColumns,
+    rows: buildExportData(),
+    summary: exportSummary(),
+    fileName: exportFileName(),
   }
 
-  const handleExportExcel = async () => {
+  const handleOpenPreview = () => {
     if (!selectedKegiatan || scopedGenerus.length === 0) { alert('Tidak ada data Generus untuk diexport.'); return }
-    setExporting(true)
-    try {
-      await exportToExcel({
-        title: 'Rekap Presensi Kegiatan',
-        subtitle: exportSubtitle(),
-        columns: exportColumns,
-        rows: buildExportData(),
-        summary: exportSummary(),
-        fileName: exportFileName(),
-      })
-      if (user) await logAudit(user, 'EXPORT', 'Presensi', `Excel -- ${selectedKegiatan.nama_kegiatan}${namaWilayahDipilih() ? ` (${namaWilayahDipilih()})` : ''}`, undefined, selectedKegiatan.id)
-    } finally {
-      setExporting(false)
-    }
+    setPreviewOpen(true)
+  }
+
+  const handleExported = async (format: 'pdf' | 'excel') => {
+    if (!user || !selectedKegiatan) return
+    await logAudit(
+      user,
+      'EXPORT',
+      'Presensi',
+      `${format === 'pdf' ? 'PDF' : 'Excel'} -- ${selectedKegiatan.nama_kegiatan}${namaWilayahDipilih() ? ` (${namaWilayahDipilih()})` : ''}`,
+      undefined,
+      selectedKegiatan.id
+    )
   }
 
   return (
@@ -397,13 +391,9 @@ export default function PresensiPage() {
               ← Kembali ke daftar kegiatan
             </button>
             <div className="flex items-center gap-2">
-              <button onClick={handleExportPDF} disabled={exporting || loadingDetail}
+              <button onClick={handleOpenPreview} disabled={loadingDetail}
                 className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
-                📄 PDF
-              </button>
-              <button onClick={handleExportExcel} disabled={exporting || loadingDetail}
-                className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
-                📊 Excel
+                🔍 Pratinjau & Export
               </button>
             </div>
           </div>
@@ -493,6 +483,13 @@ export default function PresensiPage() {
           )}
         </div>
       )}
+
+      <ExportPreviewModal
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        options={previewOptions}
+        onExported={handleExported}
+      />
     </div>
   )
 }

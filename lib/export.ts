@@ -39,7 +39,10 @@ function formatTanggalCetak() {
   })
 }
 
-export function exportToPDF(opts: ExportOptions) {
+// Membangun dokumen jsPDF dari ExportOptions -- diekstrak dari exportToPDF supaya bisa
+// dipakai ulang baik untuk disimpan langsung (doc.save) maupun untuk pratinjau (data URL
+// di iframe, lihat getPdfPreviewDataUrl) tanpa duplikasi logika layout/kop/tabel/footer.
+function buildPdfDoc(opts: ExportOptions): jsPDF {
   const doc = new jsPDF({ orientation: opts.columns.length > 5 ? 'landscape' : 'portrait', unit: 'mm' })
   const pageWidth = doc.internal.pageSize.getWidth()
 
@@ -108,7 +111,21 @@ export function exportToPDF(opts: ExportOptions) {
     )
   }
 
+  return doc
+}
+
+export function exportToPDF(opts: ExportOptions) {
+  const doc = buildPdfDoc(opts)
   doc.save(`${opts.fileName}.pdf`)
+}
+
+// Menghasilkan data URL (base64) dari PDF yang PERSIS sama dengan hasil exportToPDF --
+// dipakai untuk pratinjau di <iframe>/<embed> sebelum user menekan tombol export final,
+// supaya yang dilihat user benar-benar preview dari file yang akan diunduh (bukan tiruan
+// terpisah yang bisa saja berbeda hasil akhirnya).
+export function getPdfPreviewDataUrl(opts: ExportOptions): string {
+  const doc = buildPdfDoc(opts)
+  return doc.output('datauristring')
 }
 
 export async function exportToExcel(opts: ExportOptions) {
