@@ -431,10 +431,12 @@ export default function KeuanganPage() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="font-bold text-slate-800">Keuangan</h2>
         <div className="flex items-center gap-2">
-          <button onClick={handleOpenPreview}
-            className="px-4 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition flex items-center gap-1.5">
-            🔍 Pratinjau & Export
-          </button>
+          {canManage && (
+            <button onClick={handleOpenPreview}
+              className="px-4 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition flex items-center gap-1.5">
+              🔍 Pratinjau & Export
+            </button>
+          )}
           {canManage && (
             <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
               + Tambah Transaksi
@@ -546,6 +548,7 @@ export default function KeuanganPage() {
         </div>
       ) : (
         <>
+          {canManage && (
           <div className="bg-white rounded-2xl p-3 shadow-sm border border-slate-100 space-y-2">
             <p className="text-xs font-medium text-slate-500">Lingkup Laporan (untuk Pratinjau & Export):</p>
             <div className="flex flex-wrap items-center gap-2">
@@ -582,6 +585,7 @@ export default function KeuanganPage() {
               <span className="text-xs text-slate-400 ml-auto">{exportRows.length} transaksi tercakup{filter !== 'all' ? ` (filter tabel: ${filter})` : ''}</span>
             </div>
           </div>
+          )}
 
           <div className="grid grid-cols-3 gap-4">
             <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">

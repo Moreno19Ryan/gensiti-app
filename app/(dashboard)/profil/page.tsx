@@ -5,6 +5,7 @@ import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth'
 import { Absensi, EmailPreferensi } from '@/lib/types'
+import { getPushPermission, getExistingPushSubscription, subscribeToPush, unsubscribeFromPush } from '@/lib/push'
 
 interface GenerusRecord {
   id: string
@@ -47,6 +48,13 @@ export default function ProfilPage() {
   // belum ada (belum pernah diubah user), sesuai desain tabel di database.
   const [notifPref, setNotifPref] = useState({ pengumuman: true, kegiatan: true, reminder: true, approval_ppg: true })
   const [savingNotif, setSavingNotif] = useState(false)
+
+  // Status notifikasi push HP/desktop -- terpisah dari preferensi email di atas. 'unsupported'
+  // = browser/perangkat tidak mendukung Web Push (mis. Safari lama, browser dalam WebView).
+  const [pushActive, setPushActive] = useState(false)
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | 'unsupported'>('unsupported')
+  const [pushLoading, setPushLoading] = useState(false)
+  const [pushMsg, setPushMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
 
   const loadGenerus = async (userId: string) => {
     const res = await authFetch(`/api/generus?userId=${userId}`)
@@ -119,6 +127,36 @@ export default function ProfilPage() {
       loadNotifPref(user.id)
     }
   }, [user])
+
+  // Cek status izin & subscription push HP/desktop saat halaman dibuka -- supaya toggle
+  // di tab Notifikasi langsung mencerminkan kondisi device ini (bukan device lain milik
+  // user yang sama, karena subscription bersifat per-device/per-browser).
+  useEffect(() => {
+    setPushPermission(getPushPermission())
+    getExistingPushSubscription().then((sub) => setPushActive(!!sub))
+  }, [])
+
+  const handleTogglePush = async () => {
+    if (!user) return
+    setPushLoading(true)
+    setPushMsg(null)
+    try {
+      if (pushActive) {
+        const err = await unsubscribeFromPush()
+        if (err) { setPushMsg({ type: 'err', text: err }); return }
+        setPushActive(false)
+        setPushMsg({ type: 'ok', text: 'Notifikasi push dinonaktifkan di perangkat ini.' })
+      } else {
+        const err = await subscribeToPush(user.id)
+        if (err) { setPushMsg({ type: 'err', text: err }); return }
+        setPushActive(true)
+        setPushPermission(getPushPermission())
+        setPushMsg({ type: 'ok', text: 'Notifikasi push aktif! Anda akan menerima notifikasi walau aplikasi tertutup.' })
+      }
+    } finally {
+      setPushLoading(false)
+    }
+  }
 
   const saveAkun = async () => {
     if (!user) return
@@ -637,6 +675,35 @@ export default function ProfilPage() {
 
           {tab === 'notifikasi' && (
             <div className="space-y-4">
+              {/* Notifikasi push HP/desktop -- terpisah dari preferensi email di bawah.
+                  Berlaku PER PERANGKAT (subscription disimpan per browser/device), jadi
+                  status toggle ini hanya mencerminkan perangkat yang sedang dipakai. */}
+              <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 space-y-2">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-700">Notifikasi Push di Perangkat Ini</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {pushPermission === 'unsupported'
+                        ? 'Perangkat/browser ini tidak mendukung notifikasi push.'
+                        : pushPermission === 'denied'
+                        ? 'Izin notifikasi diblokir -- aktifkan lewat pengaturan browser/HP.'
+                        : 'Dapatkan notifikasi langsung ke HP/desktop walau GENSITI sedang tertutup.'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={pushPermission === 'unsupported' || pushPermission === 'denied' || pushLoading}
+                    onClick={handleTogglePush}
+                    className={`shrink-0 relative w-11 h-6 rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${pushActive ? 'bg-blue-600' : 'bg-slate-200'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${pushActive ? 'translate-x-5' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+                {pushMsg && (
+                  <p className={`text-xs ${pushMsg.type === 'ok' ? 'text-emerald-600' : 'text-red-500'}`}>{pushMsg.text}</p>
+                )}
+              </div>
+
               <p className="text-xs text-slate-500 bg-blue-50 p-3 rounded-xl border border-blue-100">
                 Atur jenis notifikasi email yang ingin Anda terima dari GENSITI. Perubahan berlaku untuk pengiriman email berikutnya.
               </p>

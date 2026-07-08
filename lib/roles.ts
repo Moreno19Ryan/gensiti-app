@@ -81,18 +81,26 @@ export function canViewGenerusData(user: Pick<UserProfile, 'role'> | null | unde
 }
 
 /**
- * Hanya Ketua/Wakil Ketua (di jenjang manapun) yang boleh mengelola KONTEN OPERASIONAL
- * organisasi -- Kegiatan, Dokumen, Pengumuman. Super Admin SENGAJA DIKECUALIKAN di sini,
- * beda dengan canManageMembers() di atas -- perannya murni pengelola sistem/akun, bukan
- * pengurus organisasi, jadi tidak ikut campur urusan operasional harian organisasi
- * (sejalan dengan prinsip yang sama seperti nol akses Keuangan). Super Admin tetap bisa
- * MELIHAT konten ini (RLS SELECT tidak berubah), hanya tidak bisa tambah/edit/hapus.
+ * Ketua/Wakil Ketua/Sekretaris (di jenjang manapun) yang boleh mengelola KONTEN OPERASIONAL
+ * organisasi -- Kegiatan, Dokumen, Pengumuman. Sekretaris disertakan (diputuskan eksplisit)
+ * karena lazimnya urusan administrasi & surat-menyurat organisasi didelegasikan ke Sekretaris,
+ * konsisten dengan pola yang sama di canManageMembers() dan canManagePresensi() di atas.
+ * Super Admin SENGAJA DIKECUALIKAN di sini, beda dengan canManageMembers() di atas --
+ * perannya murni pengelola sistem/akun, bukan pengurus organisasi, jadi tidak ikut campur
+ * urusan operasional harian organisasi (sejalan dengan prinsip yang sama seperti nol akses
+ * Keuangan). Super Admin tetap bisa MELIHAT konten ini (RLS SELECT tidak berubah), hanya
+ * tidak bisa tambah/edit/hapus.
+ * RLS kegiatan_all_(daerah/desa/kelompok), dokumen_all_(dst), pengumuman_all_(dst)
+ * (fungsi is_pengurus_konten()) agar konsisten -- sebelumnya RLS desa/kelompok memakai
+ * is_pengurus() generik yang keliru meloloskan SEMUA role pengurus (Bendahara, Kemandirian,
+ * dll), dan RLS daerah tidak mengecek jabatan sama sekali.
  */
 export function canManageKontenOrganisasi(user: Pick<UserProfile, 'role'> | null | undefined): boolean {
   if (!user?.role) return false
   if (isPPG(user)) return false
   if (user.role.tingkatan === 'super_admin') return false
-  return user.role.nama_role.toLowerCase().includes('ketua')
+  const nama = user.role.nama_role.toLowerCase()
+  return nama.includes('ketua') || nama.includes('sekretaris')
 }
 
 /**
