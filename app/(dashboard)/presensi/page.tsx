@@ -39,7 +39,7 @@ export default function PresensiPage() {
   const [loadingKegiatan, setLoadingKegiatan] = useState(true)
   const [search, setSearch] = useState('')
 
-  const [generusScope, setGenerusScope] = useState<{ id: string; nama_lengkap: string; nomor_generus: string }[]>([])
+  const [generusScope, setGenerusScope] = useState<{ id: string; nomor_generus: string; users: { nama_lengkap: string } | null }[]>([])
   const [absensiMap, setAbsensiMap] = useState<Record<string, Absensi>>({})
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [savingId, setSavingId] = useState<string | null>(null)
@@ -70,7 +70,7 @@ export default function PresensiPage() {
     setSelectedKegiatan(kegiatan)
 
     // Generus dalam scope kegiatan (mengikuti tempat sambung TERKINI, bukan snapshot historis)
-    let generusQuery = supabase.from('generus').select('id, nama_lengkap, nomor_generus').eq('status', 'aktif')
+    let generusQuery = supabase.from('generus').select('id, nomor_generus, users:user_id(nama_lengkap)').eq('status', 'aktif')
     if (kegiatan.tingkatan === 'kelompok' && kegiatan.kelompok_id) {
       generusQuery = generusQuery.eq('kelompok_id', kegiatan.kelompok_id)
     } else if (kegiatan.tingkatan === 'desa' && kegiatan.desa_id) {
@@ -83,7 +83,7 @@ export default function PresensiPage() {
     // tingkatan 'daerah' tanpa desa_id/kelompok_id -> seluruh Generus daerah (tidak difilter tambahan)
 
     const [{ data: generusRows, error: errGenerus }, { data: absensiRows, error: errAbsensi }] = await Promise.all([
-      generusQuery.order('nama_lengkap').limit(1000),
+      generusQuery.limit(1000),
       // Limit 1000 -- absensi per kegiatan dibatasi jumlah Generus dalam scope-nya, tapi
       // tetap diberi pengaman untuk kegiatan tingkat Daerah dengan peserta sangat banyak.
       supabase.from('absensi').select('*').eq('kegiatan_id', kegiatan.id).limit(1000),
@@ -91,7 +91,21 @@ export default function PresensiPage() {
     if (errGenerus) console.error('Gagal memuat daftar Generus:', errGenerus.message)
     if (errAbsensi) console.error('Gagal memuat data absensi:', errAbsensi.message)
 
-    setGenerusScope(generusRows || [])
+    // PostgREST/Supabase JS menyimpulkan tipe embed users(...) di sini sbg array (beda dari
+    // kasus query dari arah users->generus yg lain di app ini) meski relasinya tetap 1-ke-1
+    // (generus.user_id UNIQUE) -- dinormalisasi ke objek tunggal di sini supaya konsisten &
+    // seluruh kode di bawah tidak perlu tahu perbedaan bentuk data mentah dari Supabase.
+    const normalized = (generusRows || []).map(g => ({
+      id: g.id,
+      nomor_generus: g.nomor_generus,
+      users: Array.isArray(g.users) ? (g.users[0] ?? null) : g.users,
+    }))
+    // Diurutkan di client (bukan .order() PostgREST) krn nama_lengkap sekarang berasal dari
+    // relasi users, bukan kolom langsung di tabel generus yang di-query.
+    const sortedGenerus = normalized.sort((a, b) =>
+      (a.users?.nama_lengkap || '').localeCompare(b.users?.nama_lengkap || '')
+    )
+    setGenerusScope(sortedGenerus)
     const map: Record<string, Absensi> = {}
     for (const row of (absensiRows || []) as Absensi[]) {
       if (row.generus_id) map[row.generus_id] = row
@@ -170,7 +184,7 @@ export default function PresensiPage() {
     const status = absensiMap[a.id]?.status
     return {
       no: a.nomor_generus,
-      nama: a.nama_lengkap,
+      nama: a.users?.nama_lengkap || '-',
       status: status ? kehadiranLabel[status]?.label : 'Belum Ditandai',
     }
   })
@@ -313,7 +327,7 @@ export default function PresensiPage() {
                 return (
                   <div key={a.id} className="flex items-center justify-between gap-3 p-3">
                     <div className="min-w-0">
-                      <p className="font-medium text-slate-700 text-sm truncate">{a.nama_lengkap}</p>
+                      <p className="font-medium text-slate-700 text-sm truncate">{a.users?.nama_lengkap || '(nama tidak ditemukan)'}</p>
                       <p className="text-xs text-slate-400">{a.nomor_generus}</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
