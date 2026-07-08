@@ -16,7 +16,10 @@ const KODE_MASA_BERLAKU_MS = 5 * 60 * 1000
 
 // Panel presensi untuk kartu kegiatan yang sedang berlangsung (status = 'ongoing').
 // - Ketua/Wakil Ketua & Sekretaris: bisa "Mulai Presensi" -> menampilkan kode besar yang
-//   otomatis diperbarui (rotasi) setiap 5 menit sampai ditutup manual.
+//   otomatis diperbarui (rotasi) setiap 5 menit sampai ditutup manual. Mereka sendiri juga
+//   wajib presensi (Ketua/Wapon/Sekretaris tetap Generus/pengurus muda-mudi) -- begitu kode
+//   aktif, tombol "Saya Hadir" muncul di bawahnya supaya kehadiran mereka ikut tercatat
+//   tanpa perlu mengetik ulang kode yang mereka lihat sendiri.
 // - Generus biasa & pengurus lain (Bendahara, Kemandirian, dll): melihat form input kode
 //   6 digit untuk self check-in, sama seperti Generus biasa.
 // - Super Admin: BUKAN keduanya -- dia bukan Generus organisasi (tidak boleh muncul di
@@ -35,6 +38,7 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
   const [statusCheckin, setStatusCheckin] = useState<'idle' | 'sukses' | 'gagal'>('idle')
   const [pesanCheckin, setPesanCheckin] = useState<string | null>(null)
   const [sudahHadir, setSudahHadir] = useState(false)
+  const [loadingCheckinSendiri, setLoadingCheckinSendiri] = useState(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const isAktif = !!kode && !!expiredAt && new Date(expiredAt).getTime() > Date.now()
@@ -103,6 +107,14 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canOpenPresensi, isAktif])
 
+  const submitCheckinDenganKode = async (kodeUntukDikirim: string) => {
+    const { error } = await supabase.rpc('submit_presensi', {
+      p_kegiatan_id: kegiatan.id,
+      p_kode: kodeUntukDikirim,
+    })
+    if (error) throw error
+  }
+
   const submitCheckin = async () => {
     if (inputKode.trim().length !== 6) {
       setStatusCheckin('gagal')
@@ -113,11 +125,7 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
     setStatusCheckin('idle')
     setPesanCheckin(null)
     try {
-      const { error } = await supabase.rpc('submit_presensi', {
-        p_kegiatan_id: kegiatan.id,
-        p_kode: inputKode.trim(),
-      })
-      if (error) throw error
+      await submitCheckinDenganKode(inputKode.trim())
       setStatusCheckin('sukses')
       setPesanCheckin('Presensi berhasil dicatat. Terima kasih!')
       setSudahHadir(true)
@@ -127,6 +135,27 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
       setPesanCheckin(e instanceof Error ? e.message : 'Gagal melakukan presensi.')
     } finally {
       setLoadingAksi(false)
+    }
+  }
+
+  // Ketua/Wakil Ketua/Sekretaris tetap Generus/pengurus muda-mudi yang wajib presensi --
+  // begitu mereka membuka sesi (kode aktif), tombol ini kirim kode yang SUDAH tertampil di
+  // layar mereka sendiri ke submit_presensi, jadi tidak perlu mengetik ulang manual.
+  const checkinSendiriSebagaiPengurus = async () => {
+    if (!kode) return
+    setLoadingCheckinSendiri(true)
+    setStatusCheckin('idle')
+    setPesanCheckin(null)
+    try {
+      await submitCheckinDenganKode(kode)
+      setStatusCheckin('sukses')
+      setPesanCheckin('Kehadiran Anda berhasil dicatat. Terima kasih!')
+      setSudahHadir(true)
+    } catch (e) {
+      setStatusCheckin('gagal')
+      setPesanCheckin(e instanceof Error ? e.message : 'Gagal mencatat kehadiran.')
+    } finally {
+      setLoadingCheckinSendiri(false)
     }
   }
 
@@ -188,6 +217,28 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
             </div>
           )}
           {errorMsg && <p className="text-xs text-red-500">{errorMsg}</p>}
+
+          {/* Pengurus yang membuka sesi ini tetap wajib presensi sebagai peserta kegiatan --
+              tombol terpisah dari panel kontrol kode di atas, supaya jelas ini mencatat
+              kehadiran DIRI SENDIRI, bukan aksi mengelola presensi orang lain. */}
+          {isAktif && (
+            sudahHadir ? (
+              <div className="bg-green-50 text-green-700 text-sm rounded-xl px-3 py-2 text-center font-medium">
+                ✓ Anda sudah tercatat hadir
+              </div>
+            ) : (
+              <button
+                onClick={checkinSendiriSebagaiPengurus}
+                disabled={loadingCheckinSendiri}
+                className="w-full py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition"
+              >
+                {loadingCheckinSendiri ? 'Menyimpan...' : '✓ Saya Hadir'}
+              </button>
+            )
+          )}
+          {pesanCheckin && (
+            <p className={`text-xs ${statusCheckin === 'sukses' ? 'text-green-600' : 'text-red-500'}`}>{pesanCheckin}</p>
+          )}
         </div>
       ) : (
         <div className="space-y-2">

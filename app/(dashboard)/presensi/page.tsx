@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { Kegiatan, Absensi } from '@/lib/types'
@@ -21,6 +21,23 @@ const kehadiranLabel: Record<string, { label: string; color: string }> = {
   sakit: { label: 'Sakit', color: 'bg-purple-100 text-purple-700' },
 }
 
+const kelasNgajiLabel: Record<string, string> = {
+  pra_remaja: 'Pra Remaja',
+  remaja_muda: 'Remaja Muda',
+  remaja_dewasa: 'Remaja Dewasa',
+}
+
+type GenerusRow = {
+  id: string
+  nomor_generus: string
+  nama_panggilan: string | null
+  jenis_kelamin: string | null
+  kelas_ngaji: string | null
+  desa_id: string | null
+  kelompok_id: string | null
+  users: { nama_lengkap: string } | null
+}
+
 // Halaman koreksi manual presensi — kelola (ubah status kehadiran) hanya untuk Ketua/Wakil
 // Ketua & Sekretaris (selaras dengan siapa yang boleh membuka sesi presensi di PresensiPanel).
 // Super Admin BISA MEMBUKA halaman ini untuk melihat rekap presensi (read-only, sejak audit
@@ -39,11 +56,19 @@ export default function PresensiPage() {
   const [loadingKegiatan, setLoadingKegiatan] = useState(true)
   const [search, setSearch] = useState('')
 
-  const [generusScope, setGenerusScope] = useState<{ id: string; nomor_generus: string; users: { nama_lengkap: string } | null }[]>([])
+  const [generusScope, setGenerusScope] = useState<GenerusRow[]>([])
   const [absensiMap, setAbsensiMap] = useState<Record<string, Absensi>>({})
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
+
+  // Daftar desa/kelompok dipakai utk (1) label nama pada filter cetak & (2) menerjemahkan
+  // desa_id/kelompok_id Generus jadi nama yang bisa dibaca manusia di daftar & export.
+  const [desaList, setDesaList] = useState<{ id: string; nama_desa: string }[]>([])
+  const [kelompokList, setKelompokList] = useState<{ id: string; nama_kelompok: string; desa_id: string | null }[]>([])
+  // Filter cetak/tampil per desa/kelompok -- relevan terutama utk kegiatan tingkat Daerah yang
+  // pesertanya lintas desa/kelompok. Format nilai: 'semua' | `desa:{id}` | `kelompok:{id}`.
+  const [filterWilayah, setFilterWilayah] = useState<string>('semua')
 
   const loadKegiatan = useCallback(async () => {
     setLoadingKegiatan(true)
@@ -65,12 +90,30 @@ export default function PresensiPage() {
     if (user && canView) loadKegiatan()
   }, [user, canView, loadKegiatan])
 
+  useEffect(() => {
+    if (!user || !canView) return
+    ;(async () => {
+      const [{ data: desaRows, error: errDesa }, { data: kelompokRows, error: errKelompok }] = await Promise.all([
+        supabase.from('desa').select('id, nama_desa').eq('is_active', true).order('nama_desa'),
+        supabase.from('kelompok').select('id, nama_kelompok, desa_id').eq('is_active', true).order('nama_kelompok'),
+      ])
+      if (errDesa) console.error('Gagal memuat daftar desa:', errDesa.message)
+      if (errKelompok) console.error('Gagal memuat daftar kelompok:', errKelompok.message)
+      setDesaList(desaRows || [])
+      setKelompokList(kelompokRows || [])
+    })()
+  }, [user, canView])
+
   const loadDetail = useCallback(async (kegiatan: Kegiatan) => {
     setLoadingDetail(true)
     setSelectedKegiatan(kegiatan)
+    setFilterWilayah('semua')
 
     // Generus dalam scope kegiatan (mengikuti tempat sambung TERKINI, bukan snapshot historis)
-    let generusQuery = supabase.from('generus').select('id, nomor_generus, users:user_id(nama_lengkap)').eq('status', 'aktif')
+    let generusQuery = supabase
+      .from('generus')
+      .select('id, nomor_generus, nama_panggilan, jenis_kelamin, kelas_ngaji, desa_id, kelompok_id, users:user_id(nama_lengkap)')
+      .eq('status', 'aktif')
     if (kegiatan.tingkatan === 'kelompok' && kegiatan.kelompok_id) {
       generusQuery = generusQuery.eq('kelompok_id', kegiatan.kelompok_id)
     } else if (kegiatan.tingkatan === 'desa' && kegiatan.desa_id) {
@@ -95,9 +138,14 @@ export default function PresensiPage() {
     // kasus query dari arah users->generus yg lain di app ini) meski relasinya tetap 1-ke-1
     // (generus.user_id UNIQUE) -- dinormalisasi ke objek tunggal di sini supaya konsisten &
     // seluruh kode di bawah tidak perlu tahu perbedaan bentuk data mentah dari Supabase.
-    const normalized = (generusRows || []).map(g => ({
+    const normalized: GenerusRow[] = (generusRows || []).map(g => ({
       id: g.id,
       nomor_generus: g.nomor_generus,
+      nama_panggilan: g.nama_panggilan,
+      jenis_kelamin: g.jenis_kelamin,
+      kelas_ngaji: g.kelas_ngaji,
+      desa_id: g.desa_id,
+      kelompok_id: g.kelompok_id,
       users: Array.isArray(g.users) ? (g.users[0] ?? null) : g.users,
     }))
     // Diurutkan di client (bukan .order() PostgREST) krn nama_lengkap sekarang berasal dari
@@ -153,6 +201,31 @@ export default function PresensiPage() {
     }
   }
 
+  // Opsi filter wilayah hanya ditawarkan kalau memang ada keragaman desa/kelompok dalam
+  // scope kegiatan yang sedang dibuka -- percuma tampilkan dropdown filter kalau kegiatan
+  // itu sendiri sudah dibatasi ke satu kelompok saja (semua barisnya toh sama).
+  const wilayahOptions = useMemo(() => {
+    const desaIds = new Set(generusScope.map(g => g.desa_id).filter(Boolean))
+    const kelompokIds = new Set(generusScope.map(g => g.kelompok_id).filter(Boolean))
+    if (desaIds.size <= 1 && kelompokIds.size <= 1) return []
+    const opts: { value: string; label: string }[] = []
+    for (const d of desaList) {
+      if (desaIds.has(d.id)) opts.push({ value: `desa:${d.id}`, label: `Desa ${d.nama_desa}` })
+    }
+    for (const k of kelompokList) {
+      if (kelompokIds.has(k.id)) opts.push({ value: `kelompok:${k.id}`, label: `Kelompok ${k.nama_kelompok}` })
+    }
+    return opts
+  }, [generusScope, desaList, kelompokList])
+
+  const scopedGenerus = useMemo(() => {
+    if (filterWilayah === 'semua') return generusScope
+    const [tipe, id] = filterWilayah.split(':')
+    if (tipe === 'desa') return generusScope.filter(g => g.desa_id === id)
+    if (tipe === 'kelompok') return generusScope.filter(g => g.kelompok_id === id)
+    return generusScope
+  }, [generusScope, filterWilayah])
+
   if (!canView) {
     return (
       <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
@@ -168,32 +241,53 @@ export default function PresensiPage() {
   })
 
   const rekap = {
-    hadir: Object.values(absensiMap).filter(a => a.status === 'hadir').length,
-    total: generusScope.length,
+    hadir: scopedGenerus.filter(g => absensiMap[g.id]?.status === 'hadir').length,
+    total: scopedGenerus.length,
   }
 
-  // Export rekap kehadiran untuk kegiatan yang sedang dibuka -- daftar semua Generus
-  // dalam cakupan kegiatan tsb beserta status kehadirannya (termasuk yang belum ditandai).
+  const namaWilayahDipilih = () => {
+    if (filterWilayah === 'semua') return ''
+    const opt = wilayahOptions.find(o => o.value === filterWilayah)
+    return opt ? opt.label : ''
+  }
+
+  const jamHadir = (generusId: string) => {
+    const waktu = absensiMap[generusId]?.waktu_absen
+    if (!waktu) return '-'
+    return new Date(waktu).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+  }
+
+  // Export rekap kehadiran untuk kegiatan yang sedang dibuka (mengikuti filter wilayah aktif)
+  // -- daftar semua Generus dalam cakupan tsb beserta status & jam kehadirannya (termasuk
+  // yang belum ditandai).
   const exportColumns = [
     { header: 'No. Generus', key: 'no', width: 16 },
-    { header: 'Nama Lengkap', key: 'nama', width: 28 },
+    { header: 'Nama Lengkap', key: 'nama', width: 26 },
+    { header: 'Nama Panggilan', key: 'panggilan', width: 18 },
+    { header: 'Jenis Kelamin', key: 'jk', width: 14 },
+    { header: 'Kelas Ngaji', key: 'kelas_ngaji', width: 18 },
+    { header: 'Jam Hadir', key: 'jam', width: 12 },
     { header: 'Status Kehadiran', key: 'status', width: 18 },
   ]
 
-  const buildExportData = () => generusScope.map(a => {
+  const buildExportData = () => scopedGenerus.map(a => {
     const status = absensiMap[a.id]?.status
     return {
       no: a.nomor_generus,
       nama: a.users?.nama_lengkap || '-',
+      panggilan: a.nama_panggilan || '-',
+      jk: a.jenis_kelamin === 'laki-laki' ? 'Laki-laki' : a.jenis_kelamin === 'perempuan' ? 'Perempuan' : '-',
+      kelas_ngaji: a.kelas_ngaji ? (kelasNgajiLabel[a.kelas_ngaji] || a.kelas_ngaji) : '-',
+      jam: status === 'hadir' ? jamHadir(a.id) : '-',
       status: status ? kehadiranLabel[status]?.label : 'Belum Ditandai',
     }
   })
 
   const exportSummary = () => [
-    { label: 'Hadir', value: `${Object.values(absensiMap).filter(a => a.status === 'hadir').length} orang` },
-    { label: 'Tidak Hadir', value: `${Object.values(absensiMap).filter(a => a.status === 'tidak_hadir').length} orang` },
-    { label: 'Izin', value: `${Object.values(absensiMap).filter(a => a.status === 'izin').length} orang` },
-    { label: 'Sakit', value: `${Object.values(absensiMap).filter(a => a.status === 'sakit').length} orang` },
+    { label: 'Hadir', value: `${scopedGenerus.filter(g => absensiMap[g.id]?.status === 'hadir').length} orang` },
+    { label: 'Tidak Hadir', value: `${scopedGenerus.filter(g => absensiMap[g.id]?.status === 'tidak_hadir').length} orang` },
+    { label: 'Izin', value: `${scopedGenerus.filter(g => absensiMap[g.id]?.status === 'izin').length} orang` },
+    { label: 'Sakit', value: `${scopedGenerus.filter(g => absensiMap[g.id]?.status === 'sakit').length} orang` },
     { label: 'Total Generus', value: `${rekap.total} orang` },
   ]
 
@@ -201,11 +295,18 @@ export default function PresensiPage() {
     const tgl = selectedKegiatan?.tanggal_mulai
       ? new Date(selectedKegiatan.tanggal_mulai).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
       : ''
-    return `${selectedKegiatan?.nama_kegiatan || ''}${tgl ? ` -- ${tgl}` : ''}`
+    const wilayah = namaWilayahDipilih()
+    return `${selectedKegiatan?.nama_kegiatan || ''}${tgl ? ` -- ${tgl}` : ''}${wilayah ? ` -- ${wilayah}` : ''}`
+  }
+
+  const exportFileName = () => {
+    const base = selectedKegiatan?.nama_kegiatan.replace(/[^a-zA-Z0-9]/g, '-') || 'Presensi'
+    const wilayah = namaWilayahDipilih().replace(/[^a-zA-Z0-9]/g, '-')
+    return `Presensi-${base}${wilayah ? `-${wilayah}` : ''}`
   }
 
   const handleExportPDF = async () => {
-    if (!selectedKegiatan || generusScope.length === 0) { alert('Tidak ada data Generus untuk diexport.'); return }
+    if (!selectedKegiatan || scopedGenerus.length === 0) { alert('Tidak ada data Generus untuk diexport.'); return }
     setExporting(true)
     try {
       exportToPDF({
@@ -214,16 +315,16 @@ export default function PresensiPage() {
         columns: exportColumns,
         rows: buildExportData(),
         summary: exportSummary(),
-        fileName: `Presensi-${selectedKegiatan.nama_kegiatan.replace(/[^a-zA-Z0-9]/g, '-')}`,
+        fileName: exportFileName(),
       })
-      if (user) await logAudit(user, 'EXPORT', 'Presensi', `PDF -- ${selectedKegiatan.nama_kegiatan}`, undefined, selectedKegiatan.id)
+      if (user) await logAudit(user, 'EXPORT', 'Presensi', `PDF -- ${selectedKegiatan.nama_kegiatan}${namaWilayahDipilih() ? ` (${namaWilayahDipilih()})` : ''}`, undefined, selectedKegiatan.id)
     } finally {
       setExporting(false)
     }
   }
 
   const handleExportExcel = async () => {
-    if (!selectedKegiatan || generusScope.length === 0) { alert('Tidak ada data Generus untuk diexport.'); return }
+    if (!selectedKegiatan || scopedGenerus.length === 0) { alert('Tidak ada data Generus untuk diexport.'); return }
     setExporting(true)
     try {
       await exportToExcel({
@@ -232,9 +333,9 @@ export default function PresensiPage() {
         columns: exportColumns,
         rows: buildExportData(),
         summary: exportSummary(),
-        fileName: `Presensi-${selectedKegiatan.nama_kegiatan.replace(/[^a-zA-Z0-9]/g, '-')}`,
+        fileName: exportFileName(),
       })
-      if (user) await logAudit(user, 'EXPORT', 'Presensi', `Excel -- ${selectedKegiatan.nama_kegiatan}`, undefined, selectedKegiatan.id)
+      if (user) await logAudit(user, 'EXPORT', 'Presensi', `Excel -- ${selectedKegiatan.nama_kegiatan}${namaWilayahDipilih() ? ` (${namaWilayahDipilih()})` : ''}`, undefined, selectedKegiatan.id)
     } finally {
       setExporting(false)
     }
@@ -308,27 +409,54 @@ export default function PresensiPage() {
           </div>
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
             <h3 className="font-semibold text-slate-800">{selectedKegiatan.nama_kegiatan}</h3>
-            <p className="text-xs text-slate-400 mt-1">{rekap.hadir} / {rekap.total} Generus hadir</p>
+            <p className="text-xs text-slate-400 mt-1">{rekap.hadir} / {rekap.total} Generus hadir{namaWilayahDipilih() ? ` -- ${namaWilayahDipilih()}` : ''}</p>
           </div>
+
+          {/* Filter cetak/tampil per desa/kelompok -- hanya muncul kalau scope kegiatan
+              memang mencakup lebih dari satu desa/kelompok (mis. kegiatan tingkat Daerah).
+              Filter ini juga otomatis diikutsertakan di export PDF/Excel & judul laporan. */}
+          {wilayahOptions.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-slate-400 shrink-0">Cetak/Tampilkan untuk:</label>
+              <select
+                value={filterWilayah}
+                onChange={e => setFilterWilayah(e.target.value)}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="semua">Semua Desa/Kelompok</option>
+                {wilayahOptions.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {loadingDetail ? (
             <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
               <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
             </div>
-          ) : generusScope.length === 0 ? (
+          ) : scopedGenerus.length === 0 ? (
             <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
-              <p>Tidak ada Generus dalam cakupan kegiatan ini</p>
+              <p>Tidak ada Generus dalam cakupan ini</p>
             </div>
           ) : (
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 divide-y divide-slate-100">
-              {generusScope.map(a => {
+              {scopedGenerus.map(a => {
                 const absen = absensiMap[a.id]
                 const currentStatus = absen?.status || null
                 return (
                   <div key={a.id} className="flex items-center justify-between gap-3 p-3">
                     <div className="min-w-0">
                       <p className="font-medium text-slate-700 text-sm truncate">{a.users?.nama_lengkap || '(nama tidak ditemukan)'}</p>
-                      <p className="text-xs text-slate-400">{a.nomor_generus}</p>
+                      <p className="text-xs text-slate-400">
+                        {a.nomor_generus}
+                        {a.nama_panggilan ? ` · ${a.nama_panggilan}` : ''}
+                        {a.jenis_kelamin ? ` · ${a.jenis_kelamin === 'laki-laki' ? 'L' : 'P'}` : ''}
+                        {a.kelas_ngaji ? ` · ${kelasNgajiLabel[a.kelas_ngaji] || a.kelas_ngaji}` : ''}
+                      </p>
+                      {currentStatus === 'hadir' && (
+                        <p className="text-xs text-slate-300 mt-0.5">Hadir pukul {jamHadir(a.id)}</p>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       {currentStatus && (
