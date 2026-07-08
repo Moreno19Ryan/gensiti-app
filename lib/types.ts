@@ -157,6 +157,9 @@ export interface Absensi {
   keterangan: string | null
   waktu_absen: string | null
   created_at: string | null
+  dikoreksi_oleh?: string | null
+  dikoreksi_at?: string | null
+  status_sebelum_koreksi?: string | null
   generus?: {
     id: string
     nama_lengkap: string

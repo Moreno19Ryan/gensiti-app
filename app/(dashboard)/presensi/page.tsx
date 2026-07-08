@@ -59,6 +59,10 @@ export default function PresensiPage() {
 
   const [generusScope, setGenerusScope] = useState<GenerusRow[]>([])
   const [absensiMap, setAbsensiMap] = useState<Record<string, Absensi>>({})
+  // Nama pengurus yang melakukan koreksi manual (key: user id dari absensi.dikoreksi_oleh) --
+  // dipakai untuk badge "Dikoreksi oleh ..." di daftar, supaya tidak perlu join manual di
+  // query utama (baris yang tidak pernah dikoreksi tidak butuh data ini sama sekali).
+  const [koreksiUserMap, setKoreksiUserMap] = useState<Record<string, string>>({})
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -160,13 +164,44 @@ export default function PresensiPage() {
       if (row.generus_id) map[row.generus_id] = row
     }
     setAbsensiMap(map)
+
+    // Ambil nama pengurus yang pernah melakukan koreksi manual pada kegiatan ini (kalau ada)
+    // -- query terpisah & hanya jalan kalau memang ada baris yang punya dikoreksi_oleh,
+    // supaya kegiatan tanpa koreksi sama sekali tidak menambah round-trip percuma.
+    const koreksiUserIds = Array.from(new Set(
+      (absensiRows || []).map(r => (r as Absensi).dikoreksi_oleh).filter((v): v is string => !!v)
+    ))
+    if (koreksiUserIds.length > 0) {
+      const { data: koreksiUsers, error: errKoreksiUsers } = await supabase
+        .from('users')
+        .select('id, nama_lengkap')
+        .in('id', koreksiUserIds)
+      if (errKoreksiUsers) console.error('Gagal memuat nama pengoreksi:', errKoreksiUsers.message)
+      const umap: Record<string, string> = {}
+      for (const u of (koreksiUsers || []) as { id: string; nama_lengkap: string }[]) {
+        umap[u.id] = u.nama_lengkap
+      }
+      setKoreksiUserMap(umap)
+    } else {
+      setKoreksiUserMap({})
+    }
+
     setLoadingDetail(false)
   }, [])
 
   const updateStatus = async (generusId: string, status: Absensi['status']) => {
-    if (!selectedKegiatan || !status) return
+    if (!selectedKegiatan || !status || !user) return
     setSavingId(generusId)
     try {
+      // Status sebelumnya (dari state client, sumber tampilan saat ini) -- dipakai untuk
+      // jejak audit koreksi (dikoreksi_oleh/dikoreksi_at/status_sebelum_koreksi). Baris yang
+      // belum pernah punya status sebelumnya (murni pertama kali ditandai, belum sempat
+      // self check-in ataupun dikoreksi) tidak dianggap "koreksi" -- kolom jejak dibiarkan
+      // NULL supaya badge "Dikoreksi manual" hanya muncul untuk perubahan status yang
+      // sesungguhnya (mis. Generus sudah self check-in 'hadir' lalu pengurus ubah jadi 'izin').
+      const statusSebelumnya = absensiMap[generusId]?.status ?? null
+      const adalahKoreksi = statusSebelumnya !== null && statusSebelumnya !== status
+
       // Upsert by (kegiatan_id, generus_id) alih-alih cek "existing" dari state client lalu
       // pilih update/insert manual -- pola lama rawan race condition: kalau ada 2 aksi hampir
       // bersamaan utk kombinasi kegiatan+generus yg sama (mis. Generus self check-in via
@@ -182,6 +217,9 @@ export default function PresensiPage() {
             status,
             keterangan: 'Koreksi manual pengurus',
             waktu_absen: new Date().toISOString(),
+            ...(adalahKoreksi
+              ? { dikoreksi_oleh: user.id, dikoreksi_at: new Date().toISOString(), status_sebelum_koreksi: statusSebelumnya }
+              : {}),
           },
           { onConflict: 'kegiatan_id,generus_id' }
         )
@@ -194,9 +232,16 @@ export default function PresensiPage() {
       }
       if (saved) setAbsensiMap(prev => ({ ...prev, [generusId]: saved as Absensi }))
 
-      if (user) {
-        await logAudit(user, 'UPDATE', 'Presensi', selectedKegiatan.nama_kegiatan, { generus_id: generusId, status }, selectedKegiatan.id)
-      }
+      await logAudit(
+        user,
+        'UPDATE',
+        'Presensi',
+        selectedKegiatan.nama_kegiatan,
+        adalahKoreksi
+          ? { generus_id: generusId, status, status_sebelum: statusSebelumnya, jenis: 'koreksi_manual' }
+          : { generus_id: generusId, status },
+        selectedKegiatan.id
+      )
     } finally {
       setSavingId(null)
     }
@@ -446,6 +491,15 @@ export default function PresensiPage() {
                       </p>
                       {currentStatus === 'hadir' && (
                         <p className="text-xs text-slate-300 mt-0.5">Hadir pukul {jamHadir(a.id)}</p>
+                      )}
+                      {/* Jejak audit koreksi manual -- hanya tampil untuk baris yang memang
+                          pernah diubah statusnya oleh pengurus (bukan hasil self check-in
+                          murni). Menampilkan siapa, kapan, dan status sebelum dikoreksi supaya
+                          ada akuntabilitas & transparansi kalau ada kekeliruan/kecurigaan. */}
+                      {absen?.dikoreksi_oleh && absen?.dikoreksi_at && (
+                        <p className="text-xs text-amber-500 mt-0.5" title={`Sebelumnya: ${absen.status_sebelum_koreksi ? (kehadiranLabel[absen.status_sebelum_koreksi]?.label || absen.status_sebelum_koreksi) : '-'}`}>
+                          Dikoreksi {koreksiUserMap[absen.dikoreksi_oleh] ? `oleh ${koreksiUserMap[absen.dikoreksi_oleh]}` : ''} - {new Date(absen.dikoreksi_at).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        </p>
                       )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
