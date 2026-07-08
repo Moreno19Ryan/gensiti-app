@@ -23,6 +23,12 @@ interface Member {
   roles: { id: string; nama_role: string; tingkatan: string } | null
   desa: { id: string; nama_desa: string } | null
   kelompok: { id: string; nama_kelompok: string } | null
+  // PENTING: generus.user_id punya UNIQUE constraint (relasi 1-ke-1 dgn users), jadi
+  // PostgREST mengembalikan embed ini sbg OBJEK TUNGGAL, bukan array -- beda dari relasi
+  // 1-ke-banyak biasa. Sebelumnya interface ini salah ditulis sbg array (`{...}[] | null`)
+  // dan diakses dgn `.generus?.[0]` di 8 tempat, yang SELALU mengembalikan undefined
+  // (mengakses index [0] pada objek, bukan array) -- inilah sebab No. Generus & field
+  // Generus lain selalu tampil kosong di menu Pengguna meski datanya lengkap di database.
   generus: {
     id: string
     nomor_generus: string
@@ -45,7 +51,7 @@ interface Member {
     pindah_ke_daerah_lain: boolean | null
     anak_ke: number | null
     jumlah_saudara: number | null
-  }[] | null
+  } | null
 }
 
 interface RoleOpt { id: string; nama_role: string; tingkatan: string }
@@ -207,7 +213,7 @@ export default function PenggunaPage() {
   const openEdit = (m: Member) => {
     setEditTarget(m)
     setError('')
-    const a = m.generus?.[0]
+    const a = m.generus
     setForm({
       email: m.email,
       password: '',
@@ -311,7 +317,7 @@ export default function PenggunaPage() {
           biodataWarning: res.status === 207 ? json.error : undefined,
         })
       } else {
-        const existingGenerus = editTarget.generus?.[0]
+        const existingGenerus = editTarget.generus
 
         // Pindah sambung Bekasi Timur: update desa/kelompok ke tujuan baru
         const targetDesaId = (form.status_pengguna === 'pindah_sambung' && form.pindah_jenis === 'bekasi_timur' && form.pindah_desa_id)
@@ -456,7 +462,7 @@ export default function PenggunaPage() {
       const matchSearch = !search ||
         m.nama_lengkap?.toLowerCase().includes(q) ||
         m.email?.toLowerCase().includes(q) ||
-        m.generus?.[0]?.nomor_generus?.toLowerCase().includes(q) ||
+        m.generus?.nomor_generus?.toLowerCase().includes(q) ||
         m.desa?.nama_desa?.toLowerCase().includes(q) ||
         m.kelompok?.nama_kelompok?.toLowerCase().includes(q)
       const matchRole = !filterRole || m.roles?.tingkatan === filterRole
@@ -559,7 +565,7 @@ export default function PenggunaPage() {
               </thead>
               <tbody>
                 {filtered.map(m => {
-                  const a = m.generus?.[0]
+                  const a = m.generus
                   const sp = a?.status_pengguna || 'lajang'
                   return (
                     <tr key={m.id} className={`border-b border-slate-50 hover:bg-slate-50 transition ${canActOn(m) ? 'cursor-pointer' : ''}`}
@@ -638,7 +644,7 @@ export default function PenggunaPage() {
                     {detailModal.roles?.nama_role || '-'}
                   </span>
                   {(() => {
-                    const sp = detailModal.generus?.[0]?.status_pengguna || 'lajang'
+                    const sp = detailModal.generus?.status_pengguna || 'lajang'
                     return (
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusPenggunaBadge[sp] || 'bg-slate-100 text-slate-500'}`}>
                         {statusPenggunaLabel[sp] || sp}
@@ -657,11 +663,11 @@ export default function PenggunaPage() {
 
             <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-100">
               {[
-                { label: 'No. Generus', val: detailModal.generus?.[0]?.nomor_generus },
+                { label: 'No. Generus', val: detailModal.generus?.nomor_generus },
                 { label: 'Bergabung Sejak', val: new Date(detailModal.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) },
                 { label: 'Status Akun', val: detailModal.is_archived ? 'Diarsipkan' : detailModal.is_active ? 'Aktif' : 'Non-aktif' },
-                { label: 'Status Generus', val: detailModal.generus?.[0]?.status?.toUpperCase() },
-                { label: 'Jenis Kelamin', val: detailModal.generus?.[0]?.jenis_kelamin?.toUpperCase() },
+                { label: 'Status Generus', val: detailModal.generus?.status?.toUpperCase() },
+                { label: 'Jenis Kelamin', val: detailModal.generus?.jenis_kelamin?.toUpperCase() },
               ].map(({ label, val }) => val ? (
                 <div key={label}>
                   <p className="text-xs text-slate-400">{label}</p>
