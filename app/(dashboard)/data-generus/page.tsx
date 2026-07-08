@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { logAudit } from '@/lib/audit'
 import { authFetch } from '@/lib/auth'
 import { canManageMembers as checkCanManageMembers, canViewGenerusData } from '@/lib/roles'
+import { formatAge } from '@/lib/date'
 import Modal from '@/components/Modal'
 import { exportToPDF, exportToExcel } from '@/lib/export'
 
@@ -363,6 +364,9 @@ export default function DataGenerusPage() {
                   <th className="px-4 py-3 font-medium">No. Generus</th>
                   <th className="px-4 py-3 font-medium">Desa / Kelompok</th>
                   <th className="px-4 py-3 font-medium">Jenis Kelamin</th>
+                  {/* Usia dihitung otomatis dari tanggal_lahir, bukan kolom database --
+                      lihat lib/date.ts. Selalu akurat, bertambah sendiri tiap tahun. */}
+                  <th className="px-4 py-3 font-medium">Usia</th>
                   <th className="px-4 py-3 font-medium">Kelengkapan</th>
                   {canManage && <th className="px-4 py-3 font-medium">Aksi</th>}
                 </tr>
@@ -389,6 +393,7 @@ export default function DataGenerusPage() {
                         {g.users?.kelompok && <div className="text-slate-400">{g.users.kelompok.nama_kelompok}</div>}
                       </td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{g.jenis_kelamin?.toUpperCase() || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 text-xs">{g.tanggal_lahir ? formatAge(g.tanggal_lahir) : '—'}</td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${lengkap ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
                           {lengkap ? 'Lengkap' : 'Belum Lengkap'}
@@ -446,7 +451,14 @@ export default function DataGenerusPage() {
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase disabled:opacity-60" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Tanggal Lahir *</label>
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1">
+                    Tanggal Lahir *
+                    {form.tanggal_lahir && (
+                      <span className="px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-semibold normal-case">
+                        {formatAge(form.tanggal_lahir)}
+                      </span>
+                    )}
+                  </label>
                   <input type="date" value={form.tanggal_lahir} onChange={e => set('tanggal_lahir', e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60" />
                 </div>

@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { logAudit } from '@/lib/audit'
 import { authFetch } from '@/lib/auth'
 import { canManageMembers as checkCanManageMembers } from '@/lib/roles'
+import { formatAge } from '@/lib/date'
 import Modal from '@/components/Modal'
 
 interface Member {
@@ -668,6 +669,10 @@ export default function PenggunaPage() {
                 { label: 'Status Akun', val: detailModal.is_archived ? 'Diarsipkan' : detailModal.is_active ? 'Aktif' : 'Non-aktif' },
                 { label: 'Status Generus', val: detailModal.generus?.status?.toUpperCase() },
                 { label: 'Jenis Kelamin', val: detailModal.generus?.jenis_kelamin?.toUpperCase() },
+                // Usia dihitung otomatis dari generus.tanggal_lahir, bukan kolom database --
+                // lihat lib/date.ts. formatAge mengembalikan '-' kalau tanggal_lahir kosong,
+                // jadi baris ini otomatis tersembunyi (val falsy) utk data lama yg belum lengkap.
+                { label: 'Usia', val: detailModal.generus?.tanggal_lahir ? formatAge(detailModal.generus.tanggal_lahir) : null },
               ].map(({ label, val }) => val ? (
                 <div key={label}>
                   <p className="text-xs text-slate-400">{label}</p>
@@ -730,7 +735,17 @@ export default function PenggunaPage() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Tanggal Lahir *</label>
+                    <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1">
+                      Tanggal Lahir *
+                      {/* Usia dihitung otomatis dari tanggal_lahir yang diinput -- TIDAK
+                          disimpan sbg kolom database, jadi selalu akurat & bertambah sendiri
+                          tiap tahun. Lihat lib/date.ts (calculateAge/formatAge). */}
+                      {form.tanggal_lahir && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-semibold normal-case">
+                          {formatAge(form.tanggal_lahir)}
+                        </span>
+                      )}
+                    </label>
                     <input type="date" value={form.tanggal_lahir} onChange={e => set('tanggal_lahir', e.target.value)}
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     <p className="text-[11px] text-blue-500 mt-1">Dipakai juga sebagai password awal akun (format DDMMYYYY)</p>
