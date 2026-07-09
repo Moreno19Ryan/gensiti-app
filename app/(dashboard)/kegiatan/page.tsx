@@ -166,10 +166,19 @@ export default function KegiatanPage() {
   const handleSave = async () => {
     setError('')
     const isDaerah = form.tingkatan === 'daerah'
-    if (!form.nama_kegiatan || !form.deskripsi || !form.tanggal_mulai || !form.tanggal_selesai || !form.lokasi) return
+    // Setiap validasi WAJIB menampilkan pesan lewat setError() -- sebelumnya beberapa
+    // validasi di sini `return` diam-diam tanpa pesan apapun, membuat tombol Simpan terasa
+    // seperti tidak merespons/rusak padahal sebenarnya submit ditolak tanpa keterangan.
+    if (!form.nama_kegiatan.trim()) { setError('Nama kegiatan wajib diisi.'); return }
+    if (!form.deskripsi.trim()) { setError('Deskripsi wajib diisi.'); return }
+    if (!form.tanggal_mulai) { setError('Tanggal mulai wajib diisi.'); return }
+    if (!form.tanggal_selesai) { setError('Tanggal selesai wajib diisi.'); return }
+    if (new Date(form.tanggal_selesai) < new Date(form.tanggal_mulai)) { setError('Tanggal selesai tidak boleh sebelum tanggal mulai.'); return }
+    if (!form.lokasi.trim()) { setError('Lokasi wajib diisi.'); return }
     // Kegiatan tingkat Daerah SENGAJA tidak terikat 1 desa/kelompok (lintas Se-Bekasi Timur),
     // jadi desa/kelompok wajib KOSONG. Selain itu (desa/kelompok), keduanya tetap wajib diisi.
-    if (!isDaerah && (!form.desa_id || !form.kelompok_id)) return
+    if (!isDaerah && !form.desa_id) { setError('Pilih Desa.'); return }
+    if (!isDaerah && !form.kelompok_id) { setError('Pilih Kelompok.'); return }
     // Kategori kegiatan wajib dipilih utk tingkat Daerah (menggantikan checkbox lama) --
     // menentukan jenis acara Daerah spesifik (Pengajian Rutin/PEGASUS/dst).
     if (isDaerah && !form.kategori_kegiatan) { setError('Pilih kategori kegiatan Daerah.'); return }
