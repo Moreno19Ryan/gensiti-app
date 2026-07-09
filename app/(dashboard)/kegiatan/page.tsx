@@ -5,7 +5,7 @@ import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { Kegiatan } from '@/lib/types'
 import { logAudit } from '@/lib/audit'
-import { canManageKontenOrganisasi } from '@/lib/roles'
+import { canManageKontenOrganisasi, isGenerusBiasa } from '@/lib/roles'
 import Modal from '@/components/Modal'
 import PresensiPanel from '@/components/PresensiPanel'
 import PengajuanIzinPanel from '@/components/PengajuanIzinPanel'
@@ -81,6 +81,10 @@ export default function KegiatanPage() {
   const [kelompokList, setKelompokList] = useState<KelompokOpt[]>([])
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
+  // Kelas ngaji milik Generus yang login -- dipakai utk filter tampilan kegiatan dengan
+  // target_peserta='kelas_ngaji_tertentu' (mis. kegiatan Remaja Dewasa tidak boleh muncul
+  // ke Pra Remaja/Remaja Muda). null = belum termuat / user bukan Generus biasa.
+  const [kelasNgajiSaya, setKelasNgajiSaya] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -106,6 +110,13 @@ export default function KegiatanPage() {
         setDesaList(d || [])
         setKelompokList(k || [])
       })
+      // Hanya Generus biasa yang perlu tahu kelas_ngaji sendiri -- dipakai utk menyembunyikan
+      // kegiatan yang target_peserta='kelas_ngaji_tertentu' tapi bukan untuk kelasnya.
+      // Pengurus/PPG/Super Admin tetap melihat semua kegiatan (perlu mengelola/mengawasi).
+      if (isGenerusBiasa(user)) {
+        supabase.from('generus').select('kelas_ngaji').eq('user_id', user.id).maybeSingle()
+          .then(({ data: g }) => setKelasNgajiSaya(g?.kelas_ngaji || null))
+      }
     }
   }, [user, loadData])
 
@@ -229,7 +240,23 @@ export default function KegiatanPage() {
 
   const set = (key: string, val: string) => setForm(f => ({ ...f, [key]: val }))
   const fmt = (t: string | null) => t ? new Date(t).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'
+
+  // Terapkan target_peserta -- HANYA membatasi apa yang dilihat Generus biasa (peserta).
+  // Pengurus/PPG/Super Admin tetap melihat semua kegiatan di scope-nya karena mereka perlu
+  // mengelola atau mengawasi, bukan sekadar jadi peserta kegiatan tertentu.
+  const bisaLihatKegiatan = (k: Kegiatan): boolean => {
+    if (!isGenerusBiasa(user)) return true
+    if (k.target_peserta === 'hanya_pengurus') return false
+    if (k.target_peserta === 'kelas_ngaji_tertentu') {
+      // Belum termuat kelas ngaji sendiri -- sembunyikan dulu drpd salah tampil ke org lain.
+      if (!kelasNgajiSaya) return false
+      return k.target_kelas_ngaji === kelasNgajiSaya
+    }
+    return true
+  }
+
   const filtered = data
+    .filter(bisaLihatKegiatan)
     .filter(k => filter === 'all' || k.status === filter)
     .filter(k => {
       if (!search) return true
@@ -312,7 +339,7 @@ export default function KegiatanPage() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="font-bold text-slate-800">Kegiatan</h2>
-          <p className="text-slate-400 text-sm">{data.length} kegiatan total</p>
+          <p className="text-slate-400 text-sm">{data.filter(bisaLihatKegiatan).length} kegiatan total</p>
         </div>
         <div className="flex items-center gap-2">
           {/* Export daftar kegiatan dibatasi ke yang berwenang mengelola kegiatan (Ketua/Wakil/
