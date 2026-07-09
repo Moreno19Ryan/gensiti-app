@@ -36,7 +36,9 @@ type GenerusRow = {
   kelas_ngaji: string | null
   desa_id: string | null
   kelompok_id: string | null
-  users: { nama_lengkap: string } | null
+  // nama_role dipakai utk menentukan apakah Generus ybs juga menjabat pengurus (role selain
+  // 'Generus') -- perlu diketahui utk menerapkan target_peserta='hanya_pengurus' kegiatan.
+  users: { nama_lengkap: string; roles: { nama_role: string } | null } | null
 }
 
 // Halaman koreksi manual presensi — kelola (ubah status kehadiran) hanya untuk Ketua/Wakil
@@ -122,7 +124,7 @@ export default function PresensiPage() {
     // Generus dalam scope kegiatan (mengikuti tempat sambung TERKINI, bukan snapshot historis)
     let generusQuery = supabase
       .from('generus')
-      .select('id, nomor_generus, nama_panggilan, jenis_kelamin, kelas_ngaji, desa_id, kelompok_id, users:user_id(nama_lengkap)')
+      .select('id, nomor_generus, nama_panggilan, jenis_kelamin, kelas_ngaji, desa_id, kelompok_id, users:user_id(nama_lengkap, roles:role_id(nama_role))')
       .eq('status', 'aktif')
     if (kegiatan.tingkatan === 'kelompok' && kegiatan.kelompok_id) {
       generusQuery = generusQuery.eq('kelompok_id', kegiatan.kelompok_id)
@@ -148,19 +150,38 @@ export default function PresensiPage() {
     // kasus query dari arah users->generus yg lain di app ini) meski relasinya tetap 1-ke-1
     // (generus.user_id UNIQUE) -- dinormalisasi ke objek tunggal di sini supaya konsisten &
     // seluruh kode di bawah tidak perlu tahu perbedaan bentuk data mentah dari Supabase.
-    const normalized: GenerusRow[] = (generusRows || []).map(g => ({
-      id: g.id,
-      nomor_generus: g.nomor_generus,
-      nama_panggilan: g.nama_panggilan,
-      jenis_kelamin: g.jenis_kelamin,
-      kelas_ngaji: g.kelas_ngaji,
-      desa_id: g.desa_id,
-      kelompok_id: g.kelompok_id,
-      users: Array.isArray(g.users) ? (g.users[0] ?? null) : g.users,
-    }))
+    const normalized: GenerusRow[] = (generusRows || []).map(g => {
+      const u = Array.isArray(g.users) ? (g.users[0] ?? null) : g.users
+      return {
+        id: g.id,
+        nomor_generus: g.nomor_generus,
+        nama_panggilan: g.nama_panggilan,
+        jenis_kelamin: g.jenis_kelamin,
+        kelas_ngaji: g.kelas_ngaji,
+        desa_id: g.desa_id,
+        kelompok_id: g.kelompok_id,
+        users: u ? { nama_lengkap: u.nama_lengkap, roles: Array.isArray(u.roles) ? (u.roles[0] ?? null) : u.roles } : null,
+      }
+    })
+    // Terapkan target_peserta kegiatan -- HANYA Generus yang memang jadi target yang
+    // dianggap "wajib presensi" utk kegiatan ini (selaras dgn filter yang sama di halaman
+    // Kegiatan & validasi RPC submit_presensi). Sebelumnya semua Generus dalam scope wilayah
+    // ditampilkan tanpa peduli target_peserta, membuat rekap "Belum Ditandai" salah/berlebih
+    // utk kegiatan yang sebenarnya khusus kelas ngaji/pengurus tertentu.
+    const targetFiltered = normalized.filter(g => {
+      if (kegiatan.target_peserta === 'hanya_pengurus') {
+        return g.users?.roles?.nama_role !== 'Generus'
+      }
+      if (kegiatan.target_peserta === 'kelas_ngaji_tertentu') {
+        // Pengurus tetap wajib presensi sbg penyelenggara terlepas dari target kelas ngaji.
+        if (g.users?.roles?.nama_role !== 'Generus') return true
+        return g.kelas_ngaji === kegiatan.target_kelas_ngaji
+      }
+      return true
+    })
     // Diurutkan di client (bukan .order() PostgREST) krn nama_lengkap sekarang berasal dari
     // relasi users, bukan kolom langsung di tabel generus yang di-query.
-    const sortedGenerus = normalized.sort((a, b) =>
+    const sortedGenerus = targetFiltered.sort((a, b) =>
       (a.users?.nama_lengkap || '').localeCompare(b.users?.nama_lengkap || '')
     )
     setGenerusScope(sortedGenerus)
