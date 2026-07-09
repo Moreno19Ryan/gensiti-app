@@ -165,16 +165,17 @@ export default function PresensiPage() {
     })
     // Terapkan target_peserta kegiatan -- HANYA Generus yang memang jadi target yang
     // dianggap "wajib presensi" utk kegiatan ini (selaras dgn filter yang sama di halaman
-    // Kegiatan & validasi RPC submit_presensi). Sebelumnya semua Generus dalam scope wilayah
-    // ditampilkan tanpa peduli target_peserta, membuat rekap "Belum Ditandai" salah/berlebih
-    // utk kegiatan yang sebenarnya khusus kelas ngaji/pengurus tertentu.
+    // Kegiatan & validasi RPC submit_presensi). generusQuery di atas SUDAH membatasi ke
+    // alamat sambung (desa/kelompok) sesuai scope kegiatan -- prioritas #1. Di sini tinggal
+    // terapkan prioritas #2 (kelas ngaji) & #3 (dapukan/jabatan, HANYA sbg override utk
+    // target_peserta='hanya_pengurus' -- BUKAN pengecualian otomatis dari kelas_ngaji_tertentu,
+    // dapukan tidak membebaskan seseorang dari syarat kelas ngaji kalau target kegiatan
+    // memang spesifik ke kelas ngaji tertentu).
     const targetFiltered = normalized.filter(g => {
       if (kegiatan.target_peserta === 'hanya_pengurus') {
         return g.users?.roles?.nama_role !== 'Generus'
       }
       if (kegiatan.target_peserta === 'kelas_ngaji_tertentu') {
-        // Pengurus tetap wajib presensi sbg penyelenggara terlepas dari target kelas ngaji.
-        if (g.users?.roles?.nama_role !== 'Generus') return true
         return g.kelas_ngaji === kegiatan.target_kelas_ngaji
       }
       return true
