@@ -8,6 +8,7 @@ import { signOut } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { isGenerusBiasa, canManageMembers as checkCanManageMembers, canManagePresensi as checkCanManagePresensi } from '@/lib/roles'
 import { loadFeatureToggles, isFeatureEnabled, FeatureToggle } from '@/lib/feature-toggles'
+import GlobalSearch from '@/components/GlobalSearch'
 
 interface NavItem {
   href: string
@@ -368,6 +369,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 {user.kelompok ? ` · ${user.kelompok.nama_kelompok}` : ''}
               </p>
             </div>
+          </div>
+          <div className="flex-1 flex justify-center px-4">
+            <GlobalSearch />
           </div>
           <div className="flex items-center gap-1">
             <button onClick={toggleDarkMode} title={darkMode ? 'Mode Terang' : 'Mode Gelap'}
