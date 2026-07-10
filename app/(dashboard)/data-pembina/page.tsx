@@ -10,12 +10,18 @@ import { formatAge } from '@/lib/date'
 import Modal from '@/components/Modal'
 import { exportToPDF, exportToExcel } from '@/lib/export'
 
-// Halaman ini KHUSUS biodata Generus (data pribadi/sensitif) -- terpisah dari menu "Pengguna"
-// yang murni akun (login, role, hak akses). Pemisahan ini disengaja: supaya yang mengelola
-// akun tidak otomatis melihat data pribadi (alamat, nama orang tua, tempat lahir, dll) kalau
-// tidak sedang perlu, dan sebaliknya. Hak akses TETAP SAMA seperti menu Pengguna
-// (canManageMembers) -- ini murni pemisahan tampilan/menu, bukan perubahan hak akses.
-interface GenerusRow {
+// Halaman KHUSUS biodata PPG (Penggerak Pembina Generus) -- dipisah dari menu "Data Generus"
+// karena PPG adalah pembina, BUKAN Generus (tidak punya kelas ngaji, tidak berada dalam
+// struktur keanggotaan Generus kelompok/desa/daerah). Sebelumnya PPG ikut tercampur tampil
+// di antara data Generus asli di /data-generus, yang membingungkan secara konsep meski
+// secara database keduanya sama-sama punya baris di tabel generus (dipakai bersama utk
+// mekanisme login_username/password & nomor identitas). Field di sini sengaja LEBIH RINGKAS
+// dari Data Generus -- tanpa Kelas Ngaji (tidak relevan) dan tanpa data orang tua/wali/anak
+// ke-/jumlah saudara (PPG sudah dewasa, bukan anak asuh organisasi) -- hanya biodata inti
+// yang relevan utk pembina: nama panggilan, no HP, TTL, jenis kelamin, alamat, tinggi/berat.
+// Hak akses SAMA seperti Data Generus (canViewGenerusData utk lihat, canManageMembers utk
+// edit) -- ini murni pemisahan tampilan/menu berdasarkan jenis biodata, bukan hak akses baru.
+interface PembinaRow {
   id: string
   user_id: string
   nomor_generus: string
@@ -26,13 +32,7 @@ interface GenerusRow {
   alamat: string | null
   tinggi_badan: number | null
   berat_badan: number | null
-  kelas_ngaji: string | null
-  nama_ayah: string | null
-  nama_ibu: string | null
-  nama_wali: string | null
-  no_hp_orangtua_wali: string | null
-  anak_ke: number | null
-  jumlah_saudara: number | null
+  status_pengguna: string | null
   users: {
     id: string
     nama_lengkap: string
@@ -43,10 +43,18 @@ interface GenerusRow {
   } | null
 }
 
-const kelasNgajiLabel: Record<string, string> = {
-  pra_remaja: 'Pra Remaja (SMP)',
-  remaja_muda: 'Remaja Muda (SMA)',
-  remaja_dewasa: 'Remaja Dewasa (Lulus SMA - Usia Mandiri)',
+const statusPenggunaLabel: Record<string, string> = {
+  lajang: 'Lajang',
+  menikah: 'Menikah',
+  pindah_sambung: 'Pindah Sambung',
+  meninggal_dunia: 'Meninggal Dunia',
+}
+
+const statusPenggunaBadge: Record<string, string> = {
+  lajang: 'bg-blue-100 text-blue-700',
+  menikah: 'bg-emerald-100 text-emerald-700',
+  pindah_sambung: 'bg-amber-100 text-amber-700',
+  meninggal_dunia: 'bg-slate-100 text-slate-600',
 }
 
 const emptyForm = {
@@ -58,83 +66,54 @@ const emptyForm = {
   alamat: '',
   tinggi_badan: '',
   berat_badan: '',
-  kelas_ngaji: '',
-  nama_ayah: '',
-  nama_ibu: '',
-  nama_wali: '',
-  no_hp_orangtua_wali: '',
-  anak_ke: '',
-  jumlah_saudara: '',
 }
 
-export default function DataGenerusPage() {
+export default function DataPembinaPage() {
   const { user } = useUser()
-  const [data, setData] = useState<GenerusRow[]>([])
+  const [data, setData] = useState<PembinaRow[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [editTarget, setEditTarget] = useState<GenerusRow | null>(null)
+  const [editTarget, setEditTarget] = useState<PembinaRow | null>(null)
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [exporting, setExporting] = useState(false)
 
   const canManage = checkCanManageMembers(user)
-  // Hak lihat: Super Admin + semua Pengurus Muda-Mudi (Ketua/Wakil/Sekretaris/Bendahara/
-  // Kemandirian/Keputrian/dll) + PPG -- lihat definisi canViewGenerusData(). Generus biasa
-  // TIDAK boleh mengakses halaman ini sama sekali (biodata sensitif). Guard render ada di
-  // bawah, setelah semua hook -- RLS tabel generus juga sudah diperketat sejalan dgn ini.
+  // Sama seperti Data Generus: Super Admin + semua Pengurus Muda-Mudi + PPG boleh melihat.
+  // Generus biasa tidak boleh mengakses sama sekali.
   const hasAccess = canViewGenerusData(user)
 
   const loadData = useCallback(async () => {
     if (!hasAccess) return
     setLoading(true)
-    let query = supabase
+    // PPG (Penggerak Pembina Generus) berada di jenjang Daerah/atas -- tidak terikat scope
+    // desa/kelompok pengurus seperti Generus biasa, jadi TIDAK ada filter desa/kelompok di
+    // sini (beda dari data-generus/page.tsx). Semua yang lolos hasAccess (Super Admin +
+    // seluruh Pengurus Muda-Mudi di jenjang manapun + PPG sendiri) melihat daftar PPG yang sama.
+    const { data: rows, error: err } = await supabase
       .from('generus')
       .select(`
         id, user_id, nomor_generus, nama_panggilan, tempat_lahir, tanggal_lahir, jenis_kelamin,
-        alamat, tinggi_badan, berat_badan, kelas_ngaji, nama_ayah, nama_ibu, nama_wali,
-        no_hp_orangtua_wali, anak_ke, jumlah_saudara,
+        alamat, tinggi_badan, berat_badan, status_pengguna,
         users:user_id(id, nama_lengkap, no_hp, desa:desa_id(id, nama_desa), kelompok:kelompok_id(id, nama_kelompok), roles:role_id(nama_role, tingkatan))
       `)
       .order('nomor_generus')
 
-    const t = user?.role?.tingkatan
-    if (t !== 'super_admin' && t !== 'daerah') {
-      if (user?.kelompok_id) query = query.eq('users.kelompok_id', user.kelompok_id)
-      else if (user?.desa_id) query = query.eq('users.desa_id', user.desa_id)
-    }
-
-    const { data: rows, error: err } = await query
-    if (err) console.error('Data Generus load error:', err)
-    // users bisa null kalau baris generus orphan (tidak ada akun terkait) atau tersaring
-    // scope di atas (PostgREST tetap mengembalikan baris dgn embedded resource null,
-    // bukan mengecualikan barisnya) -- keduanya difilter di sini, bukan cuma yang
-    // roles.tingkatan super_admin. Scope desa/kelompok SENGAJA dicek ULANG secara eksplisit
-    // di client (bukan hanya mengandalkan .eq() pada embedded resource di atas) -- meniru
-    // pola defensif yang sama seperti di generus/page.tsx, karena filter pada relasi nested
-    // lewat PostgREST pernah terbukti tidak selalu konsisten di production untuk kasus lain.
-    // PPG DIKECUALIKAN dari halaman ini -- PPG adalah pembina, bukan Generus, jadi biodatanya
-    // sekarang ditampilkan terpisah di menu "Data Pembina" (app/(dashboard)/data-pembina/page.tsx).
-    // Sebelumnya PPG ikut tercampur di sini (mis. akun "Rizal Firdaus" muncul berdampingan
-    // dengan Generus asli), padahal PPG tidak punya kelas_ngaji dan bukan bagian struktur
-    // keanggotaan Generus sama sekali.
-    const filtered = ((rows as unknown as GenerusRow[]) || []).filter(g => {
-      if (!g.users || g.users.roles?.tingkatan === 'super_admin' || g.users.roles?.tingkatan === 'ppg') return false
-      if (t === 'super_admin' || t === 'daerah') return true
-      if (user?.kelompok_id) return g.users.kelompok?.id === user.kelompok_id
-      if (user?.desa_id) return g.users.desa?.id === user.desa_id
-      return false
-    })
+    if (err) console.error('Data Pembina load error:', err)
+    const filtered = ((rows as unknown as PembinaRow[]) || []).filter(
+      g => g.users?.roles?.tingkatan === 'ppg'
+    )
     setData(filtered)
     setLoading(false)
-  }, [user, hasAccess])
+  }, [hasAccess])
 
   useEffect(() => {
     if (!user) return
     loadData()
   }, [user, loadData])
 
-  const openEdit = (g: GenerusRow) => {
+  const openEdit = (g: PembinaRow) => {
     setEditTarget(g)
     setError('')
     setForm({
@@ -146,13 +125,6 @@ export default function DataGenerusPage() {
       alamat: g.alamat || '',
       tinggi_badan: g.tinggi_badan?.toString() || '',
       berat_badan: g.berat_badan?.toString() || '',
-      kelas_ngaji: g.kelas_ngaji || '',
-      nama_ayah: g.nama_ayah || '',
-      nama_ibu: g.nama_ibu || '',
-      nama_wali: g.nama_wali || '',
-      no_hp_orangtua_wali: g.no_hp_orangtua_wali || '',
-      anak_ke: g.anak_ke?.toString() || '',
-      jumlah_saudara: g.jumlah_saudara?.toString() || '',
     })
   }
 
@@ -167,19 +139,12 @@ export default function DataGenerusPage() {
     if (!form.tanggal_lahir) { setError('Tanggal lahir wajib diisi'); return }
     if (!form.jenis_kelamin) { setError('Jenis kelamin wajib diisi'); return }
     if (!form.alamat) { setError('Alamat wajib diisi'); return }
-    if (!form.no_hp) { setError('No. HP pribadi wajib diisi (jika tidak punya, isi dengan no. HP aktif lain)'); return }
-    const isKelasNgajiRelevant = editTarget.users.roles?.tingkatan !== 'ppg'
-    if (isKelasNgajiRelevant && !form.kelas_ngaji) { setError('Kelas ngaji wajib dipilih'); return }
-    if (!form.nama_ayah) { setError('Nama ayah kandung wajib diisi'); return }
-    if (!form.nama_ibu) { setError('Nama ibu kandung wajib diisi'); return }
-    if (!form.no_hp_orangtua_wali) { setError('No. HP orang tua wajib diisi'); return }
+    if (!form.no_hp) { setError('No. HP pribadi wajib diisi'); return }
 
     setSaving(true)
     try {
       // no_hp adalah field AKUN (users.no_hp), bukan biodata -- lewat /api/users.
-      // Sisanya biodata murni -- lewat /api/generus. Dua request terpisah karena kini
-      // dua domain berbeda, tapi tetap dijalankan berurutan dari satu tombol Simpan
-      // supaya pengalaman admin tidak berubah.
+      // Sisanya biodata murni -- lewat /api/generus. Sama seperti pola di data-generus/page.tsx.
       const resAkun = await authFetch('/api/users', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -201,20 +166,13 @@ export default function DataGenerusPage() {
           alamat: form.alamat,
           tinggi_badan: form.tinggi_badan ? parseFloat(form.tinggi_badan) : null,
           berat_badan: form.berat_badan ? parseFloat(form.berat_badan) : null,
-          kelas_ngaji: form.kelas_ngaji || null,
-          nama_ayah: form.nama_ayah,
-          nama_ibu: form.nama_ibu,
-          nama_wali: form.nama_wali || null,
-          no_hp_orangtua_wali: form.no_hp_orangtua_wali,
-          anak_ke: form.anak_ke ? parseInt(form.anak_ke) : null,
-          jumlah_saudara: form.jumlah_saudara ? parseInt(form.jumlah_saudara) : null,
         }),
       })
       const json = await res.json()
       if (json.error) { setError(json.error); return }
 
       if (user) {
-        await logAudit(user, 'UPDATE', 'Data Generus', editTarget.users.nama_lengkap, {}, editTarget.users.id)
+        await logAudit(user, 'UPDATE', 'Data Pembina', editTarget.users.nama_lengkap, {}, editTarget.users.id)
       }
       setEditTarget(null)
       loadData()
@@ -223,20 +181,15 @@ export default function DataGenerusPage() {
     }
   }
 
-  // Export biodata lengkap -- dipindah dari menu "Pengguna" ke sini karena di halaman
-  // inilah biodata (TTL, kelas ngaji, data ortu, dll) benar-benar tersedia dan bisa dijamin
-  // terisi. Hanya utk yang boleh mengelola (canManage), sama seperti tombol edit.
   const exportColumns = [
-    { header: 'No. Generus', key: 'no', width: 14 },
+    { header: 'No. PPG', key: 'no', width: 14 },
     { header: 'Nama Lengkap', key: 'nama', width: 26 },
     { header: 'Nama Panggilan', key: 'panggilan', width: 18 },
     { header: 'Jenis Kelamin', key: 'jk', width: 14 },
     { header: 'Tempat, Tgl Lahir', key: 'ttl', width: 24 },
-    { header: 'Kelas Ngaji', key: 'kelas_ngaji', width: 24 },
     { header: 'Alamat', key: 'alamat', width: 30 },
-    { header: 'Nama Ayah', key: 'nama_ayah', width: 22 },
-    { header: 'Nama Ibu', key: 'nama_ibu', width: 22 },
-    { header: 'No. HP Ortu/Wali', key: 'hp_ortu', width: 18 },
+    { header: 'No. HP', key: 'no_hp', width: 18 },
+    { header: 'Status Pengguna', key: 'status_pengguna', width: 16 },
     { header: 'Desa', key: 'desa', width: 18 },
     { header: 'Kelompok', key: 'kelompok', width: 18 },
   ]
@@ -251,36 +204,28 @@ export default function DataGenerusPage() {
       panggilan: g.nama_panggilan || '-',
       jk: g.jenis_kelamin?.toUpperCase() || '-',
       ttl,
-      kelas_ngaji: g.kelas_ngaji ? (kelasNgajiLabel[g.kelas_ngaji] || g.kelas_ngaji) : '-',
       alamat: g.alamat || '-',
-      nama_ayah: g.nama_ayah || '-',
-      nama_ibu: g.nama_ibu || '-',
-      hp_ortu: g.no_hp_orangtua_wali || '-',
+      no_hp: g.users?.no_hp || '-',
+      status_pengguna: g.status_pengguna ? (statusPenggunaLabel[g.status_pengguna] || g.status_pengguna) : '-',
       desa: g.users?.desa?.nama_desa || '-',
       kelompok: g.users?.kelompok?.nama_kelompok || '-',
     }
   })
 
-  const exportSubtitle = () => {
-    const t = user?.role?.tingkatan
-    const scope = t === 'kelompok' ? user?.kelompok_id && data[0]?.users?.kelompok?.nama_kelompok
-      : t === 'desa' ? user?.desa_id && data[0]?.users?.desa?.nama_desa
-      : 'Se-Bekasi Timur'
-    return `${scope || 'Se-Bekasi Timur'} -- ${filtered.length} Generus`
-  }
+  const exportSubtitle = () => `Se-Bekasi Timur -- ${filtered.length} Pembina (PPG)`
 
   const handleExportPDF = async () => {
     if (filtered.length === 0) { alert('Tidak ada data untuk diexport.'); return }
     setExporting(true)
     try {
       exportToPDF({
-        title: 'Data Generus (Biodata)',
+        title: 'Data Pembina (PPG)',
         subtitle: exportSubtitle(),
         columns: exportColumns,
         rows: buildExportData(),
-        fileName: `Data-Generus-${new Date().toISOString().slice(0, 10)}`,
+        fileName: `Data-Pembina-${new Date().toISOString().slice(0, 10)}`,
       })
-      if (user) await logAudit(user, 'EXPORT', 'Data Generus', `PDF -- ${filtered.length} generus`)
+      if (user) await logAudit(user, 'EXPORT', 'Data Pembina', `PDF -- ${filtered.length} pembina`)
     } finally {
       setExporting(false)
     }
@@ -291,13 +236,13 @@ export default function DataGenerusPage() {
     setExporting(true)
     try {
       await exportToExcel({
-        title: 'Data Generus (Biodata)',
+        title: 'Data Pembina (PPG)',
         subtitle: exportSubtitle(),
         columns: exportColumns,
         rows: buildExportData(),
-        fileName: `Data-Generus-${new Date().toISOString().slice(0, 10)}`,
+        fileName: `Data-Pembina-${new Date().toISOString().slice(0, 10)}`,
       })
-      if (user) await logAudit(user, 'EXPORT', 'Data Generus', `Excel -- ${filtered.length} generus`)
+      if (user) await logAudit(user, 'EXPORT', 'Data Pembina', `Excel -- ${filtered.length} pembina`)
     } finally {
       setExporting(false)
     }
@@ -314,13 +259,12 @@ export default function DataGenerusPage() {
     )
   })
 
-  // Blokir akses Generus biasa -- biodata sensitif hanya utk Pengurus/PPG/Super Admin.
   if (!hasAccess) {
     return (
       <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
         <div className="text-4xl mb-3">🔒</div>
         <p className="font-semibold text-slate-600">Akses Dibatasi</p>
-        <p className="text-sm mt-1">Menu Data Generus hanya tersedia untuk Pengurus dan PPG.</p>
+        <p className="text-sm mt-1">Menu Data Pembina hanya tersedia untuk Pengurus dan PPG.</p>
       </div>
     )
   }
@@ -329,8 +273,8 @@ export default function DataGenerusPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h2 className="font-bold text-slate-800">Data Generus</h2>
-          <p className="text-slate-400 text-sm">Biodata pribadi {data.length} Generus -- terpisah dari data akun/login (menu Pengguna)</p>
+          <h2 className="font-bold text-slate-800">Data Pembina</h2>
+          <p className="text-slate-400 text-sm">Biodata pribadi {data.length} Pembina (PPG) -- terpisah dari Data Generus</p>
         </div>
         {canManage && (
           <div className="flex items-center gap-2">
@@ -346,7 +290,7 @@ export default function DataGenerusPage() {
         )}
       </div>
 
-      <input type="text" placeholder="Cari nama, no. generus, desa, kelompok..."
+      <input type="text" placeholder="Cari nama, no. PPG, desa, kelompok..."
         value={search} onChange={e => setSearch(e.target.value)}
         className="w-full px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm" />
 
@@ -356,8 +300,8 @@ export default function DataGenerusPage() {
         </div>
       ) : filtered.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
-          <div className="text-4xl mb-2">🗂️</div>
-          <p>Belum ada data Generus</p>
+          <div className="text-4xl mb-2">🛡️</div>
+          <p>Belum ada data Pembina</p>
         </div>
       ) : (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
@@ -365,25 +309,25 @@ export default function DataGenerusPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-slate-500 border-b border-slate-100 bg-slate-50">
-                  <th className="px-4 py-3 font-medium">Generus</th>
-                  <th className="px-4 py-3 font-medium">No. Generus</th>
+                  <th className="px-4 py-3 font-medium">Pembina</th>
+                  <th className="px-4 py-3 font-medium">No. PPG</th>
                   <th className="px-4 py-3 font-medium">Desa / Kelompok</th>
                   <th className="px-4 py-3 font-medium">Jenis Kelamin</th>
-                  {/* Usia dihitung otomatis dari tanggal_lahir, bukan kolom database --
-                      lihat lib/date.ts. Selalu akurat, bertambah sendiri tiap tahun. */}
                   <th className="px-4 py-3 font-medium">Usia</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Kelengkapan</th>
                   {canManage && <th className="px-4 py-3 font-medium">Aksi</th>}
                 </tr>
               </thead>
               <tbody>
                 {filtered.map(g => {
-                  const lengkap = !!(g.tempat_lahir && g.tanggal_lahir && g.jenis_kelamin && g.alamat && g.nama_ayah && g.nama_ibu)
+                  const lengkap = !!(g.tempat_lahir && g.tanggal_lahir && g.jenis_kelamin && g.alamat)
+                  const sp = g.status_pengguna || 'lajang'
                   return (
                     <tr key={g.id} className="border-b border-slate-50 hover:bg-slate-50 transition">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm shrink-0">
+                          <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 font-bold text-sm shrink-0">
                             {g.users?.nama_lengkap?.charAt(0).toUpperCase()}
                           </div>
                           <div>
@@ -399,6 +343,11 @@ export default function DataGenerusPage() {
                       </td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{g.jenis_kelamin?.toUpperCase() || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{g.tanggal_lahir ? formatAge(g.tanggal_lahir) : '—'}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusPenggunaBadge[sp]}`}>
+                          {statusPenggunaLabel[sp]}
+                        </span>
+                      </td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${lengkap ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
                           {lengkap ? 'Lengkap' : 'Belum Lengkap'}
@@ -426,7 +375,7 @@ export default function DataGenerusPage() {
             {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
 
             <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
-              <span className="text-xs text-slate-400">No. Generus</span>
+              <span className="text-xs text-slate-400">No. PPG</span>
               <span className="font-mono text-sm font-semibold text-slate-600">{editTarget.nomor_generus}</span>
               {!canManage && <span className="text-xs text-slate-400 ml-auto">Hanya lihat</span>}
             </div>
@@ -469,34 +418,16 @@ export default function DataGenerusPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Jenis Kelamin *</label>
-                  <select value={form.jenis_kelamin} onChange={e => set('jenis_kelamin', e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60">
-                    <option value="">-- Pilih --</option>
-                    {/* value HARUS lowercase -- kolom generus.jenis_kelamin dibatasi CHECK
-                        constraint anggota_jenis_kelamin_check (hanya 'laki-laki'/'perempuan').
-                        Value uppercase sebelumnya membuat setiap update GAGAL DIAM-DIAM (server
-                        cuma console.error, tidak pernah melapor balik ke user) -- bug ini
-                        ditemukan dari kasus nyata: 2 akun sudah beberapa kali "berhasil" disimpan
-                        di UI/audit log tapi datanya tidak pernah benar-benar tersimpan. */}
-                    <option value="laki-laki">LAKI-LAKI</option>
-                    <option value="perempuan">PEREMPUAN</option>
-                  </select>
-                </div>
-                {editTarget.users?.roles?.tingkatan !== 'ppg' && (
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Kelas Ngaji *</label>
-                    <select value={form.kelas_ngaji} onChange={e => set('kelas_ngaji', e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60">
-                      <option value="">-- Pilih --</option>
-                      <option value="pra_remaja">{kelasNgajiLabel.pra_remaja}</option>
-                      <option value="remaja_muda">{kelasNgajiLabel.remaja_muda}</option>
-                      <option value="remaja_dewasa">{kelasNgajiLabel.remaja_dewasa}</option>
-                    </select>
-                  </div>
-                )}
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Jenis Kelamin *</label>
+                <select value={form.jenis_kelamin} onChange={e => set('jenis_kelamin', e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60">
+                  <option value="">-- Pilih --</option>
+                  {/* value HARUS lowercase -- kolom generus.jenis_kelamin dibatasi CHECK
+                      constraint anggota_jenis_kelamin_check (hanya 'laki-laki'/'perempuan'). */}
+                  <option value="laki-laki">LAKI-LAKI</option>
+                  <option value="perempuan">PEREMPUAN</option>
+                </select>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -519,54 +450,6 @@ export default function DataGenerusPage() {
                 <textarea value={form.alamat} onChange={e => setUpper('alamat', e.target.value)}
                   rows={2} placeholder="ALAMAT LENGKAP"
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none uppercase disabled:opacity-60" />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Anak Ke-</label>
-                  <input type="number" min="1" max="20" value={form.anak_ke} onChange={e => set('anak_ke', e.target.value)}
-                    placeholder="1"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Dari ... Bersaudara</label>
-                  <input type="number" min="1" max="20" value={form.jumlah_saudara} onChange={e => set('jumlah_saudara', e.target.value)}
-                    placeholder="3"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60" />
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-slate-100">
-                <p className="text-xs font-semibold text-slate-500 mb-3">Data Orang Tua / Wali</p>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Nama Ayah Kandung * (huruf kapital)</label>
-                    <input value={form.nama_ayah}
-                      onChange={e => setUpper('nama_ayah', e.target.value)}
-                      placeholder="NAMA AYAH"
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase disabled:opacity-60" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Nama Ibu Kandung * (huruf kapital)</label>
-                    <input value={form.nama_ibu}
-                      onChange={e => setUpper('nama_ibu', e.target.value)}
-                      placeholder="NAMA IBU"
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase disabled:opacity-60" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Nama Wali (jika ada, huruf kapital)</label>
-                    <input value={form.nama_wali}
-                      onChange={e => setUpper('nama_wali', e.target.value)}
-                      placeholder="NAMA WALI (opsional)"
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase disabled:opacity-60" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">No. HP Orang Tua *</label>
-                    <input value={form.no_hp_orangtua_wali} onChange={e => set('no_hp_orangtua_wali', e.target.value)}
-                      placeholder="08xx-xxxx-xxxx"
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60" />
-                  </div>
-                </div>
               </div>
             </fieldset>
 

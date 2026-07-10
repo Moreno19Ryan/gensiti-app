@@ -240,8 +240,14 @@ export default function PenggunaPage() {
   const doActualSave = async () => {
     setSaving(true)
     try {
+      // PPG dikecualikan dari arsip otomatis saat status_pengguna = 'menikah' -- role PPG
+      // (Penggerak Pembina Generus) mayoritas sudah menikah, itu bukan indikasi ybs berhenti
+      // aktif/butuh diarsipkan seperti pada Generus biasa. Meninggal Dunia & Pindah Sambung ke
+      // Daerah Lain TETAP mengarsipkan meski PPG, karena dua kondisi itu memang berarti ybs
+      // sudah tidak bisa/tidak lagi menjalankan tugasnya di Bekasi Timur.
+      const isTargetPPG = editTarget?.roles?.tingkatan === 'ppg'
       const needsArchive = !!editTarget && (
-        form.status_pengguna === 'menikah' ||
+        (form.status_pengguna === 'menikah' && !isTargetPPG) ||
         form.status_pengguna === 'meninggal_dunia' ||
         (form.status_pengguna === 'pindah_sambung' && form.pindah_jenis === 'daerah_lain')
       )
@@ -417,9 +423,11 @@ export default function PenggunaPage() {
       if (!form.pindah_kelompok_id) { setError('Pilih kelompok tujuan pindah sambung'); return }
     }
 
-    // Cek apakah perlu arsip → tampilkan konfirmasi
+    // Cek apakah perlu arsip → tampilkan konfirmasi. PPG dikecualikan dari arsip otomatis
+    // saat status_pengguna = 'menikah' -- lihat catatan lengkap di doActualSave.
+    const isTargetPPGForSave = editTarget?.roles?.tingkatan === 'ppg'
     const needsArchive = !!editTarget && (
-      form.status_pengguna === 'menikah' ||
+      (form.status_pengguna === 'menikah' && !isTargetPPGForSave) ||
       form.status_pengguna === 'meninggal_dunia' ||
       (form.status_pengguna === 'pindah_sambung' && form.pindah_jenis === 'daerah_lain')
     )
@@ -914,7 +922,13 @@ export default function PenggunaPage() {
                   </div>
                 )}
 
-                {(form.status_pengguna === 'menikah' || form.status_pengguna === 'meninggal_dunia') && (
+                {form.status_pengguna === 'menikah' && editTarget?.roles?.tingkatan === 'ppg' && (
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 text-xs leading-relaxed">
+                    Akun PPG tidak diarsipkan otomatis saat berstatus "Menikah" -- status hanya dicatat sebagai info biodata, akun tetap aktif seperti biasa.
+                  </div>
+                )}
+
+                {((form.status_pengguna === 'menikah' && editTarget?.roles?.tingkatan !== 'ppg') || form.status_pengguna === 'meninggal_dunia') && (
                   <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs leading-relaxed">
                     Menyimpan dengan status ini akan mengarsipkan dan menonaktifkan akun pengguna. Diperlukan 2x konfirmasi sebelum perubahan diterapkan.
                   </div>

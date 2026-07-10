@@ -30,6 +30,11 @@ const navItems: NavItem[] = [
   // dll), sengaja dipisah dari menu "Pengguna" (akun/login) supaya data sensitif tidak
   // otomatis terlihat setiap kali mengelola akun. Visibilitas sama persis dengan Pengguna.
   { href: '/data-generus', label: 'Data Generus', icon: '🗂️', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true },
+  // Data Pembina -- biodata PPG (Penggerak Pembina Generus), dipisah dari Data Generus
+  // karena PPG adalah pembina, bukan Generus (lihat catatan lengkap di
+  // app/(dashboard)/data-pembina/page.tsx). Visibilitas sidebar sama dengan Data Generus,
+  // PLUS 'ppg' sendiri supaya PPG bisa melihat/mengedit biodatanya sendiri di sini.
+  { href: '/data-pembina', label: 'Data Pembina', icon: '🛡️', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], hideForGenerus: true },
   { href: '/kegiatan', label: 'Kegiatan', icon: '📅', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
   { href: '/absensi', label: 'Absensi', icon: '✅', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, requiresPresensiAccess: true },
   { href: '/keuangan', label: 'Keuangan', icon: '💰', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true },
