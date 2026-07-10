@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { logAudit } from '@/lib/audit'
 import { authFetch } from '@/lib/auth'
 import { canManageMembers as checkCanManageMembers, canViewGenerusData } from '@/lib/roles'
+import { useFeatureAccess } from '@/lib/feature-toggles'
 import { formatAge } from '@/lib/date'
 import Modal from '@/components/Modal'
 import { exportToPDF, exportToExcel } from '@/lib/export'
@@ -84,6 +85,7 @@ export default function DataGenerusPage() {
   // TIDAK boleh mengakses halaman ini sama sekali (biodata sensitif). Guard render ada di
   // bawah, setelah semua hook -- RLS tabel generus juga sudah diperketat sejalan dgn ini.
   const hasAccess = canViewGenerusData(user)
+  const { enabled: featureEnabled, checking: featureChecking } = useFeatureAccess(user, 'data-generus')
 
   const loadData = useCallback(async () => {
     if (!hasAccess) return
@@ -321,6 +323,18 @@ export default function DataGenerusPage() {
         <div className="text-4xl mb-3">🔒</div>
         <p className="font-semibold text-slate-600">Akses Dibatasi</p>
         <p className="text-sm mt-1">Menu Data Generus hanya tersedia untuk Pengurus dan PPG.</p>
+      </div>
+    )
+  }
+
+  // Lapisan kedua setelah sidebar -- kalau Super Admin mematikan menu ini utk jenjang role
+  // user ini lewat Pengaturan Fitur, akses langsung via URL juga diblok di sini.
+  if (!featureChecking && !featureEnabled) {
+    return (
+      <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
+        <div className="text-4xl mb-3">🚫</div>
+        <p className="font-semibold text-slate-600">Fitur Dinonaktifkan</p>
+        <p className="text-sm mt-1">Menu Data Generus saat ini dinonaktifkan oleh Super Admin untuk jenjang Anda.</p>
       </div>
     )
   }

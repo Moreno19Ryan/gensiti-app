@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { logAudit } from '@/lib/audit'
 import { authFetch } from '@/lib/auth'
 import { canManageMembers as checkCanManageMembers } from '@/lib/roles'
+import { useFeatureAccess } from '@/lib/feature-toggles'
 import { formatAge } from '@/lib/date'
 import Modal from '@/components/Modal'
 
@@ -510,6 +511,19 @@ export default function PenggunaPage() {
   // Fitur export PDF/Excel dipindah ke menu "Data Generus" -- di sana biodata
   // lengkap (TTL, kelas ngaji, dll) tersedia dan bisa dijamin terisi benar, sedangkan
   // menu ini sekarang murni akun.
+
+  // Lapisan kedua setelah sidebar -- kalau Super Admin mematikan menu "Pengguna" utk jenjang
+  // role user ini lewat Pengaturan Fitur, akses langsung via URL juga diblok di sini.
+  const { enabled: featureEnabled, checking: featureChecking } = useFeatureAccess(user, 'generus')
+  if (!featureChecking && !featureEnabled) {
+    return (
+      <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
+        <div className="text-4xl mb-3">🚫</div>
+        <p className="font-semibold text-slate-600">Fitur Dinonaktifkan</p>
+        <p className="text-sm mt-1">Menu Pengguna saat ini dinonaktifkan oleh Super Admin untuk jenjang Anda.</p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">

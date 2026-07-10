@@ -7,6 +7,7 @@ import { useUser } from '@/lib/user-context'
 import { signOut } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { isGenerusBiasa, canManageMembers as checkCanManageMembers, canManagePresensi as checkCanManagePresensi } from '@/lib/roles'
+import { loadFeatureToggles, isFeatureEnabled, FeatureToggle } from '@/lib/feature-toggles'
 
 interface NavItem {
   href: string
@@ -20,30 +21,35 @@ interface NavItem {
   // Menu yang tidak relevan untuk Generus biasa (bukan pengurus) — mis. Keuangan, Pengguna, Organisasi.
   // Generus biasa hanya perlu melihat Kegiatan, Pengumuman, Dokumen, Notifikasi, dan Profil sendiri.
   hideForGenerus?: boolean
+  // Kunci pencocokan ke tabel feature_toggles (lib/feature-toggles.ts) -- HANYA menu yang
+  // di-seed di migrasi create_feature_toggles yang punya field ini. Menu tanpa menuKey (mis.
+  // Dashboard, Notifikasi, dan semua menu eksklusif Super Admin) selalu tampil, tidak pernah
+  // bisa dimatikan lewat halaman "Pengaturan Fitur".
+  menuKey?: string
 }
 
 const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: '🏠', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
   { href: '/ppg', label: 'Dashboard PPG', icon: '🛡️', roles: ['ppg'] },
-  { href: '/generus', label: 'Pengguna', icon: '👥', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true },
+  { href: '/generus', label: 'Pengguna', icon: '👥', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, menuKey: 'generus' },
   // Data Generus -- biodata pribadi/sensitif (tempat/tanggal lahir, alamat, data orang tua,
   // dll), sengaja dipisah dari menu "Pengguna" (akun/login) supaya data sensitif tidak
   // otomatis terlihat setiap kali mengelola akun. Visibilitas sama persis dengan Pengguna.
-  { href: '/data-generus', label: 'Data Generus', icon: '🗂️', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true },
+  { href: '/data-generus', label: 'Data Generus', icon: '🗂️', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, menuKey: 'data-generus' },
   // Data Pembina -- biodata PPG (Penggerak Pembina Generus), dipisah dari Data Generus
   // karena PPG adalah pembina, bukan Generus (lihat catatan lengkap di
   // app/(dashboard)/data-pembina/page.tsx). Visibilitas sidebar sama dengan Data Generus,
   // PLUS 'ppg' sendiri supaya PPG bisa melihat/mengedit biodatanya sendiri di sini.
-  { href: '/data-pembina', label: 'Data Pembina', icon: '🛡️', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], hideForGenerus: true },
-  { href: '/kegiatan', label: 'Kegiatan', icon: '📅', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
-  { href: '/absensi', label: 'Absensi', icon: '✅', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, requiresPresensiAccess: true },
-  { href: '/keuangan', label: 'Keuangan', icon: '💰', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true },
-  { href: '/pengumuman', label: 'Pengumuman', icon: '📢', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
-  { href: '/dokumen', label: 'Dokumen', icon: '📁', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
+  { href: '/data-pembina', label: 'Data Pembina', icon: '🛡️', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], hideForGenerus: true, menuKey: 'data-pembina' },
+  { href: '/kegiatan', label: 'Kegiatan', icon: '📅', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], menuKey: 'kegiatan' },
+  { href: '/absensi', label: 'Absensi', icon: '✅', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, requiresPresensiAccess: true, menuKey: 'absensi' },
+  { href: '/keuangan', label: 'Keuangan', icon: '💰', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, menuKey: 'keuangan' },
+  { href: '/pengumuman', label: 'Pengumuman', icon: '📢', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], menuKey: 'pengumuman' },
+  { href: '/dokumen', label: 'Dokumen', icon: '📁', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], menuKey: 'dokumen' },
   // Super Admin SENGAJA TIDAK termasuk -- Catatan Pembinaan murni komunikasi satu arah
   // PPG ke Pengurus organisasi, bukan urusan Super Admin sama sekali (sejak audit peran;
   // RLS 'catatan_pembinaan_all_superadmin' juga sudah dicabut total di database).
-  { href: '/catatan-pembinaan', label: 'Catatan Pembinaan', icon: '📝', roles: ['daerah', 'desa', 'kelompok', 'ppg'], hideForGenerus: true },
+  { href: '/catatan-pembinaan', label: 'Catatan Pembinaan', icon: '📝', roles: ['daerah', 'desa', 'kelompok', 'ppg'], hideForGenerus: true, menuKey: 'catatan-pembinaan' },
   { href: '/notifikasi', label: 'Notifikasi', icon: '🔔', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
   // "Organisasi & Role" -- gabungan Desa/Kelompok (dulu /organisasi) + Role (dulu tab di
   // menu "Administrasi Sistem" yang sudah dihapus) supaya semua master data struktural ada
@@ -57,7 +63,10 @@ const navItems: NavItem[] = [
   // app/(dashboard)/monitoring/page.tsx) -- requiresKvs di sini memastikan menu ini muncul
   // di sidebar untuk siapapun yang setidaknya berhak atas Audit Log (kriteria paling longgar
   // di antara 4 sumber gabungan), sisanya baru disaring per-tab di dalam halaman.
-  { href: '/monitoring', label: 'Monitoring & Log', icon: '📊', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], requiresKvs: true, hideForGenerus: true },
+  { href: '/monitoring', label: 'Monitoring & Log', icon: '📊', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], requiresKvs: true, hideForGenerus: true, menuKey: 'monitoring' },
+  // Pengaturan Fitur -- halaman toggle on/off menu per jenjang role, eksklusif Super Admin.
+  // TIDAK punya menuKey (menu Super Admin tidak pernah bisa dimatikan lewat dirinya sendiri).
+  { href: '/pengaturan-fitur', label: 'Pengaturan Fitur', icon: '🎛️', roles: ['super_admin'] },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -73,6 +82,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // (selalu diizinkan lanjut) supaya tetap bisa menonaktifkan mode ini atau menyelesaikan
   // operasi berisiko yang jadi alasan mode ini diaktifkan.
   const [maintenanceOk, setMaintenanceOk] = useState<boolean | null>(null)
+  // Toggle fitur per menu x role (lib/feature-toggles.ts) -- dimuat sekali saat user siap,
+  // dipakai utk menyaring visibleNav di bawah. null = belum dimuat (semua menu dianggap
+  // tampil dulu, fail-open, supaya sidebar tidak "berkedip kosong" sesaat sebelum data toggle
+  // datang -- lihat isFeatureEnabled yang juga fail-open kalau toggles masih []).
+  const [featureToggles, setFeatureToggles] = useState<FeatureToggle[]>([])
+
+  useEffect(() => {
+    if (!user) return
+    loadFeatureToggles().then(setFeatureToggles)
+  }, [user])
 
   useEffect(() => {
     const savedCollapse = localStorage.getItem('gensiti_sidebar_collapsed')
@@ -193,6 +212,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (item.requiresKvs && !canManageMembers) return false
     if (item.requiresPresensiAccess && !canManagePresensi) return false
     if (item.hideForGenerus && isGenerus) return false
+    if (item.menuKey && !isFeatureEnabled(featureToggles, item.menuKey, tingkatan)) return false
     return true
   })
 

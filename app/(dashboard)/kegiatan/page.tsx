@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { Kegiatan } from '@/lib/types'
 import { logAudit } from '@/lib/audit'
 import { canManageKontenOrganisasi, isGenerusBiasa } from '@/lib/roles'
+import { useFeatureAccess } from '@/lib/feature-toggles'
 import Modal from '@/components/Modal'
 import PresensiPanel from '@/components/PresensiPanel'
 import PengajuanIzinPanel from '@/components/PengajuanIzinPanel'
@@ -68,6 +69,11 @@ const emptyForm = {
 
 export default function KegiatanPage() {
   const { user } = useUser()
+  // Lapisan kedua setelah sidebar -- kalau Super Admin mematikan menu Kegiatan utk jenjang
+  // role user ini lewat Pengaturan Fitur, akses langsung via URL juga diblok (guard render di
+  // bawah, setelah return utama). Toggle ini berlaku per JENJANG (Kelompok/Desa/Daerah/PPG),
+  // jadi kalau dimatikan utk Kelompok, Generus biasa DAN Ketua Kelompok sama-sama terdampak.
+  const { enabled: featureEnabled, checking: featureChecking } = useFeatureAccess(user, 'kegiatan')
   const [data, setData] = useState<Kegiatan[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
@@ -341,6 +347,16 @@ export default function KegiatanPage() {
     } finally {
       setExporting(false)
     }
+  }
+
+  if (!featureChecking && !featureEnabled) {
+    return (
+      <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
+        <div className="text-4xl mb-3">🚫</div>
+        <p className="font-semibold text-slate-600">Fitur Dinonaktifkan</p>
+        <p className="text-sm mt-1">Menu Kegiatan saat ini dinonaktifkan oleh Super Admin untuk jenjang Anda.</p>
+      </div>
+    )
   }
 
   return (

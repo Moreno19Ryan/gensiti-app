@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { logAudit } from '@/lib/audit'
 import { authFetch } from '@/lib/auth'
 import { canManageMembers as checkCanManageMembers, canViewGenerusData } from '@/lib/roles'
+import { useFeatureAccess } from '@/lib/feature-toggles'
 import { formatAge } from '@/lib/date'
 import Modal from '@/components/Modal'
 import { exportToPDF, exportToExcel } from '@/lib/export'
@@ -83,6 +84,7 @@ export default function DataPembinaPage() {
   // Sama seperti Data Generus: Super Admin + semua Pengurus Muda-Mudi + PPG boleh melihat.
   // Generus biasa tidak boleh mengakses sama sekali.
   const hasAccess = canViewGenerusData(user)
+  const { enabled: featureEnabled, checking: featureChecking } = useFeatureAccess(user, 'data-pembina')
 
   const loadData = useCallback(async () => {
     if (!hasAccess) return
@@ -265,6 +267,21 @@ export default function DataPembinaPage() {
         <div className="text-4xl mb-3">🔒</div>
         <p className="font-semibold text-slate-600">Akses Dibatasi</p>
         <p className="text-sm mt-1">Menu Data Pembina hanya tersedia untuk Pengurus dan PPG.</p>
+      </div>
+    )
+  }
+
+  // Lapisan kedua setelah sidebar -- kalau Super Admin mematikan menu ini utk jenjang role
+  // user ini lewat Pengaturan Fitur, akses langsung via URL juga diblok di sini. PPG sendiri
+  // tidak punya toggle utk menu ini krn ini biodatanya sendiri (lihat seed migrasi -- data-
+  // pembina TETAP di-seed utk 'ppg' krn PPG lain mungkin ingin dimatikan aksesnya oleh SA,
+  // meski jarang -- tetap konsisten dgn desain "gerbang tambahan", bukan pengecualian khusus).
+  if (!featureChecking && !featureEnabled) {
+    return (
+      <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
+        <div className="text-4xl mb-3">🚫</div>
+        <p className="font-semibold text-slate-600">Fitur Dinonaktifkan</p>
+        <p className="text-sm mt-1">Menu Data Pembina saat ini dinonaktifkan oleh Super Admin untuk jenjang Anda.</p>
       </div>
     )
   }

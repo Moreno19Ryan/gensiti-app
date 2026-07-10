@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { Kegiatan, Absensi, PengajuanIzinPresensi } from '@/lib/types'
 import { logAudit } from '@/lib/audit'
 import { canManagePresensi } from '@/lib/roles'
+import { useFeatureAccess } from '@/lib/feature-toggles'
 import { ExportOptions } from '@/lib/export'
 import ExportPreviewModal from '@/components/ExportPreviewModal'
 
@@ -53,6 +54,7 @@ export default function AbsensiPage() {
   const canManage = canManagePresensi(user)
   const isSuperAdmin = user?.role?.tingkatan === 'super_admin'
   const canView = canManage || isSuperAdmin
+  const { enabled: featureEnabled, checking: featureChecking } = useFeatureAccess(user, 'absensi')
 
   const [kegiatanList, setKegiatanList] = useState<Kegiatan[]>([])
   const [selectedKegiatan, setSelectedKegiatan] = useState<Kegiatan | null>(null)
@@ -357,6 +359,18 @@ export default function AbsensiPage() {
       <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
         <div className="text-4xl mb-2">🔒</div>
         <p>Halaman ini hanya untuk pengurus.</p>
+      </div>
+    )
+  }
+
+  // Lapisan kedua setelah sidebar -- kalau Super Admin mematikan menu Absensi utk jenjang
+  // role user ini lewat Pengaturan Fitur, akses langsung via URL juga diblok di sini.
+  if (!featureChecking && !featureEnabled) {
+    return (
+      <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
+        <div className="text-4xl mb-3">🚫</div>
+        <p className="font-semibold text-slate-600">Fitur Dinonaktifkan</p>
+        <p className="text-sm mt-1">Menu Absensi saat ini dinonaktifkan oleh Super Admin untuk jenjang Anda.</p>
       </div>
     )
   }

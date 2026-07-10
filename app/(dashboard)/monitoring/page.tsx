@@ -8,6 +8,7 @@ import { logAudit } from '@/lib/audit'
 import Modal from '@/components/Modal'
 import { AuditLog, EmailLog, EmailStatus, SystemConfig } from '@/lib/types'
 import { canManageMembers } from '@/lib/roles'
+import { useFeatureAccess } from '@/lib/feature-toggles'
 
 // Halaman "Monitoring & Log" -- gabungan sumber observability & kontrol teknis sistem yang
 // sebelumnya terpisah (Kesehatan Sistem & Sesi Aktif dari menu "Administrasi Sistem", plus
@@ -42,17 +43,27 @@ export default function MonitoringPage() {
   const isDaerah = tingkatan === 'daerah'
   const canSeeAudit = canManageMembers(user)
   const canSeeEmail = isSuperAdmin || isDaerah
+  // Lapisan kedua setelah sidebar -- kalau Super Admin mematikan menu ini utk jenjang role
+  // user ini lewat Pengaturan Fitur, akses langsung via URL juga diblok (lihat availableTabs
+  // di bawah -- non-Super-Admin yang terkena toggle nonaktif akan punya availableTabs kosong,
+  // dan auto-redirect ke /dashboard yang SUDAH ADA di useEffect di bawah otomatis menangani
+  // ini, tanpa perlu guard render terpisah). Super Admin SELALU enabled=true, tidak terdampak.
+  const { enabled: featureEnabled, checking: featureChecking } = useFeatureAccess(user, 'monitoring')
 
   const availableTabs = useMemo(() => {
     const tabs: { key: Tab; label: string }[] = []
+    if (featureChecking) return tabs
+    // featureEnabled SELALU true utk Super Admin (lihat isFeatureEnabled) -- toggle Monitoring
+    // hanya benar-benar bisa mematikan tab Audit Log & Email Log utk role daerah/desa/kelompok
+    // (Ketua/Wapon/Sekretaris), tab yang eksklusif Super Admin tidak pernah terdampak.
     if (isSuperAdmin) tabs.push({ key: 'kesehatan', label: '💡 Kesehatan Sistem' })
-    if (canSeeAudit) tabs.push({ key: 'audit', label: '📋 Audit Log' })
-    if (canSeeEmail) tabs.push({ key: 'email', label: '✉️ Email Log' })
+    if (canSeeAudit && featureEnabled) tabs.push({ key: 'audit', label: '📋 Audit Log' })
+    if (canSeeEmail && featureEnabled) tabs.push({ key: 'email', label: '✉️ Email Log' })
     if (isSuperAdmin) tabs.push({ key: 'sesi', label: '🔐 Sesi Aktif' })
     if (isSuperAdmin) tabs.push({ key: 'maintenance', label: '🛠️ Perawatan Sistem' })
     return tabs
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuperAdmin, canSeeAudit, canSeeEmail])
+  }, [isSuperAdmin, canSeeAudit, canSeeEmail, featureEnabled, featureChecking])
 
   const [tab, setTab] = useState<Tab | null>(null)
 

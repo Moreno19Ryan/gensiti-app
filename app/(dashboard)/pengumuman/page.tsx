@@ -7,6 +7,7 @@ import { Pengumuman } from '@/lib/types'
 import Modal from '@/components/Modal'
 import { logAudit } from '@/lib/audit'
 import { canManageKontenOrganisasi } from '@/lib/roles'
+import { useFeatureAccess } from '@/lib/feature-toggles'
 
 interface DesaOpt { id: string; nama_desa: string }
 interface KelompokOpt { id: string; nama_kelompok: string; desa_id: string }
@@ -22,6 +23,8 @@ const emptyForm = {
 
 export default function PengumumanPage() {
   const { user } = useUser()
+  // Lapisan kedua setelah sidebar -- lihat catatan lengkap di kegiatan/page.tsx.
+  const { enabled: featureEnabled, checking: featureChecking } = useFeatureAccess(user, 'pengumuman')
   const [data, setData] = useState<Pengumuman[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -171,6 +174,16 @@ export default function PengumumanPage() {
       if (sortBy === 'terbaru') return new Date(b.tanggal_publish).getTime() - new Date(a.tanggal_publish).getTime()
       return new Date(a.tanggal_publish).getTime() - new Date(b.tanggal_publish).getTime()
     })
+
+  if (!featureChecking && !featureEnabled) {
+    return (
+      <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
+        <div className="text-4xl mb-3">🚫</div>
+        <p className="font-semibold text-slate-600">Fitur Dinonaktifkan</p>
+        <p className="text-sm mt-1">Menu Pengumuman saat ini dinonaktifkan oleh Super Admin untuk jenjang Anda.</p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">

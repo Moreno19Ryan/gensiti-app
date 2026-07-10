@@ -6,6 +6,7 @@ import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { CatatanPembinaan } from '@/lib/types'
 import { isPPG } from '@/lib/roles'
+import { useFeatureAccess } from '@/lib/feature-toggles'
 
 interface DesaOpt { id: string; nama_desa: string }
 interface KelompokOpt { id: string; nama_kelompok: string; desa_id: string }
@@ -22,6 +23,8 @@ export default function CatatanPembinaanPage() {
   const router = useRouter()
   const isPPGUser = isPPG(user)
   const isSuperAdmin = user?.role?.tingkatan === 'super_admin'
+  // Lapisan kedua setelah sidebar -- lihat catatan lengkap di kegiatan/page.tsx.
+  const { enabled: featureEnabled, checking: featureChecking } = useFeatureAccess(user, 'catatan-pembinaan')
 
   useEffect(() => {
     if (user && isSuperAdmin) router.replace('/dashboard')
@@ -106,6 +109,16 @@ export default function CatatanPembinaanPage() {
     if (c.kelompok) return `Kelompok ${c.kelompok.nama_kelompok}`
     if (c.desa) return `Desa ${c.desa.nama_desa}`
     return 'Daerah (Umum)'
+  }
+
+  if (!featureChecking && !featureEnabled) {
+    return (
+      <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
+        <div className="text-4xl mb-3">🚫</div>
+        <p className="font-semibold text-slate-600">Fitur Dinonaktifkan</p>
+        <p className="text-sm mt-1">Menu Catatan Pembinaan saat ini dinonaktifkan oleh Super Admin untuk jenjang Anda.</p>
+      </div>
+    )
   }
 
   return (

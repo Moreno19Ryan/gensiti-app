@@ -5,6 +5,7 @@ import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { logAudit } from '@/lib/audit'
 import { isGenerusBiasa, canManageKontenOrganisasi } from '@/lib/roles'
+import { useFeatureAccess } from '@/lib/feature-toggles'
 import Modal from '@/components/Modal'
 
 interface Dokumen {
@@ -57,6 +58,8 @@ const formatSize = (bytes: number | null) => {
 
 export default function DokumenPage() {
   const { user } = useUser()
+  // Lapisan kedua setelah sidebar -- lihat catatan lengkap di kegiatan/page.tsx.
+  const { enabled: featureEnabled, checking: featureChecking } = useFeatureAccess(user, 'dokumen')
   const [data, setData] = useState<Dokumen[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -204,6 +207,16 @@ export default function DokumenPage() {
   // Pengurus Desa/Kelompok dikunci ke scope-nya sendiri agar tidak submit ke luar wilayahnya —
   // RLS di database sudah menolak percobaan ini juga, tapi mengunci di UI mencegah error membingungkan.
   const canPickScope = ['super_admin', 'daerah'].includes(user?.role?.tingkatan || '')
+
+  if (!featureChecking && !featureEnabled) {
+    return (
+      <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
+        <div className="text-4xl mb-3">🚫</div>
+        <p className="font-semibold text-slate-600">Fitur Dinonaktifkan</p>
+        <p className="text-sm mt-1">Menu Dokumen saat ini dinonaktifkan oleh Super Admin untuk jenjang Anda.</p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">

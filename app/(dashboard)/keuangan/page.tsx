@@ -8,6 +8,7 @@ import Modal from '@/components/Modal'
 import ExportPreviewModal from '@/components/ExportPreviewModal'
 import { logAudit } from '@/lib/audit'
 import { isGenerusBiasa, isBendahara, canAjukanReimbursement } from '@/lib/roles'
+import { useFeatureAccess } from '@/lib/feature-toggles'
 import { ExportOptions } from '@/lib/export'
 
 interface DesaOpt { id: string; nama_desa: string }
@@ -43,8 +44,10 @@ const statusPengajuanLabel: Record<string, { label: string; color: string }> = {
 // manapun) yang boleh mencatat transaksi Keuangan langsung. Pengurus lain (Ketua/Wapon/
 // Sekretaris/Kemandirian/Keputrian/dll) WAJIB mengajukan reimbursement pengeluaran yang
 // perlu di-ACC Bendahara sebelum masuk sebagai transaksi resmi -- lihat tab "Pengajuan
-// Reimbursement" di bawah. Semua pengurus (termasuk PPG, read-only) tetap bisa LIHAT
-// seluruh laporan keuangan wilayahnya seperti sebelumnya, hanya beda di hak tulis.
+// Reimbursement" di bawah. Semua pengurus operasional (Daerah/Desa/Kelompok) tetap bisa
+// LIHAT seluruh laporan keuangan wilayahnya, hanya beda di hak tulis. PPG SENGAJA TIDAK
+// bisa lihat sama sekali (lihat hasAccess di bawah) -- PPG bukan pengurus operasional dan
+// tidak berkepentingan dengan data keuangan wilayah manapun.
 export default function KeuanganPage() {
   const { user } = useUser()
 
@@ -55,6 +58,7 @@ export default function KeuanganPage() {
   // tidak berkepentingan dengan data keuangan wilayah manapun. Konsisten dgn RLS
   // keuangan_select & pengajuan_reimbursement_select yang sudah diperbaiki serupa.
   const hasAccess = !!tingkatan && ['daerah', 'desa', 'kelompok'].includes(tingkatan) && !isGenerusBiasa(user)
+  const { enabled: featureEnabled, checking: featureChecking } = useFeatureAccess(user, 'keuangan')
 
   // Bendahara-only utk transaksi langsung. Sebelumnya isPengurus() dipakai di sini (keliru
   // meloloskan SEMUA role pengurus, padahal RLS database cuma pernah izinkan Ketua/Wapon) --
@@ -422,6 +426,18 @@ export default function KeuanganPage() {
         <div className="text-4xl mb-3">🔒</div>
         <p className="font-semibold text-slate-600">Akses Dibatasi</p>
         <p className="text-sm mt-1">Menu Keuangan hanya tersedia untuk role Daerah, Desa, Kelompok, dan PPG.</p>
+      </div>
+    )
+  }
+
+  // Lapisan kedua setelah sidebar -- kalau Super Admin mematikan menu ini utk jenjang role
+  // user ini lewat Pengaturan Fitur, akses langsung via URL juga diblok di sini.
+  if (!featureChecking && !featureEnabled) {
+    return (
+      <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
+        <div className="text-4xl mb-3">🚫</div>
+        <p className="font-semibold text-slate-600">Fitur Dinonaktifkan</p>
+        <p className="text-sm mt-1">Menu Keuangan saat ini dinonaktifkan oleh Super Admin untuk jenjang Anda.</p>
       </div>
     )
   }
