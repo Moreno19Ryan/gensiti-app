@@ -95,10 +95,42 @@ function canActOnScope(caller: Caller, targetDesaId: string | null, targetKelomp
 // Super Admin adalah akun tunggal & mutlak — tidak boleh ada akun kedua yang dibuat
 // dengan role bertingkatan super_admin, oleh siapapun (termasuk sesama Super Admin),
 // lewat jalur aplikasi ini. Perubahan role sistem hanya boleh terjadi langsung di database.
-async function isSuperAdminRole(supabaseAdmin: ReturnType<typeof adminClient>, roleId: string | null | undefined): Promise<boolean> {
-  if (!roleId) return false
+// Ditegakkan lewat getRoleTingkatan() di bawah (bukan fungsi terpisah lagi) supaya query role
+// hanya dilakukan sekali per request dan dipakai bersama oleh cek super_admin & cek hierarki.
+async function getRoleTingkatan(supabaseAdmin: ReturnType<typeof adminClient>, roleId: string | null | undefined): Promise<string | null> {
+  if (!roleId) return null
   const { data } = await supabaseAdmin.from('roles').select('tingkatan').eq('id', roleId).single()
-  return data?.tingkatan === 'super_admin'
+  return data?.tingkatan || null
+}
+
+// Hierarki jenjang, dari paling "bawah" ke paling "atas" -- HARUS SELALU KONSISTEN dengan
+// TINGKATAN_HIERARKI + getAllowedTargetTingkatan di lib/roles.ts (versi UI, hanya menyembunyikan
+// pilihan di dropdown). Ini adalah ENFORCEMENT SESUNGGUHNYA (endpoint ini pakai service role,
+// bypass RLS sepenuhnya) -- tanpa pengecekan ini, siapapun yang lolos canManageMembers() bisa
+// membuat/mengubah user ke role APAPUN (termasuk lebih tinggi dari dirinya sendiri) hanya dengan
+// mengirim role_id yang diinginkan langsung ke endpoint, terlepas dari apa yang ditampilkan UI.
+const TINGKATAN_HIERARKI = ['kelompok', 'desa', 'daerah', 'ppg', 'super_admin']
+
+function getAllowedTargetTingkatan(caller: Caller): string[] {
+  if (caller.tingkatan === 'super_admin') {
+    return TINGKATAN_HIERARKI.filter(t => t !== 'super_admin')
+  }
+  // PPG dicek eksplisit -- 'ppg' adalah anggota TINGKATAN_HIERARKI (batas atas utk role Daerah),
+  // jadi tanpa exclude eksplisit ini, indexOf('ppg') mengembalikan index valid dan caller PPG
+  // keliru diizinkan "membuat" role sampai jenjangnya sendiri. PPG tidak pernah boleh membuat/
+  // mengubah role siapapun (konsisten dgn PPG dikecualikan dari canManageMembers() di atas).
+  if (caller.tingkatan === 'ppg') return []
+  const idx = TINGKATAN_HIERARKI.indexOf(caller.tingkatan || '')
+  if (idx === -1) return []
+  return TINGKATAN_HIERARKI.slice(0, idx + 1)
+}
+
+// Cek apakah caller berwenang menetapkan role bertingkatan `targetTingkatan` ke user (baru
+// atau existing) -- inti pembatasan "role di bawah tidak bisa menambahkan/menaikkan role ke
+// atasnya". Dipanggil di POST (create) dan PATCH (saat role_id ikut diubah).
+function canAssignTingkatan(caller: Caller, targetTingkatan: string | null | undefined): boolean {
+  if (!targetTingkatan) return true // role_id null/kosong (generus tanpa role eksplisit) selalu boleh
+  return getAllowedTargetTingkatan(caller).includes(targetTingkatan)
 }
 
 // Generate login_username unik dari nama panggilan (fallback nama lengkap). Login sekarang
@@ -187,8 +219,18 @@ export async function POST(req: NextRequest) {
     }
 
     // Super Admin adalah akun tunggal mutlak — tidak boleh ada user baru dibuat dengan role ini.
-    if (await isSuperAdminRole(supabaseAdmin, role_id)) {
+    const targetRoleTingkatan = await getRoleTingkatan(supabaseAdmin, role_id)
+    if (targetRoleTingkatan === 'super_admin') {
       return NextResponse.json({ error: 'Tidak dapat membuat pengguna dengan role Super Admin.' }, { status: 403 })
+    }
+
+    // Hierarki jenjang: role di bawah tidak boleh membuat pengguna dengan role di atasnya
+    // (mis. Sekretaris Kelompok tidak boleh membuat "Ketua Daerah" atau akun PPG). Hanya
+    // Super Admin yang boleh membuat akun PPG.
+    if (!canAssignTingkatan(caller, targetRoleTingkatan)) {
+      return NextResponse.json({
+        error: `Anda tidak berwenang membuat pengguna dengan role di jenjang "${targetRoleTingkatan}". Role yang boleh Anda buat: ${getAllowedTargetTingkatan(caller).join(', ') || '(tidak ada)'}.`,
+      }, { status: 403 })
     }
 
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -331,8 +373,19 @@ export async function PATCH(req: NextRequest) {
 
     // Super Admin adalah akun tunggal mutlak — role_id siapapun tidak boleh diarahkan
     // menjadi Super Admin lewat aplikasi ini, oleh siapapun termasuk Super Admin itu sendiri.
-    if (role_id !== undefined && await isSuperAdminRole(supabaseAdmin, role_id)) {
-      return NextResponse.json({ error: 'Tidak dapat mengubah role pengguna menjadi Super Admin.' }, { status: 403 })
+    if (role_id !== undefined) {
+      const newRoleTingkatan = await getRoleTingkatan(supabaseAdmin, role_id)
+      if (newRoleTingkatan === 'super_admin') {
+        return NextResponse.json({ error: 'Tidak dapat mengubah role pengguna menjadi Super Admin.' }, { status: 403 })
+      }
+      // Hierarki jenjang berlaku juga saat mengedit role user existing (bukan cuma saat
+      // membuat baru) -- kalau tidak, pembatasan create bisa dilewati dgn cara membuat user
+      // biasa dulu lalu langsung menaikkan role-nya lewat form edit.
+      if (!isSelf && !canAssignTingkatan(caller, newRoleTingkatan)) {
+        return NextResponse.json({
+          error: `Anda tidak berwenang mengubah role pengguna ke jenjang "${newRoleTingkatan}". Role yang boleh Anda tetapkan: ${getAllowedTargetTingkatan(caller).join(', ') || '(tidak ada)'}.`,
+        }, { status: 403 })
+      }
     }
 
     if (password) {

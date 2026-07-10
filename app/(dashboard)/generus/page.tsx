@@ -5,7 +5,7 @@ import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { logAudit } from '@/lib/audit'
 import { authFetch } from '@/lib/auth'
-import { canManageMembers as checkCanManageMembers } from '@/lib/roles'
+import { canManageMembers as checkCanManageMembers, getAllowedTargetTingkatan } from '@/lib/roles'
 import { useFeatureAccess } from '@/lib/feature-toggles'
 import { formatAge } from '@/lib/date'
 import Modal from '@/components/Modal'
@@ -794,7 +794,14 @@ export default function PenggunaPage() {
               <select value={form.role_id} onChange={e => set('role_id', e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="">-- Pilih Role --</option>
-                {roleList.filter(r => r.tingkatan !== 'super_admin').map(r => <option key={r.id} value={r.id}>{r.nama_role}</option>)}
+                {/* Hanya tampilkan role yang boleh DITETAPKAN oleh user ini, sesuai hierarki jenjang
+                    (lihat getAllowedTargetTingkatan di lib/roles.ts) -- mis. Sekretaris Kelompok
+                    hanya melihat role Generus, tidak melihat "Ketua Daerah" atau PPG sama sekali.
+                    Server (app/api/users/route.ts) tetap menegakkan ulang aturan yang sama persis;
+                    filter di sini murni supaya dropdown tidak menampilkan pilihan yang toh ditolak. */}
+                {roleList
+                  .filter(r => getAllowedTargetTingkatan(user).includes(r.tingkatan))
+                  .map(r => <option key={r.id} value={r.id}>{r.nama_role}</option>)}
               </select>
             </div>
 
