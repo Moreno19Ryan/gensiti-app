@@ -41,11 +41,25 @@ export interface ExportSection {
   summary?: { label: string; value: string }[]
 }
 
+// Grafik hasil capture (PNG data URL, lihat html-to-image di LaporanBulananModal.tsx) yang
+// disisipkan sebagai gambar di PDF/Excel -- dipakai untuk laporan yang punya visualisasi
+// selain tabel (mis. Laporan Bulanan Daerah: tren 12 bulan, pertumbuhan Generus, perbandingan
+// antar-Desa). Opsional -- laporan lain yang tidak punya grafik cukup tidak mengisi field ini.
+export interface ExportChartImage {
+  title: string
+  // Data URL PNG (mis. "data:image/png;base64,...") hasil toPng() dari DOM chart Recharts.
+  imageDataUrl: string
+  // Rasio lebar:tinggi asli gambar -- dipakai supaya gambar tidak gepeng/stretch saat
+  // ditempel di PDF/Excel dengan lebar tetap.
+  aspectRatio: number
+}
+
 export interface MultiSectionExportOptions {
   title: string
   subtitle?: string
   sections: ExportSection[]
   fileName: string
+  charts?: ExportChartImage[]
 }
 
 const ORG_NAME = 'KMM Bekasi Timur'
@@ -213,6 +227,38 @@ function buildMultiSectionPdfDoc(opts: MultiSectionExportOptions): jsPDF {
     cursorY += 8
   })
 
+  // Grafik (kalau ada) -- masing-masing ditempel di halaman sendiri supaya ukurannya cukup
+  // besar untuk terbaca jelas saat dicetak, bukan diperkecil paksa muat di sisa ruang tabel.
+  if (opts.charts && opts.charts.length > 0) {
+    const maxImgWidth = pageWidth - 28 // margin 14mm kiri-kanan, sama dgn tabel
+    const maxImgHeight = doc.internal.pageSize.getHeight() - 50 // sisakan ruang kop tiap halaman baru + footer
+
+    opts.charts.forEach(chart => {
+      doc.addPage()
+      let y = 20
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(30)
+      doc.text(chart.title, 14, y)
+      y += 6
+
+      let imgWidth = maxImgWidth
+      let imgHeight = imgWidth / chart.aspectRatio
+      if (imgHeight > maxImgHeight) {
+        imgHeight = maxImgHeight
+        imgWidth = imgHeight * chart.aspectRatio
+      }
+
+      try {
+        doc.addImage(chart.imageDataUrl, 'PNG', 14, y, imgWidth, imgHeight)
+      } catch {
+        doc.setFontSize(9)
+        doc.setFont('helvetica', 'normal')
+        doc.text('(Gagal memuat grafik)', 14, y + 10)
+      }
+    })
+  }
+
   const pageCount = doc.getNumberOfPages()
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i)
@@ -299,6 +345,35 @@ export async function exportMultiSectionToExcel(opts: MultiSectionExportOptions)
       })
     }
   })
+
+  // Grafik (kalau ada) -- ditempel di bawah semua tabel, masing-masing dgn judul sendiri.
+  // Lebar gambar dipatok ~700px (menyesuaikan lebar kolom default 18 char x maxCols), tinggi
+  // mengikuti aspectRatio asli chart supaya tidak gepeng.
+  if (opts.charts && opts.charts.length > 0) {
+    const imgWidth = Math.max(500, maxCols * 18 * 7) // perkiraan px dari lebar kolom Excel
+    opts.charts.forEach(chart => {
+      sheet.addRow([])
+      const headingRow = sheet.addRow([chart.title])
+      headingRow.getCell(1).font = { bold: true, size: 11, color: { argb: 'FF1D4ED8' } }
+      const startRow = sheet.rowCount + 1
+
+      try {
+        const base64 = chart.imageDataUrl.split(',')[1] || chart.imageDataUrl
+        const imgId = workbook.addImage({ base64, extension: 'png' })
+        const imgHeight = imgWidth / chart.aspectRatio
+        sheet.addImage(imgId, {
+          tl: { col: 0, row: startRow - 1 },
+          ext: { width: imgWidth, height: imgHeight },
+        })
+        // Baris kosong seukuran tinggi gambar (perkiraan ~20px per baris) supaya konten
+        // berikutnya (grafik lain / akhir sheet) tidak tertindih gambar ini.
+        const rowsNeeded = Math.ceil(imgHeight / 20)
+        for (let i = 0; i < rowsNeeded; i++) sheet.addRow([])
+      } catch {
+        sheet.addRow(['(Gagal memuat grafik)'])
+      }
+    })
+  }
 
   for (let i = 1; i <= maxCols; i++) {
     sheet.getColumn(i).width = 18

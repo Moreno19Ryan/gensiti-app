@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { logAudit } from '@/lib/audit'
 import { UserProfile } from '@/lib/types'
 import {
   MultiSectionExportOptions,
   ExportSection,
+  ExportChartImage,
   exportMultiSectionToPDF,
   exportMultiSectionToExcel,
   getMultiSectionPdfPreviewDataUrl,
@@ -15,6 +16,7 @@ import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts'
+import { toPng } from 'html-to-image'
 
 // Modal "Laporan Bulanan" -- adaptasi dari laporan rekap Excel bulanan se-Daerah yang
 // sebelumnya dikerjakan manual oleh PPG (lihat percakapan: user menunjukkan contoh file
@@ -85,6 +87,16 @@ export default function LaporanBulananModal({ open, onClose, user }: Props) {
   const [kelasNgaji, setKelasNgaji] = useState<KelasNgajiRow[]>([])
   const [tren, setTren] = useState<TrenRow[]>([])
   const [pertumbuhan, setPertumbuhan] = useState<PertumbuhanRow[]>([])
+
+  // Ref ke tiap DOM node grafik -- dipakai html-to-image (toPng) utk capture grafik jadi PNG
+  // sesaat sebelum export, supaya grafik yang sudah tampil di layar bisa ikut disisipkan ke
+  // PDF/Excel (bukan cuma tampil on-screen). Node-nya SELALU di-render (lihat JSX di bawah,
+  // wrapper "grafik" tidak dikondisikan hilang total walau sedang di mode Pratinjau PDF),
+  // hanya disembunyikan via CSS saat tidak sedang ditampilkan -- supaya ref selalu siap
+  // di-capture kapan pun user menekan Export, tanpa perlu switch tab dulu.
+  const trenChartRef = useRef<HTMLDivElement>(null)
+  const pertumbuhanChartRef = useRef<HTMLDivElement>(null)
+  const kehadiranDesaChartRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
@@ -257,6 +269,9 @@ export default function LaporanBulananModal({ open, onClose, user }: Props) {
     return sections
   }
 
+  // exportOptions TANPA charts -- dipakai utk pratinjau PDF di layar (getMultiSectionPdfPreviewDataUrl)
+  // supaya pratinjau tetap cepat/ringan (tidak nunggu capture PNG). Grafik hanya disisipkan pas
+  // export final (lihat captureChartImages + handleExportPDF/Excel di bawah).
   const exportOptions: MultiSectionExportOptions = {
     title: 'Laporan Bulanan Kehadiran & Database Generus',
     subtitle: `Se-Bekasi Timur -- ${BULAN_LABEL[bulan - 1]} ${tahun}`,
@@ -276,10 +291,50 @@ export default function LaporanBulananModal({ open, onClose, user }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewOpen, loading, kehadiran, kelasNgaji, tren, pertumbuhan])
 
+  // Capture ketiga grafik (kalau datanya ada & node sudah ter-mount) jadi PNG base64 lewat
+  // html-to-image -- dipanggil sesaat sebelum export PDF/Excel supaya file yang diunduh ikut
+  // memuat visualisasi yang sama persis dengan yang tampil di layar. Grafik yang datanya kosong
+  // (guard `.some(...)`/`.length > 0` di JSX) node-nya tidak ter-render sama sekali, jadi
+  // otomatis dilewati di sini juga (ref tetap null).
+  //
+  // PENTING: node grafik hanya ter-mount di mode "Ringkasan" (previewOpen === false) --
+  // kalau user menekan Export saat sedang berada di mode Pratinjau PDF (iframe), ref-nya
+  // masih null. Makanya di awal fungsi ini kita paksa balik ke mode Ringkasan dulu (kalau
+  // perlu) dan tunggu satu render cycle sebelum capture, supaya chart selalu berhasil
+  // di-capture apa pun mode yang sedang aktif saat tombol Export ditekan.
+  const captureChartImages = async (): Promise<ExportChartImage[]> => {
+    if (previewOpen) {
+      setPreviewOpen(false)
+      // Tunggu React commit render mode Ringkasan (Recharts butuh 1 tick tambahan supaya
+      // ResponsiveContainer sempat mengukur lebar kontainer sebelum bisa di-capture).
+      await new Promise(resolve => setTimeout(resolve, 250))
+    }
+    const targets: { ref: React.RefObject<HTMLDivElement | null>; title: string }[] = [
+      { ref: trenChartRef, title: `Tren Kehadiran ${tahun} (12 Bulan)` },
+      { ref: pertumbuhanChartRef, title: `Pertumbuhan Database Generus ${tahun} (12 Bulan)` },
+      { ref: kehadiranDesaChartRef, title: `Perbandingan Kehadiran per Desa -- ${BULAN_LABEL[bulan - 1]} ${tahun}` },
+    ]
+    const results: ExportChartImage[] = []
+    for (const t of targets) {
+      const node = t.ref.current
+      if (!node) continue
+      try {
+        const imageDataUrl = await toPng(node, { backgroundColor: '#ffffff', pixelRatio: 2 })
+        const rect = node.getBoundingClientRect()
+        const aspectRatio = rect.width > 0 && rect.height > 0 ? rect.width / rect.height : 16 / 9
+        results.push({ title: t.title, imageDataUrl, aspectRatio })
+      } catch (e) {
+        console.error(`Gagal meng-capture grafik "${t.title}":`, e)
+      }
+    }
+    return results
+  }
+
   const handleExportPDF = async () => {
     setExportingPdf(true)
     try {
-      exportMultiSectionToPDF(exportOptions)
+      const charts = await captureChartImages()
+      exportMultiSectionToPDF({ ...exportOptions, charts })
       await logAudit(user, 'EXPORT', 'Laporan Bulanan Daerah', `PDF -- ${BULAN_LABEL[bulan - 1]} ${tahun}`)
     } finally {
       setExportingPdf(false)
@@ -289,7 +344,8 @@ export default function LaporanBulananModal({ open, onClose, user }: Props) {
   const handleExportExcel = async () => {
     setExportingExcel(true)
     try {
-      await exportMultiSectionToExcel(exportOptions)
+      const charts = await captureChartImages()
+      await exportMultiSectionToExcel({ ...exportOptions, charts })
       await logAudit(user, 'EXPORT', 'Laporan Bulanan Daerah', `Excel -- ${BULAN_LABEL[bulan - 1]} ${tahun}`)
     } finally {
       setExportingExcel(false)
@@ -374,7 +430,7 @@ export default function LaporanBulananModal({ open, onClose, user }: Props) {
               </div>
 
               {(tren.some(r => r.hadir + r.izin + r.sakit + r.tidak_hadir > 0)) && (
-                <div className="bg-white rounded-xl border border-slate-100 p-4">
+                <div ref={trenChartRef} className="bg-white rounded-xl border border-slate-100 p-4">
                   <h4 className="text-sm font-semibold text-slate-700 mb-3">Tren Kehadiran {tahun} (12 Bulan)</h4>
                   <ResponsiveContainer width="100%" height={260}>
                     <LineChart data={trenChartData}>
@@ -393,7 +449,7 @@ export default function LaporanBulananModal({ open, onClose, user }: Props) {
               )}
 
               {pertumbuhanChartData.some(r => r.jumlah > 0) && (
-                <div className="bg-white rounded-xl border border-slate-100 p-4">
+                <div ref={pertumbuhanChartRef} className="bg-white rounded-xl border border-slate-100 p-4">
                   <h4 className="text-sm font-semibold text-slate-700 mb-3">Pertumbuhan Database Generus {tahun} (12 Bulan)</h4>
                   <ResponsiveContainer width="100%" height={260}>
                     <BarChart data={pertumbuhanChartData}>
@@ -408,7 +464,7 @@ export default function LaporanBulananModal({ open, onClose, user }: Props) {
               )}
 
               {kehadiranPerDesaChartData.length > 0 && (
-                <div className="bg-white rounded-xl border border-slate-100 p-4">
+                <div ref={kehadiranDesaChartRef} className="bg-white rounded-xl border border-slate-100 p-4">
                   <h4 className="text-sm font-semibold text-slate-700 mb-3">
                     Perbandingan Kehadiran per Desa -- {BULAN_LABEL[bulan - 1]} {tahun}
                   </h4>
