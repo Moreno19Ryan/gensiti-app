@@ -31,7 +31,7 @@ const navItems: NavItem[] = [
   // otomatis terlihat setiap kali mengelola akun. Visibilitas sama persis dengan Pengguna.
   { href: '/data-generus', label: 'Data Generus', icon: '🗂️', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true },
   { href: '/kegiatan', label: 'Kegiatan', icon: '📅', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
-  { href: '/presensi', label: 'Presensi', icon: '✅', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, requiresPresensiAccess: true },
+  { href: '/absensi', label: 'Absensi', icon: '✅', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, requiresPresensiAccess: true },
   { href: '/keuangan', label: 'Keuangan', icon: '💰', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true },
   { href: '/pengumuman', label: 'Pengumuman', icon: '📢', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
   { href: '/dokumen', label: 'Dokumen', icon: '📁', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },

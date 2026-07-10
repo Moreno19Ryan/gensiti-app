@@ -154,7 +154,8 @@ export default function DashboardPage() {
       }
 
       if (isBendahara(user)) {
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
+        const nowForMonth = new Date()
+        const startOfMonth = new Date(nowForMonth.getFullYear(), nowForMonth.getMonth(), 1).toISOString().slice(0, 10)
         const [{ count: reimbPending }, { data: keuanganBulanIni }] = await Promise.all([
           supabase
             .from('pengajuan_reimbursement')
@@ -190,7 +191,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false)
     }
-  }, [user, now])
+  }, [user])
 
   const loadGenerusInsight = useCallback(async () => {
     if (!user) return
@@ -407,7 +408,7 @@ export default function DashboardPage() {
     : isGenerusBiasaUser
     ? [
         { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200' },
-        { href: '/presensi', label: 'Presensi', icon: '✅', color: 'hover:bg-teal-50 hover:border-teal-200' },
+        { href: '/absensi', label: 'Absensi', icon: '✅', color: 'hover:bg-teal-50 hover:border-teal-200' },
         { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200' },
         { href: '/profil', label: 'Profil Saya', icon: '👤', color: 'hover:bg-blue-50 hover:border-blue-200' },
       ]

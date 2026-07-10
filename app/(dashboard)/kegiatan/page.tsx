@@ -562,7 +562,7 @@ export default function KegiatanPage() {
                 </select>
               )}
             </div>
-            <p className="text-xs text-slate-400 mt-1">Menentukan siapa yang wajib presensi untuk kegiatan ini.</p>
+            <p className="text-xs text-slate-400 mt-1">Menentukan siapa yang wajib absensi untuk kegiatan ini.</p>
           </div>
 
           {form.tingkatan !== 'daerah' && (

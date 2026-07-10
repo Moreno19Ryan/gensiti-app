@@ -137,7 +137,7 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
         onUpdated?.({ ...kegiatan, kode_presensi_aktif: row.kode, kode_presensi_expired_at: row.expired_at })
       }
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : 'Gagal membuka presensi.')
+      setErrorMsg(e instanceof Error ? e.message : 'Gagal membuka absensi.')
     } finally {
       setLoadingAksi(false)
     }
@@ -174,12 +174,12 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
     try {
       await submitCheckinDenganKode(inputKode.trim())
       setStatusCheckin('sukses')
-      setPesanCheckin('Presensi berhasil dicatat. Terima kasih!')
+      setPesanCheckin('Absensi berhasil dicatat. Terima kasih!')
       setSudahHadir(true)
       setInputKode('')
     } catch (e) {
       setStatusCheckin('gagal')
-      setPesanCheckin(e instanceof Error ? e.message : 'Gagal melakukan presensi.')
+      setPesanCheckin(e instanceof Error ? e.message : 'Gagal melakukan absensi.')
     } finally {
       setLoadingAksi(false)
     }
@@ -192,7 +192,7 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
     const payload = parseQrPayload(rawText)
     if (!payload) {
       setStatusCheckin('gagal')
-      setPesanCheckin('QR tidak dikenali. Pastikan Anda scan QR presensi GENSITI.')
+      setPesanCheckin('QR tidak dikenali. Pastikan Anda scan QR absensi GENSITI.')
       return
     }
     if (payload.kegiatanId !== kegiatan.id) {
@@ -206,11 +206,11 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
     try {
       await submitCheckinDenganKode(payload.kode)
       setStatusCheckin('sukses')
-      setPesanCheckin('Presensi berhasil dicatat. Terima kasih!')
+      setPesanCheckin('Absensi berhasil dicatat. Terima kasih!')
       setSudahHadir(true)
     } catch (e) {
       setStatusCheckin('gagal')
-      setPesanCheckin(e instanceof Error ? e.message : 'Gagal melakukan presensi.')
+      setPesanCheckin(e instanceof Error ? e.message : 'Gagal melakukan absensi.')
     } finally {
       setLoadingAksi(false)
     }
@@ -296,7 +296,7 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
   if (isSuperAdmin) {
     return (
       <div className="mt-3 pt-3 border-t border-slate-100">
-        <p className="text-xs text-slate-400 italic text-center">Presensi dikelola oleh Ketua/Wakil Ketua/Sekretaris.</p>
+        <p className="text-xs text-slate-400 italic text-center">Absensi dikelola oleh Ketua/Wakil Ketua/Sekretaris.</p>
       </div>
     )
   }
@@ -308,7 +308,7 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
   if (isPPG(user)) {
     return (
       <div className="mt-3 pt-3 border-t border-slate-100">
-        <p className="text-xs text-slate-400 italic text-center">PPG tidak termasuk peserta presensi kegiatan.</p>
+        <p className="text-xs text-slate-400 italic text-center">PPG tidak termasuk peserta absensi kegiatan.</p>
       </div>
     )
   }
@@ -323,14 +323,14 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
               disabled={loadingAksi}
               className="w-full py-2 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 disabled:bg-green-300 transition"
             >
-              {loadingAksi ? 'Memulai...' : '▶ Mulai Presensi'}
+              {loadingAksi ? 'Memulai...' : '▶ Mulai Absensi'}
             </button>
           ) : (
             <div className="bg-slate-50 rounded-xl p-4 text-center">
-              <p className="text-xs text-slate-400 mb-2">Scan QR untuk Presensi</p>
+              <p className="text-xs text-slate-400 mb-2">Scan QR untuk Absensi</p>
               {qrDataUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={qrDataUrl} alt="QR Presensi" className="mx-auto rounded-lg border border-slate-200 bg-white p-2" width={200} height={200} />
+                <img src={qrDataUrl} alt="QR Absensi" className="mx-auto rounded-lg border border-slate-200 bg-white p-2" width={200} height={200} />
               ) : (
                 <div className="w-[200px] h-[200px] mx-auto rounded-lg border border-slate-200 bg-white flex items-center justify-center">
                   <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
@@ -421,7 +421,7 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
                 onClick={mulaiScanner}
                 className="w-full py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition"
               >
-                📷 Scan QR Presensi
+                📷 Scan QR Absensi
               </button>
               {scannerError && <p className="text-xs text-red-500">{scannerError}</p>}
               <button

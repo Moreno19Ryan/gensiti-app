@@ -388,7 +388,7 @@ export default function ProfilPage() {
   const tabs = [
     { key: 'akun' as const, label: 'Akun' },
     ...(!isSuperAdmin ? [{ key: 'datadiri' as const, label: 'Data Diri' }] : []),
-    ...(!isSuperAdmin ? [{ key: 'presensi' as const, label: 'Riwayat Presensi' }] : []),
+    ...(!isSuperAdmin ? [{ key: 'presensi' as const, label: 'Riwayat Absensi' }] : []),
     // Tab Notifikasi disembunyikan untuk Super Admin -- keempat jenis notifikasi yang ada
     // (pengumuman, kegiatan, reminder, approval_ppg) semuanya murni notifikasi konten
     // organisasi yang tidak relevan untuknya sebagai pengelola sistem, bukan pengurus
@@ -642,7 +642,7 @@ export default function ProfilPage() {
                 </div>
               ) : riwayatPresensi.length === 0 ? (
                 <div className="text-center py-8 text-slate-400">
-                  <p className="text-sm">Belum ada riwayat presensi</p>
+                  <p className="text-sm">Belum ada riwayat absensi</p>
                 </div>
               ) : (
                 <div className="divide-y divide-slate-100">
