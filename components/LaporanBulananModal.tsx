@@ -11,6 +11,10 @@ import {
   exportMultiSectionToExcel,
   getMultiSectionPdfPreviewDataUrl,
 } from '@/lib/export'
+import {
+  ResponsiveContainer, LineChart, Line, BarChart, Bar,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+} from 'recharts'
 
 // Modal "Laporan Bulanan" -- adaptasi dari laporan rekap Excel bulanan se-Daerah yang
 // sebelumnya dikerjakan manual oleh PPG (lihat percakapan: user menunjukkan contoh file
@@ -132,6 +136,44 @@ export default function LaporanBulananModal({ open, onClose, user }: Props) {
 
   const grandTotal = totalKehadiran.hadir + totalKehadiran.izin + totalKehadiran.sakit + totalKehadiran.tidak_hadir
 
+  // Data grafik pertumbuhan Generus per bulan (12 bulan) -- logic sama persis dgn yang
+  // dipakai buildSections() utk section export, diekstrak jadi useMemo terpisah supaya
+  // tidak dihitung ulang 2x (sekali utk grafik, sekali utk export) dan konsisten.
+  const pertumbuhanChartData = useMemo(() => {
+    const map = new Map(pertumbuhan.map(p => [p.bulan, p.jumlah]))
+    return Array.from({ length: 12 }, (_, i) => {
+      const key = `${tahun}-${String(i + 1).padStart(2, '0')}`
+      return { bulan: BULAN_LABEL[i].slice(0, 3), jumlah: map.get(key) || 0 }
+    })
+  }, [pertumbuhan, tahun])
+
+  // Data grafik tren kehadiran 12 bulan -- langsung dari state `tren` (sudah per-bulan,
+  // sudah include bulan kosong = 0 dari RPC generate_series), tinggal mapping label bulan.
+  const trenChartData = useMemo(() => {
+    return tren.map(r => ({
+      bulan: BULAN_LABEL[r.bulan - 1].slice(0, 3),
+      Hadir: r.hadir,
+      Izin: r.izin,
+      Sakit: r.sakit,
+      Alpha: r.tidak_hadir,
+    }))
+  }, [tren])
+
+  // Data grafik perbandingan antar-Desa -- `kehadiran` state pecah per Desa+gender, digabung
+  // per Desa saja (jumlah kedua gender) supaya grafik tidak terlalu padat/ramai.
+  const kehadiranPerDesaChartData = useMemo(() => {
+    const map = new Map<string, { desa: string; Hadir: number; Izin: number; Sakit: number; Alpha: number }>()
+    for (const r of kehadiran) {
+      const existing = map.get(r.nama_desa) || { desa: r.nama_desa, Hadir: 0, Izin: 0, Sakit: 0, Alpha: 0 }
+      existing.Hadir += r.hadir
+      existing.Izin += r.izin
+      existing.Sakit += r.sakit
+      existing.Alpha += r.tidak_hadir
+      map.set(r.nama_desa, existing)
+    }
+    return Array.from(map.values())
+  }, [kehadiran])
+
   // Bangun ExportSection dari data yang sudah dimuat -- dipakai baik utk preview PDF maupun
   // export final, supaya keduanya selalu identik (sama seperti pola ExportPreviewModal yang
   // sudah ada di halaman lain).
@@ -209,13 +251,7 @@ export default function LaporanBulananModal({ open, onClose, user }: Props) {
         { header: 'Bulan', key: 'bulan', width: 14 },
         { header: 'Generus Baru', key: 'jumlah', width: 14 },
       ],
-      rows: (() => {
-        const map = new Map(pertumbuhan.map(p => [p.bulan, p.jumlah]))
-        return Array.from({ length: 12 }, (_, i) => {
-          const key = `${tahun}-${String(i + 1).padStart(2, '0')}`
-          return { bulan: BULAN_LABEL[i], jumlah: map.get(key) || 0 }
-        })
-      })(),
+      rows: pertumbuhanChartData.map((r, i) => ({ bulan: BULAN_LABEL[i], jumlah: r.jumlah })),
     })
 
     return sections
@@ -336,6 +372,61 @@ export default function LaporanBulananModal({ open, onClose, user }: Props) {
                   <p className="text-xs text-slate-400 mt-0.5">Alpha</p>
                 </div>
               </div>
+
+              {(tren.some(r => r.hadir + r.izin + r.sakit + r.tidak_hadir > 0)) && (
+                <div className="bg-white rounded-xl border border-slate-100 p-4">
+                  <h4 className="text-sm font-semibold text-slate-700 mb-3">Tren Kehadiran {tahun} (12 Bulan)</h4>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <LineChart data={trenChartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="bulan" tick={{ fontSize: 12, fill: '#94a3b8' }} />
+                      <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} allowDecimals={false} />
+                      <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12 }} />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      <Line type="monotone" dataKey="Hadir" stroke="#16a34a" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="Izin" stroke="#d97706" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="Sakit" stroke="#9333ea" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="Alpha" stroke="#dc2626" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {pertumbuhanChartData.some(r => r.jumlah > 0) && (
+                <div className="bg-white rounded-xl border border-slate-100 p-4">
+                  <h4 className="text-sm font-semibold text-slate-700 mb-3">Pertumbuhan Database Generus {tahun} (12 Bulan)</h4>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={pertumbuhanChartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="bulan" tick={{ fontSize: 12, fill: '#94a3b8' }} />
+                      <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} allowDecimals={false} />
+                      <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12 }} />
+                      <Bar dataKey="jumlah" name="Generus Baru" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {kehadiranPerDesaChartData.length > 0 && (
+                <div className="bg-white rounded-xl border border-slate-100 p-4">
+                  <h4 className="text-sm font-semibold text-slate-700 mb-3">
+                    Perbandingan Kehadiran per Desa -- {BULAN_LABEL[bulan - 1]} {tahun}
+                  </h4>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={kehadiranPerDesaChartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="desa" tick={{ fontSize: 12, fill: '#94a3b8' }} />
+                      <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} allowDecimals={false} />
+                      <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12 }} />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      <Bar dataKey="Hadir" fill="#16a34a" radius={[6, 6, 0, 0]} />
+                      <Bar dataKey="Izin" fill="#d97706" radius={[6, 6, 0, 0]} />
+                      <Bar dataKey="Sakit" fill="#9333ea" radius={[6, 6, 0, 0]} />
+                      <Bar dataKey="Alpha" fill="#dc2626" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
 
               {kehadiran.length === 0 && kelasNgaji.length === 0 ? (
                 <div className="bg-white rounded-xl p-8 text-center text-slate-400 text-sm">
