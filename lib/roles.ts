@@ -154,3 +154,24 @@ export function canAjukanReimbursement(user: Pick<UserProfile, 'role'> | null | 
   if (isBendahara(user)) return false
   return true
 }
+
+/**
+ * True jika user boleh melihat "Laporan Bulanan" tingkat Daerah (rekap kehadiran se-Bekasi
+ * Timur per Desa/gender/kelas ngaji, tren 12 bulan, pertumbuhan Generus) -- adaptasi dari
+ * laporan rekap Excel bulanan yang sebelumnya dikerjakan manual oleh PPG. HANYA PPG, Ketua/
+ * Wakil Ketua/Sekretaris Daerah, dan Super Admin -- Desa/Kelompok tidak relevan krn laporan
+ * ini murni scope se-Daerah, mereka tetap punya rekap kehadiran sendiri lewat menu Absensi
+ * biasa (per kegiatan, per scope mereka). HARUS SELALU KONSISTEN dengan pengecekan role di
+ * dalam RPC get_laporan_kehadiran_bulanan_daerah / get_laporan_kelas_ngaji_daerah /
+ * get_tren_kehadiran_tahunan_daerah (migration create_laporan_bulanan_daerah_rpc) -- proteksi
+ * di database adalah sumber kebenaran sesungguhnya, ini hanya gate UI supaya tombolnya tidak
+ * ditampilkan ke role yang toh akan ditolak RPC-nya.
+ */
+export function canLihatLaporanDaerah(user: Pick<UserProfile, 'role'> | null | undefined): boolean {
+  if (!user?.role) return false
+  if (user.role.tingkatan === 'super_admin') return true
+  if (isPPG(user)) return true
+  if (user.role.tingkatan !== 'daerah') return false
+  const nama = user.role.nama_role.toLowerCase()
+  return nama.includes('ketua') || nama.includes('sekretaris')
+}

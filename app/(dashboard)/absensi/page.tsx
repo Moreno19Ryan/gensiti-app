@@ -5,10 +5,11 @@ import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { Kegiatan, Absensi, PengajuanIzinPresensi } from '@/lib/types'
 import { logAudit } from '@/lib/audit'
-import { canManagePresensi } from '@/lib/roles'
+import { canManagePresensi, canLihatLaporanDaerah } from '@/lib/roles'
 import { useFeatureAccess } from '@/lib/feature-toggles'
-import { ExportOptions } from '@/lib/export'
+import { ExportOptions, exportToPDF } from '@/lib/export'
 import ExportPreviewModal from '@/components/ExportPreviewModal'
+import LaporanBulananModal from '@/components/LaporanBulananModal'
 
 const statusLabel: Record<string, { label: string; color: string }> = {
   upcoming: { label: 'Akan Datang', color: 'bg-blue-100 text-blue-700' },
@@ -55,6 +56,10 @@ export default function AbsensiPage() {
   const isSuperAdmin = user?.role?.tingkatan === 'super_admin'
   const canView = canManage || isSuperAdmin
   const { enabled: featureEnabled, checking: featureChecking } = useFeatureAccess(user, 'absensi')
+  // Laporan Bulanan (rekap se-Daerah) -- hanya PPG/Ketua Daerah/Super Admin, lihat
+  // canLihatLaporanDaerah di lib/roles.ts.
+  const canLihatLaporan = canLihatLaporanDaerah(user)
+  const [laporanBulananOpen, setLaporanBulananOpen] = useState(false)
 
   const [kegiatanList, setKegiatanList] = useState<Kegiatan[]>([])
   const [selectedKegiatan, setSelectedKegiatan] = useState<Kegiatan | null>(null)
@@ -462,6 +467,48 @@ export default function AbsensiPage() {
     setPreviewOpen(true)
   }
 
+  // Cetak lembar absen KOSONG (kolom H/I/S/A tidak diisi) -- cadangan manual utk kegiatan
+  // offline yang koneksi internet/QR-nya bermasalah, diisi tangan lalu diinput belakangan.
+  // Adaptasi dari sheet "PRINT ABSEN" pada laporan Excel PPG (5. JULI.xlsx) yang user
+  // tunjukkan -- di sana formatnya per Kelompok dalam satu Desa, kolom H/I/A kosong siap cetak.
+  const handlePrintLembarKosong = async () => {
+    if (!selectedKegiatan || scopedGenerus.length === 0) { alert('Tidak ada data Generus untuk dicetak.'); return }
+    const rows = scopedGenerus
+      .slice()
+      .sort((a, b) => (a.users?.nama_lengkap || '').localeCompare(b.users?.nama_lengkap || ''))
+      .map((a, i) => ({
+        no: i + 1,
+        nama: a.users?.nama_lengkap || '-',
+        jk: a.jenis_kelamin === 'laki-laki' ? 'L' : a.jenis_kelamin === 'perempuan' ? 'P' : '-',
+        kelas_ngaji: a.kelas_ngaji ? (kelasNgajiLabel[a.kelas_ngaji] || a.kelas_ngaji) : '-',
+        hadir: '',
+        izin: '',
+        sakit: '',
+        alpha: '',
+        paraf: '',
+      }))
+    exportToPDF({
+      title: 'Lembar Absen (Cadangan Manual)',
+      subtitle: `${selectedKegiatan.nama_kegiatan}${namaWilayahDipilih() ? ` -- ${namaWilayahDipilih()}` : ''} -- ${selectedKegiatan.tanggal_mulai ? new Date(selectedKegiatan.tanggal_mulai).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : ''}`,
+      columns: [
+        { header: 'No.', key: 'no', width: 8 },
+        { header: 'Nama Lengkap', key: 'nama', width: 30 },
+        { header: 'JK', key: 'jk', width: 8 },
+        { header: 'Kelas Ngaji', key: 'kelas_ngaji', width: 18 },
+        { header: 'Hadir', key: 'hadir', width: 10 },
+        { header: 'Izin', key: 'izin', width: 10 },
+        { header: 'Sakit', key: 'sakit', width: 10 },
+        { header: 'Alpha', key: 'alpha', width: 10 },
+        { header: 'Paraf', key: 'paraf', width: 16 },
+      ],
+      rows,
+      fileName: `Lembar-Absen-${selectedKegiatan.nama_kegiatan.replace(/[^a-zA-Z0-9]/g, '-')}`,
+    })
+    if (user) {
+      await logAudit(user, 'EXPORT', 'Absensi', `Lembar Kosong -- ${selectedKegiatan.nama_kegiatan}${namaWilayahDipilih() ? ` (${namaWilayahDipilih()})` : ''}`, undefined, selectedKegiatan.id)
+    }
+  }
+
   const handleExported = async (format: 'pdf' | 'excel') => {
     if (!user || !selectedKegiatan) return
     await logAudit(
@@ -476,9 +523,17 @@ export default function AbsensiPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="font-bold text-slate-800">Absensi</h2>
-        <p className="text-slate-400 text-sm">Kelola dan koreksi kehadiran kegiatan</p>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h2 className="font-bold text-slate-800">Absensi</h2>
+          <p className="text-slate-400 text-sm">Kelola dan koreksi kehadiran kegiatan</p>
+        </div>
+        {canLihatLaporan && (
+          <button onClick={() => setLaporanBulananOpen(true)}
+            className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition flex items-center gap-1.5">
+            📈 Laporan Bulanan
+          </button>
+        )}
       </div>
 
       {!selectedKegiatan ? (
@@ -530,6 +585,11 @@ export default function AbsensiPage() {
               ← Kembali ke daftar kegiatan
             </button>
             <div className="flex items-center gap-2">
+              <button onClick={handlePrintLembarKosong} disabled={loadingDetail}
+                title="Cadangan manual -- kolom kehadiran dicetak kosong untuk diisi tangan"
+                className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
+                🖨️ Cetak Lembar Kosong
+              </button>
               <button onClick={handleOpenPreview} disabled={loadingDetail}
                 className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
                 🔍 Pratinjau & Export
@@ -675,6 +735,14 @@ export default function AbsensiPage() {
         options={previewOptions}
         onExported={handleExported}
       />
+
+      {canLihatLaporan && user && (
+        <LaporanBulananModal
+          open={laporanBulananOpen}
+          onClose={() => setLaporanBulananOpen(false)}
+          user={user}
+        />
+      )}
     </div>
   )
 }
