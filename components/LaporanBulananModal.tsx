@@ -21,14 +21,22 @@ import { toPng } from 'html-to-image'
 // Modal "Laporan Bulanan" -- adaptasi dari laporan rekap Excel bulanan se-Daerah yang
 // sebelumnya dikerjakan manual oleh PPG (lihat percakapan: user menunjukkan contoh file
 // "5. JULI.xlsx" berisi rekap kehadiran per Desa+gender, breakdown kelas ngaji, tren 12
-// bulan, dan pertumbuhan database Generus). Hanya utk PPG/Ketua Daerah/Super Admin --
-// lihat canLihatLaporanDaerah di lib/roles.ts. Data diambil dari 3 RPC (migration
-// create_laporan_bulanan_daerah_rpc) + get_pertumbuhan_generus yang sudah ada.
+// bulan, dan pertumbuhan database Generus). Awalnya hanya utk PPG/Ketua Daerah/Super Admin,
+// lalu diperluas (lihat canLihatLaporanBulanan & getLaporanBulananScope di lib/roles.ts)
+// supaya Ketua/Sekretaris Desa & Kelompok juga punya laporan bulanan scope jenjangnya
+// sendiri. Modal ini generik lewat prop `scope`: menentukan RPC mana yang dipanggil dan
+// label breakdown apa yang dipakai (Desa utk scope daerah, Kelompok utk scope desa, tidak
+// ada breakdown/hanya gender utk scope kelompok karena itu unit terkecil). Data diambil dari
+// RPC get_laporan_kehadiran_bulanan_{daerah,desa,kelompok} / get_laporan_kelas_ngaji_{...} /
+// get_tren_kehadiran_tahunan_{...} (migration create_laporan_bulanan_daerah_rpc,
+// add_laporan_bulanan_rpc_scope_desa, add_laporan_bulanan_rpc_scope_kelompok) +
+// get_pertumbuhan_generus yang sudah generik lewat p_desa_id/p_kelompok_id.
 
 interface Props {
   open: boolean
   onClose: () => void
   user: UserProfile
+  scope: { tingkatan: 'daerah' | 'desa' | 'kelompok'; scopeId: string | null }
 }
 
 const BULAN_LABEL = [
@@ -42,9 +50,12 @@ const KELAS_NGAJI_LABEL: Record<string, string> = {
   remaja_dewasa: 'Remaja Dewasa',
 }
 
+// Row mentah dari RPC berbeda bentuk per scope (daerah -> desa_id/nama_desa, desa ->
+// kelompok_id/nama_kelompok, kelompok -> tidak ada kolom grouping sama sekali). Dinormalisasi
+// jadi `label` generik segera setelah fetch (lihat useEffect) supaya seluruh kode di bawah
+// (render tabel, grafik, buildSections) tidak perlu tahu bedanya.
 interface KehadiranRow {
-  desa_id: string
-  nama_desa: string
+  label: string
   jenis_kelamin: string | null
   hadir: number
   izin: number
@@ -53,8 +64,7 @@ interface KehadiranRow {
 }
 
 interface KelasNgajiRow {
-  desa_id: string
-  nama_desa: string
+  label: string
   jenis_kelamin: string | null
   kelas_ngaji: string
   jumlah: number
@@ -73,7 +83,21 @@ interface PertumbuhanRow {
   jumlah: number
 }
 
-export default function LaporanBulananModal({ open, onClose, user }: Props) {
+// Label untuk breakdown grouping, disesuaikan per scope -- dipakai di header tabel & judul
+// section export supaya konsisten dengan apa yang sebenarnya sedang di-breakdown.
+const GROUPING_LABEL: Record<Props['scope']['tingkatan'], string> = {
+  daerah: 'Desa',
+  desa: 'Kelompok',
+  kelompok: 'Jenis Kelamin', // scope kelompok tidak punya breakdown grouping lain
+}
+
+const JUDUL_LAPORAN: Record<Props['scope']['tingkatan'], string> = {
+  daerah: 'Laporan Bulanan -- Se-Bekasi Timur',
+  desa: 'Laporan Bulanan -- Tingkat Desa',
+  kelompok: 'Laporan Bulanan -- Tingkat Kelompok',
+}
+
+export default function LaporanBulananModal({ open, onClose, user, scope }: Props) {
   const now = new Date()
   const [bulan, setBulan] = useState(now.getMonth() + 1)
   const [tahun, setTahun] = useState(now.getFullYear())
@@ -104,16 +128,30 @@ export default function LaporanBulananModal({ open, onClose, user }: Props) {
     ;(async () => {
       setLoading(true)
       setError('')
+
+      // Pilih RPC & parameter sesuai scope. Kolom grouping RPC beda-beda per scope (desa_id/
+      // nama_desa utk daerah, kelompok_id/nama_kelompok utk desa, tidak ada kolom grouping
+      // sama sekali utk kelompok) -- dinormalisasi ke `label` generik di bawah.
+      const rpcSuffix = scope.tingkatan // 'daerah' | 'desa' | 'kelompok'
+      const scopeParam =
+        scope.tingkatan === 'desa' ? { p_desa_id: scope.scopeId }
+        : scope.tingkatan === 'kelompok' ? { p_kelompok_id: scope.scopeId }
+        : {}
+
       const [
         { data: kehadiranData, error: errKehadiran },
         { data: kelasNgajiData, error: errKelasNgaji },
         { data: trenData, error: errTren },
         { data: pertumbuhanData, error: errPertumbuhan },
       ] = await Promise.all([
-        supabase.rpc('get_laporan_kehadiran_bulanan_daerah', { p_bulan: bulan, p_tahun: tahun }),
-        supabase.rpc('get_laporan_kelas_ngaji_daerah', { p_bulan: bulan, p_tahun: tahun }),
-        supabase.rpc('get_tren_kehadiran_tahunan_daerah', { p_tahun: tahun }),
-        supabase.rpc('get_pertumbuhan_generus', { p_range_start: `${tahun}-01-01` }),
+        supabase.rpc(`get_laporan_kehadiran_bulanan_${rpcSuffix}`, { ...scopeParam, p_bulan: bulan, p_tahun: tahun }),
+        supabase.rpc(`get_laporan_kelas_ngaji_${rpcSuffix}`, { ...scopeParam, p_bulan: bulan, p_tahun: tahun }),
+        supabase.rpc(`get_tren_kehadiran_tahunan_${rpcSuffix}`, { ...scopeParam, p_tahun: tahun }),
+        supabase.rpc('get_pertumbuhan_generus', {
+          p_desa_id: scope.tingkatan === 'desa' ? scope.scopeId : null,
+          p_kelompok_id: scope.tingkatan === 'kelompok' ? scope.scopeId : null,
+          p_range_start: `${tahun}-01-01`,
+        }),
       ])
       if (cancelled) return
 
@@ -124,14 +162,35 @@ export default function LaporanBulananModal({ open, onClose, user }: Props) {
         return
       }
 
-      setKehadiran((kehadiranData as KehadiranRow[]) || [])
-      setKelasNgaji((kelasNgajiData as KelasNgajiRow[]) || [])
+      // Normalisasi: scope daerah -> label = nama_desa, scope desa -> label = nama_kelompok,
+      // scope kelompok -> tidak ada kolom grouping di RPC, label dikosongkan (tabel/export
+      // akan skip kolom grouping utk scope ini, lihat buildSections & JSX render).
+      type RawRow = Record<string, unknown>
+      const toLabel = (r: RawRow): string =>
+        scope.tingkatan === 'daerah' ? String(r.nama_desa ?? '-')
+        : scope.tingkatan === 'desa' ? String(r.nama_kelompok ?? '-')
+        : ''
+
+      setKehadiran(((kehadiranData as RawRow[]) || []).map(r => ({
+        label: toLabel(r),
+        jenis_kelamin: (r.jenis_kelamin as string | null) ?? null,
+        hadir: Number(r.hadir) || 0,
+        izin: Number(r.izin) || 0,
+        sakit: Number(r.sakit) || 0,
+        tidak_hadir: Number(r.tidak_hadir) || 0,
+      })))
+      setKelasNgaji(((kelasNgajiData as RawRow[]) || []).map(r => ({
+        label: toLabel(r),
+        jenis_kelamin: (r.jenis_kelamin as string | null) ?? null,
+        kelas_ngaji: String(r.kelas_ngaji ?? ''),
+        jumlah: Number(r.jumlah) || 0,
+      })))
       setTren((trenData as TrenRow[]) || [])
       setPertumbuhan((pertumbuhanData as PertumbuhanRow[]) || [])
       setLoading(false)
     })()
     return () => { cancelled = true }
-  }, [open, bulan, tahun])
+  }, [open, bulan, tahun, scope.tingkatan, scope.scopeId])
 
   // Total se-Daerah (semua Desa+gender digabung) -- dipakai utk kartu ringkasan di atas.
   const totalKehadiran = useMemo(() => {
@@ -171,17 +230,20 @@ export default function LaporanBulananModal({ open, onClose, user }: Props) {
     }))
   }, [tren])
 
-  // Data grafik perbandingan antar-Desa -- `kehadiran` state pecah per Desa+gender, digabung
-  // per Desa saja (jumlah kedua gender) supaya grafik tidak terlalu padat/ramai.
-  const kehadiranPerDesaChartData = useMemo(() => {
-    const map = new Map<string, { desa: string; Hadir: number; Izin: number; Sakit: number; Alpha: number }>()
+  // Data grafik perbandingan antar-unit (Desa utk scope daerah, Kelompok utk scope desa) --
+  // `kehadiran` state pecah per unit+gender, digabung per unit saja (jumlah kedua gender)
+  // supaya grafik tidak terlalu padat/ramai. Utk scope kelompok (label selalu kosong krn tidak
+  // ada breakdown grouping), hasilnya otomatis 1 baris saja -- grafik ini disembunyikan di JSX
+  // utk scope kelompok (lihat kondisi render di bawah), jadi tidak masalah.
+  const kehadiranPerUnitChartData = useMemo(() => {
+    const map = new Map<string, { unit: string; Hadir: number; Izin: number; Sakit: number; Alpha: number }>()
     for (const r of kehadiran) {
-      const existing = map.get(r.nama_desa) || { desa: r.nama_desa, Hadir: 0, Izin: 0, Sakit: 0, Alpha: 0 }
+      const existing = map.get(r.label) || { unit: r.label, Hadir: 0, Izin: 0, Sakit: 0, Alpha: 0 }
       existing.Hadir += r.hadir
       existing.Izin += r.izin
       existing.Sakit += r.sakit
       existing.Alpha += r.tidak_hadir
-      map.set(r.nama_desa, existing)
+      map.set(r.label, existing)
     }
     return Array.from(map.values())
   }, [kehadiran])
@@ -191,11 +253,15 @@ export default function LaporanBulananModal({ open, onClose, user }: Props) {
   // sudah ada di halaman lain).
   const buildSections = (): ExportSection[] => {
     const sections: ExportSection[] = []
+    const groupingLabel = GROUPING_LABEL[scope.tingkatan]
+    // Scope kelompok tidak punya kolom grouping (unit terkecil) -- kolom "Kelompok"/"Desa"
+    // dilewati sepenuhnya utk section ini, cukup Jenis Kelamin.
+    const showGrouping = scope.tingkatan !== 'kelompok'
 
     sections.push({
-      heading: 'Rekap Kehadiran per Desa & Jenis Kelamin',
+      heading: `Rekap Kehadiran per ${showGrouping ? `${groupingLabel} & ` : ''}Jenis Kelamin`,
       columns: [
-        { header: 'Desa', key: 'desa', width: 20 },
+        ...(showGrouping ? [{ header: groupingLabel, key: 'unit', width: 20 }] : []),
         { header: 'Jenis Kelamin', key: 'jk', width: 14 },
         { header: 'Hadir', key: 'hadir', width: 10 },
         { header: 'Izin', key: 'izin', width: 10 },
@@ -204,7 +270,7 @@ export default function LaporanBulananModal({ open, onClose, user }: Props) {
         { header: 'Total', key: 'total', width: 10 },
       ],
       rows: kehadiran.map(r => ({
-        desa: r.nama_desa,
+        unit: r.label,
         jk: r.jenis_kelamin === 'laki-laki' ? 'Laki-laki' : r.jenis_kelamin === 'perempuan' ? 'Perempuan' : '-',
         hadir: r.hadir,
         izin: r.izin,
@@ -222,15 +288,15 @@ export default function LaporanBulananModal({ open, onClose, user }: Props) {
     })
 
     sections.push({
-      heading: 'Breakdown Kelas Ngaji per Desa & Jenis Kelamin (Generus Aktif Saat Ini)',
+      heading: `Breakdown Kelas Ngaji per ${showGrouping ? `${groupingLabel} & ` : ''}Jenis Kelamin (Generus Aktif Saat Ini)`,
       columns: [
-        { header: 'Desa', key: 'desa', width: 20 },
+        ...(showGrouping ? [{ header: groupingLabel, key: 'unit', width: 20 }] : []),
         { header: 'Jenis Kelamin', key: 'jk', width: 14 },
         { header: 'Kelas Ngaji', key: 'kelas', width: 18 },
         { header: 'Jumlah', key: 'jumlah', width: 10 },
       ],
       rows: kelasNgaji.map(r => ({
-        desa: r.nama_desa,
+        unit: r.label,
         jk: r.jenis_kelamin === 'laki-laki' ? 'Laki-laki' : r.jenis_kelamin === 'perempuan' ? 'Perempuan' : '-',
         kelas: KELAS_NGAJI_LABEL[r.kelas_ngaji] || r.kelas_ngaji,
         jumlah: r.jumlah,
@@ -274,9 +340,9 @@ export default function LaporanBulananModal({ open, onClose, user }: Props) {
   // export final (lihat captureChartImages + handleExportPDF/Excel di bawah).
   const exportOptions: MultiSectionExportOptions = {
     title: 'Laporan Bulanan Kehadiran & Database Generus',
-    subtitle: `Se-Bekasi Timur -- ${BULAN_LABEL[bulan - 1]} ${tahun}`,
+    subtitle: `${JUDUL_LAPORAN[scope.tingkatan].replace('Laporan Bulanan -- ', '')} -- ${BULAN_LABEL[bulan - 1]} ${tahun}`,
     sections: buildSections(),
-    fileName: `Laporan-Bulanan-Daerah-${BULAN_LABEL[bulan - 1]}-${tahun}`,
+    fileName: `Laporan-Bulanan-${scope.tingkatan[0].toUpperCase()}${scope.tingkatan.slice(1)}-${BULAN_LABEL[bulan - 1]}-${tahun}`,
   }
 
   const previewUrl = useMemo(() => {
@@ -335,7 +401,7 @@ export default function LaporanBulananModal({ open, onClose, user }: Props) {
     try {
       const charts = await captureChartImages()
       exportMultiSectionToPDF({ ...exportOptions, charts })
-      await logAudit(user, 'EXPORT', 'Laporan Bulanan Daerah', `PDF -- ${BULAN_LABEL[bulan - 1]} ${tahun}`)
+      await logAudit(user, 'EXPORT', JUDUL_LAPORAN[scope.tingkatan], `PDF -- ${BULAN_LABEL[bulan - 1]} ${tahun}`)
     } finally {
       setExportingPdf(false)
     }
@@ -346,7 +412,7 @@ export default function LaporanBulananModal({ open, onClose, user }: Props) {
     try {
       const charts = await captureChartImages()
       await exportMultiSectionToExcel({ ...exportOptions, charts })
-      await logAudit(user, 'EXPORT', 'Laporan Bulanan Daerah', `Excel -- ${BULAN_LABEL[bulan - 1]} ${tahun}`)
+      await logAudit(user, 'EXPORT', JUDUL_LAPORAN[scope.tingkatan], `Excel -- ${BULAN_LABEL[bulan - 1]} ${tahun}`)
     } finally {
       setExportingExcel(false)
     }
@@ -362,7 +428,7 @@ export default function LaporanBulananModal({ open, onClose, user }: Props) {
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[92vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
           <div>
-            <h2 className="text-lg font-bold text-slate-800">Laporan Bulanan -- Se-Bekasi Timur</h2>
+            <h2 className="text-lg font-bold text-slate-800">{JUDUL_LAPORAN[scope.tingkatan]}</h2>
             <p className="text-xs text-slate-400 mt-0.5">Rekap kehadiran, kelas ngaji, tren, dan pertumbuhan Generus</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition">
@@ -463,86 +529,14 @@ export default function LaporanBulananModal({ open, onClose, user }: Props) {
                 </div>
               )}
 
-              {kehadiranPerDesaChartData.length > 0 && (
+              {/* Grafik perbandingan antar-unit hanya relevan kalau ada lebih dari 1 unit di
+                  bawah scope ini (Desa punya banyak Kelompok, Daerah punya banyak Desa) --
+                  scope kelompok adalah unit terkecil, jadi grafik ini tidak pernah dirender
+                  utknya (kehadiranPerUnitChartData akan selalu 1 baris berlabel kosong). */}
+              {scope.tingkatan !== 'kelompok' && kehadiranPerUnitChartData.length > 0 && (
                 <div ref={kehadiranDesaChartRef} className="bg-white rounded-xl border border-slate-100 p-4">
                   <h4 className="text-sm font-semibold text-slate-700 mb-3">
-                    Perbandingan Kehadiran per Desa -- {BULAN_LABEL[bulan - 1]} {tahun}
+                    Perbandingan Kehadiran per {GROUPING_LABEL[scope.tingkatan]} -- {BULAN_LABEL[bulan - 1]} {tahun}
                   </h4>
                   <ResponsiveContainer width="100%" height={260}>
-                    <BarChart data={kehadiranPerDesaChartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                      <XAxis dataKey="desa" tick={{ fontSize: 12, fill: '#94a3b8' }} />
-                      <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} allowDecimals={false} />
-                      <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12 }} />
-                      <Legend wrapperStyle={{ fontSize: 12 }} />
-                      <Bar dataKey="Hadir" fill="#16a34a" radius={[6, 6, 0, 0]} />
-                      <Bar dataKey="Izin" fill="#d97706" radius={[6, 6, 0, 0]} />
-                      <Bar dataKey="Sakit" fill="#9333ea" radius={[6, 6, 0, 0]} />
-                      <Bar dataKey="Alpha" fill="#dc2626" radius={[6, 6, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-
-              {kehadiran.length === 0 && kelasNgaji.length === 0 ? (
-                <div className="bg-white rounded-xl p-8 text-center text-slate-400 text-sm">
-                  Belum ada data absensi/kegiatan untuk periode ini. Klik "Pratinjau PDF" untuk melihat format laporan lengkap (termasuk tren & pertumbuhan Generus).
-                </div>
-              ) : (
-                <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-slate-100">
-                    <h4 className="text-sm font-semibold text-slate-700">Rekap Kehadiran per Desa</h4>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-slate-500 border-b border-slate-100 bg-slate-50">
-                          <th className="px-4 py-2 font-medium">Desa</th>
-                          <th className="px-4 py-2 font-medium">JK</th>
-                          <th className="px-4 py-2 font-medium text-center">Hadir</th>
-                          <th className="px-4 py-2 font-medium text-center">Izin</th>
-                          <th className="px-4 py-2 font-medium text-center">Sakit</th>
-                          <th className="px-4 py-2 font-medium text-center">Alpha</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {kehadiran.map((r, i) => (
-                          <tr key={i} className="border-b border-slate-50">
-                            <td className="px-4 py-2 text-slate-700">{r.nama_desa}</td>
-                            <td className="px-4 py-2 text-slate-500 text-xs">{r.jenis_kelamin === 'laki-laki' ? 'L' : r.jenis_kelamin === 'perempuan' ? 'P' : '-'}</td>
-                            <td className="px-4 py-2 text-center">{r.hadir}</td>
-                            <td className="px-4 py-2 text-center">{r.izin}</td>
-                            <td className="px-4 py-2 text-center">{r.sakit}</td>
-                            <td className="px-4 py-2 text-center">{r.tidak_hadir}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              <p className="text-xs text-slate-400 text-center">
-                Rekap lengkap (breakdown kelas ngaji, tren 12 bulan, pertumbuhan Generus) tersedia di pratinjau PDF & hasil export.
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className="px-6 py-4 border-t border-slate-100 shrink-0 flex items-center justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition">
-            Tutup
-          </button>
-          <button onClick={handleExportPDF} disabled={loading || exportingPdf}
-            className="px-4 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
-            {exportingPdf ? 'Menyimpan...' : '📄 Export PDF'}
-          </button>
-          <button onClick={handleExportExcel} disabled={loading || exportingExcel}
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-1.5">
-            {exportingExcel ? 'Menyimpan...' : '📊 Export Excel'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
+                    <Ba

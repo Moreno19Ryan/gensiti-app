@@ -5,7 +5,7 @@ import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { Kegiatan, Absensi, PengajuanIzinPresensi } from '@/lib/types'
 import { logAudit } from '@/lib/audit'
-import { canManagePresensi, canLihatLaporanDaerah } from '@/lib/roles'
+import { canManagePresensi, canLihatLaporanBulanan, getLaporanBulananScope } from '@/lib/roles'
 import { useFeatureAccess } from '@/lib/feature-toggles'
 import { ExportOptions, exportToPDF } from '@/lib/export'
 import ExportPreviewModal from '@/components/ExportPreviewModal'
@@ -56,9 +56,11 @@ export default function AbsensiPage() {
   const isSuperAdmin = user?.role?.tingkatan === 'super_admin'
   const canView = canManage || isSuperAdmin
   const { enabled: featureEnabled, checking: featureChecking } = useFeatureAccess(user, 'absensi')
-  // Laporan Bulanan (rekap se-Daerah) -- hanya PPG/Ketua Daerah/Super Admin, lihat
-  // canLihatLaporanDaerah di lib/roles.ts.
-  const canLihatLaporan = canLihatLaporanDaerah(user)
+  // Laporan Bulanan -- PPG/Super Admin lihat rekap se-Daerah, Ketua/Sekretaris Daerah/Desa/
+  // Kelompok lihat rekap scope jenjangnya sendiri (breakdown per Desa/Kelompok/gender sesuai
+  // level). Lihat canLihatLaporanBulanan & getLaporanBulananScope di lib/roles.ts.
+  const canLihatLaporan = canLihatLaporanBulanan(user)
+  const laporanScope = getLaporanBulananScope(user)
   const [laporanBulananOpen, setLaporanBulananOpen] = useState(false)
 
   const [kegiatanList, setKegiatanList] = useState<Kegiatan[]>([])
@@ -734,15 +736,4 @@ export default function AbsensiPage() {
         onClose={() => setPreviewOpen(false)}
         options={previewOptions}
         onExported={handleExported}
-      />
-
-      {canLihatLaporan && user && (
-        <LaporanBulananModal
-          open={laporanBulananOpen}
-          onClose={() => setLaporanBulananOpen(false)}
-          user={user}
-        />
-      )}
-    </div>
-  )
-}
+    

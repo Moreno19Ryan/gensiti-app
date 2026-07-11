@@ -177,6 +177,41 @@ export function canLihatLaporanDaerah(user: Pick<UserProfile, 'role'> | null | u
 }
 
 /**
+ * True jika user boleh melihat "Laporan Bulanan" di JENJANGNYA SENDIRI -- perluasan dari
+ * canLihatLaporanDaerah supaya Ketua/Wakil Ketua/Sekretaris Desa & Kelompok juga punya laporan
+ * bulanan (breakdown per Kelompok utk Desa, per gender utk Kelompok), bukan cuma Ketua Daerah.
+ * PPG & Super Admin tetap bisa lihat semua jenjang (dipakai bersamaan dgn getLaporanBulananScope
+ * utk tahu RPC/scope mana yg harus dipanggil). HARUS SELALU KONSISTEN dengan pengecekan role di
+ * dalam RPC get_laporan_..._desa / get_laporan_..._kelompok (migration
+ * add_laporan_bulanan_rpc_scope_desa / add_laporan_bulanan_rpc_scope_kelompok) -- proteksi di
+ * database adalah sumber kebenaran sesungguhnya, ini hanya gate UI.
+ */
+export function canLihatLaporanBulanan(user: Pick<UserProfile, 'role'> | null | undefined): boolean {
+  if (!user?.role) return false
+  if (user.role.tingkatan === 'super_admin') return true
+  if (isPPG(user)) return true
+  if (user.role.tingkatan !== 'daerah' && user.role.tingkatan !== 'desa' && user.role.tingkatan !== 'kelompok') return false
+  const nama = user.role.nama_role.toLowerCase()
+  return nama.includes('ketua') || nama.includes('sekretaris')
+}
+
+/**
+ * Menentukan scope Laporan Bulanan yang berlaku utk user ybs -- dipakai UI utk pilih RPC mana
+ * yg dipanggil (..._daerah / ..._desa / ..._kelompok) dan parameter scope id apa yg dikirim.
+ * PPG & Super Admin default ke scope 'daerah' (rekap se-Daerah, sama seperti sebelumnya) karena
+ * mereka tidak terikat desa_id/kelompok_id tertentu.
+ */
+export function getLaporanBulananScope(
+  user: Pick<UserProfile, 'role' | 'desa_id' | 'kelompok_id'> | null | undefined
+): { tingkatan: 'daerah' | 'desa' | 'kelompok'; scopeId: string | null } | null {
+  if (!canLihatLaporanBulanan(user)) return null
+  const t = user?.role?.tingkatan
+  if (t === 'desa') return { tingkatan: 'desa', scopeId: user?.desa_id ?? null }
+  if (t === 'kelompok') return { tingkatan: 'kelompok', scopeId: user?.kelompok_id ?? null }
+  return { tingkatan: 'daerah', scopeId: null }
+}
+
+/**
  * Hierarki jenjang, dari yang paling "bawah" ke paling "atas". Dipakai HANYA untuk menentukan
  * siapa boleh membuat/mengubah role user ke tingkatan apa (lihat getAllowedTargetTingkatan di
  * bawah) -- BUKAN untuk kontrol akses fitur lain, yang masing-masing sudah punya gate sendiri
@@ -193,38 +228,4 @@ const TINGKATAN_HIERARKI = ['kelompok', 'desa', 'daerah', 'ppg', 'super_admin'] 
  *                  setingkat sendiri)
  *   - Daerah    -> boleh membuat Generus + pengurus Kelompok + pengurus Desa + pengurus Daerah
  *                  (turun penuh + setingkat sendiri), TAPI TIDAK PPG/Super Admin
- *   - PPG       -> tidak relevan, PPG memang sudah dikecualikan dari canManageMembers() di
- *                  atas (PPG murni pengawas read-only, tidak pernah bisa membuat user apapun)
- *   - Super Admin -> boleh membuat semua tingkatan TERMASUK PPG, kecuali sesama Super Admin
- *                  (Super Admin adalah akun tunggal mutlak -- lihat isSuperAdminRole di
- *                  app/api/users/route.ts, aturan itu tetap berlaku terpisah/di atas ini)
- *
- * HARUS SELALU KONSISTEN dengan pengecekan yang sama persis di app/api/users/route.ts
- * (fungsi getAllowedTargetTingkatan versi server) -- di sana adalah enforcement sesungguhnya
- * (service role, bypass RLS), fungsi di sini hanya dipakai UI supaya dropdown role di form
- * Tambah/Edit Pengguna tidak menampilkan pilihan yang toh akan ditolak server.
- */
-export function getAllowedTargetTingkatan(user: Pick<UserProfile, 'role'> | null | undefined): string[] {
-  if (!user?.role) return []
-  const tingkatan = user.role.tingkatan
-
-  if (tingkatan === 'super_admin') {
-    // Semua tingkatan kecuali super_admin sendiri (diblokir terpisah, lihat isSuperAdminRole).
-    return TINGKATAN_HIERARKI.filter(t => t !== 'super_admin')
-  }
-
-  // PPG dicek eksplisit di sini (bukan cuma mengandalkan canManageMembers() di caller) --
-  // 'ppg' SENDIRI adalah anggota TINGKATAN_HIERARKI (dipakai sbg batas atas utk role Daerah),
-  // jadi kalau tidak di-exclude eksplisit, indexOf('ppg') akan mengembalikan index valid dan
-  // fungsi ini keliru mengizinkan PPG "membuat" role sampai ke jenjangnya sendiri. PPG memang
-  // tidak pernah boleh membuat/mengubah role siapapun, konsisten dgn PPG dikecualikan dari
-  // canManageMembers() di atas.
-  if (tingkatan === 'ppg') return []
-
-  const idx = TINGKATAN_HIERARKI.indexOf(tingkatan as typeof TINGKATAN_HIERARKI[number])
-  if (idx === -1) return [] // tingkatan tak dikenal -- tidak boleh membuat siapapun
-
-  // Semua tingkatan dari index 0 sampai posisi caller sendiri (turun penuh + setingkat sendiri),
-  // tidak termasuk apapun di atasnya.
-  return TINGKATAN_HIERARKI.slice(0, idx + 1) as unknown as string[]
-}
+ *   - PPG       -> tidak relevan, PPG memang sudah dikecualikan dari canMan
