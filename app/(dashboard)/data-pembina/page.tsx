@@ -67,6 +67,7 @@ const emptyForm = {
   alamat: '',
   tinggi_badan: '',
   berat_badan: '',
+  status_pengguna: 'lajang',
 }
 
 export default function DataPembinaPage() {
@@ -127,6 +128,7 @@ export default function DataPembinaPage() {
       alamat: g.alamat || '',
       tinggi_badan: g.tinggi_badan?.toString() || '',
       berat_badan: g.berat_badan?.toString() || '',
+      status_pengguna: g.status_pengguna || 'lajang',
     })
   }
 
@@ -145,12 +147,26 @@ export default function DataPembinaPage() {
 
     setSaving(true)
     try {
-      // no_hp adalah field AKUN (users.no_hp), bukan biodata -- lewat /api/users.
-      // Sisanya biodata murni -- lewat /api/generus. Sama seperti pola di data-generus/page.tsx.
+      // PPG dikecualikan dari arsip otomatis saat status_pengguna = 'menikah' -- mayoritas
+      // pengurus PPG sudah menikah, itu bukan indikasi ybs berhenti aktif (sama seperti
+      // logika di generus/page.tsx doActualSave). Meninggal Dunia TETAP mengarsipkan --
+      // kondisi itu memang berarti ybs sudah tidak bisa lagi menjalankan tugasnya. Halaman
+      // ini tidak punya opsi "Pindah Sambung" (PPG tidak terikat scope desa/kelompok).
+      const needsArchive = form.status_pengguna === 'meninggal_dunia'
+
+      // no_hp + status akun (archive kalau perlu) adalah field AKUN (tabel users) -- lewat
+      // /api/users. Sisanya biodata murni -- lewat /api/generus. Sama seperti pola di
+      // data-generus/page.tsx.
+      const akunBody: Record<string, unknown> = { id: editTarget.users.id, no_hp: form.no_hp }
+      if (needsArchive) {
+        akunBody.is_active = false
+        akunBody.archive = true
+        akunBody.alasan_arsip = 'Meninggal Dunia'
+      }
       const resAkun = await authFetch('/api/users', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: editTarget.users.id, no_hp: form.no_hp }),
+        body: JSON.stringify(akunBody),
       })
       const jsonAkun = await resAkun.json()
       if (jsonAkun.error) { setError(jsonAkun.error); return }
@@ -168,6 +184,7 @@ export default function DataPembinaPage() {
           alamat: form.alamat,
           tinggi_badan: form.tinggi_badan ? parseFloat(form.tinggi_badan) : null,
           berat_badan: form.berat_badan ? parseFloat(form.berat_badan) : null,
+          status_pengguna: form.status_pengguna,
         }),
       })
       const json = await res.json()
@@ -467,6 +484,26 @@ export default function DataPembinaPage() {
                 <textarea value={form.alamat} onChange={e => setUpper('alamat', e.target.value)}
                   rows={2} placeholder="ALAMAT LENGKAP"
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none uppercase disabled:opacity-60" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Status Pengguna</label>
+                <select value={form.status_pengguna} onChange={e => set('status_pengguna', e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60">
+                  <option value="lajang">Lajang</option>
+                  <option value="menikah">Menikah</option>
+                  <option value="meninggal_dunia">Meninggal Dunia</option>
+                </select>
+                {form.status_pengguna === 'menikah' && (
+                  <p className="text-xs text-emerald-600 mt-1.5">
+                    ✓ Status "Menikah" tidak mengarsipkan akun PPG -- mayoritas pengurus PPG memang sudah menikah.
+                  </p>
+                )}
+                {form.status_pengguna === 'meninggal_dunia' && (
+                  <p className="text-xs text-red-600 mt-1.5">
+                    ⚠️ Akun akan otomatis diarsipkan (dinonaktifkan) saat disimpan.
+                  </p>
+                )}
               </div>
             </fieldset>
 
