@@ -57,6 +57,11 @@ export interface ExportChartImage {
 export interface MultiSectionExportOptions {
   title: string
   subtitle?: string
+  // Catatan ringkasan opsional (mis. kalimat insight otomatis "Kehadiran naik 5% dari bulan
+  // lalu...") -- dirender sebagai paragraf di bawah kop, sebelum sections. Beda dari subtitle
+  // (satu baris pendek, selalu center) -- note ini bisa lebih panjang & rata kiri, mirip catatan
+  // kaki penjelas. Opsional, laporan lain yang tidak butuh tetap jalan seperti biasa.
+  note?: string
   sections: ExportSection[]
   fileName: string
   charts?: ExportChartImage[]
@@ -184,6 +189,19 @@ function buildMultiSectionPdfDoc(opts: MultiSectionExportOptions): jsPDF {
   }
 
   let cursorY = opts.subtitle ? 46 : 40
+
+  // Catatan ringkasan (mis. kalimat insight otomatis) -- kotak rata kiri di bawah kop,
+  // dibungkus (word-wrap) selebar halaman dikurangi margin. splitTextToSize menghitung tinggi
+  // teks setelah wrap, dipakai utk menggeser cursorY section pertama ke bawah secukupnya.
+  if (opts.note) {
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'italic')
+    doc.setTextColor(60)
+    const noteLines = doc.splitTextToSize(opts.note, pageWidth - 28)
+    doc.text(noteLines, 14, cursorY)
+    cursorY += noteLines.length * 4.5 + 4
+    doc.setTextColor(0)
+  }
 
   opts.sections.forEach(section => {
     // Halaman baru kalau sisa ruang terlalu sempit utk heading + minimal beberapa baris tabel
@@ -319,6 +337,20 @@ export async function exportMultiSectionToExcel(opts: MultiSectionExportOptions)
   sheet.getCell(3, 1).font = { bold: true, size: 11 }
   sheet.getCell(3, 1).alignment = { horizontal: 'center' }
 
+  // Catatan ringkasan (mis. kalimat insight otomatis) -- baris terpisah, italic, rata kiri
+  // (beda dari title/subtitle di atas yang center) supaya terasa seperti catatan penjelas,
+  // bukan bagian dari kop resmi. wrapText true krn kalimatnya bisa cukup panjang.
+  if (opts.note) {
+    sheet.addRow([])
+    const noteRowNum = sheet.rowCount + 1
+    sheet.mergeCells(noteRowNum, 1, noteRowNum, maxCols)
+    const noteRow = sheet.getRow(noteRowNum)
+    noteRow.getCell(1).value = opts.note
+    noteRow.getCell(1).font = { italic: true, size: 10, color: { argb: 'FF475569' } }
+    noteRow.getCell(1).alignment = { horizontal: 'left', wrapText: true }
+    noteRow.commit()
+  }
+
   opts.sections.forEach(section => {
     sheet.addRow([])
     const headingRow = sheet.addRow([section.heading])
@@ -429,53 +461,4 @@ export async function exportToExcel(opts: ExportOptions) {
 
   sheet.mergeCells(2, 1, 2, opts.columns.length)
   sheet.getCell(2, 1).value = ORG_NAME
-  sheet.getCell(2, 1).font = { bold: true, size: 14 }
-  sheet.getCell(2, 1).alignment = { horizontal: 'center' }
-
-  sheet.mergeCells(3, 1, 3, opts.columns.length)
-  sheet.getCell(3, 1).value = opts.title + (opts.subtitle ? ` -- ${opts.subtitle}` : '')
-  sheet.getCell(3, 1).font = { bold: true, size: 11 }
-  sheet.getCell(3, 1).alignment = { horizontal: 'center' }
-
-  sheet.addRow([])
-
-  // Header kolom
-  const headerRow = sheet.addRow(opts.columns.map(c => c.header))
-  headerRow.eachCell(cell => {
-    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } }
-    cell.alignment = { horizontal: 'center' }
-  })
-
-  // Data
-  opts.rows.forEach(row => {
-    sheet.addRow(opts.columns.map(c => row[c.key] ?? '-'))
-  })
-
-  // Ringkasan
-  if (opts.summary && opts.summary.length > 0) {
-    sheet.addRow([])
-    opts.summary.forEach(s => {
-      const r = sheet.addRow([s.label])
-      r.getCell(1).font = { bold: true }
-      sheet.getCell(r.number, opts.columns.length).value = s.value
-      sheet.getCell(r.number, opts.columns.length).font = { bold: true }
-    })
-  }
-
-  // Lebar kolom
-  opts.columns.forEach((c, i) => {
-    sheet.getColumn(i + 1).width = c.width || 18
-  })
-
-  const buffer = await workbook.xlsx.writeBuffer()
-  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${opts.fileName}.xlsx`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
-}
+  sheet.getCell(2, 1).font = { bold:
