@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth'
 import { Absensi, EmailPreferensi } from '@/lib/types'
 import { getPushPermission, getExistingPushSubscription, subscribeToPush, unsubscribeFromPush } from '@/lib/push'
+import PasswordInput from '@/components/PasswordInput'
 
 interface GenerusRecord {
   id: string
@@ -735,21 +736,21 @@ export default function ProfilPage() {
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Password Lama *</label>
-                <input type="password" value={pwForm.lama} onChange={e => setPwForm(f => ({ ...f, lama: e.target.value }))}
-                  placeholder="Masukkan password saat ini"
-                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <PasswordInput value={pwForm.lama} onChange={v => setPwForm(f => ({ ...f, lama: v }))}
+                  placeholder="Masukkan password saat ini" autoComplete="current-password"
+                  className="w-full pl-3 pr-10 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Password Baru *</label>
-                <input type="password" value={pwForm.baru} onChange={e => setPwForm(f => ({ ...f, baru: e.target.value }))}
-                  placeholder="Min. 6 karakter, huruf kapital, hanya huruf & angka"
-                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <PasswordInput value={pwForm.baru} onChange={v => setPwForm(f => ({ ...f, baru: v }))}
+                  placeholder="Min. 6 karakter, huruf kapital, hanya huruf & angka" autoComplete="new-password"
+                  className="w-full pl-3 pr-10 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Konfirmasi Password Baru *</label>
-                <input type="password" value={pwForm.konfirmasi} onChange={e => setPwForm(f => ({ ...f, konfirmasi: e.target.value }))}
-                  placeholder="Ulangi password baru"
-                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <PasswordInput value={pwForm.konfirmasi} onChange={v => setPwForm(f => ({ ...f, konfirmasi: v }))}
+                  placeholder="Ulangi password baru" autoComplete="new-password"
+                  className="w-full pl-3 pr-10 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <button onClick={savePassword} disabled={saving}
                 className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition flex items-center justify-center gap-2">

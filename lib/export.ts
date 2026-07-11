@@ -78,13 +78,13 @@ function buildPdfDoc(opts: ExportOptions): jsPDF {
   const doc = new jsPDF({ orientation: opts.columns.length > 5 ? 'landscape' : 'portrait', unit: 'mm' })
   const pageWidth = doc.internal.pageSize.getWidth()
 
-  // Kop laporan -- logo PPG (organisasi induk) & GENSITI ditempel berdampingan di kiri
-  // atas, teks org/app name tetap center supaya rapi walau ada logo. addImage dibungkus
+  // Kop laporan -- logo GENSITI (nama aplikasi) di margin KIRI, logo PPG (organisasi induk)
+  // di margin KANAN, teks org/app name tetap center di antara keduanya. addImage dibungkus
   // try/catch: kalau base64 gagal dirender karena alasan apapun, laporan tetap tercetak
   // tanpa logo daripada gagal total.
   try {
-    doc.addImage(PPG_LOGO_BASE64, 'PNG', 14, 8, 14, 14)
-    doc.addImage(GENSITI_LOGO_BASE64, 'PNG', 30, 8, 14, 14)
+    doc.addImage(GENSITI_LOGO_BASE64, 'PNG', 14, 8, 14, 14)
+    doc.addImage(PPG_LOGO_BASE64, 'PNG', pageWidth - 28, 8, 14, 14)
   } catch {
     // non-fatal -- lanjut tanpa logo
   }
@@ -160,8 +160,8 @@ function buildMultiSectionPdfDoc(opts: MultiSectionExportOptions): jsPDF {
   const pageWidth = doc.internal.pageSize.getWidth()
 
   try {
-    doc.addImage(PPG_LOGO_BASE64, 'PNG', 14, 8, 14, 14)
-    doc.addImage(GENSITI_LOGO_BASE64, 'PNG', 30, 8, 14, 14)
+    doc.addImage(GENSITI_LOGO_BASE64, 'PNG', 14, 8, 14, 14)
+    doc.addImage(PPG_LOGO_BASE64, 'PNG', pageWidth - 28, 8, 14, 14)
   } catch {
     // non-fatal -- lanjut tanpa logo
   }
@@ -299,10 +299,10 @@ export async function exportMultiSectionToExcel(opts: MultiSectionExportOptions)
   const maxCols = Math.max(1, ...opts.sections.map(s => s.columns.length))
 
   try {
-    const ppgImageId = workbook.addImage({ base64: PPG_LOGO_BASE64, extension: 'png' })
-    sheet.addImage(ppgImageId, { tl: { col: 0.15, row: 0.1 }, ext: { width: 34, height: 34 } })
     const gensitiImageId = workbook.addImage({ base64: GENSITI_LOGO_BASE64, extension: 'png' })
-    sheet.addImage(gensitiImageId, { tl: { col: 0.95, row: 0.1 }, ext: { width: 34, height: 34 } })
+    sheet.addImage(gensitiImageId, { tl: { col: 0.15, row: 0.1 }, ext: { width: 34, height: 34 } })
+    const ppgImageId = workbook.addImage({ base64: PPG_LOGO_BASE64, extension: 'png' })
+    sheet.addImage(ppgImageId, { tl: { col: Math.max(0.95, maxCols - 1.05), row: 0.1 }, ext: { width: 34, height: 34 } })
     sheet.getRow(1).height = 26
   } catch {
     // non-fatal -- lanjut tanpa logo
@@ -411,16 +411,16 @@ export async function exportToExcel(opts: ExportOptions) {
   const safeSheetName = (opts.title.replace(/[*?:\\/[\]]/g, '-').trim().slice(0, 31)) || 'Laporan'
   const sheet = workbook.addWorksheet(safeSheetName)
 
-  // Kop -- baris 1 dikhususkan untuk logo PPG & GENSITI berdampingan (kolom A-B) supaya
-  // tidak menimpa teks org/app name yang di-merge & center di baris 2-3 (baris judul
-  // digeser turun 1 dibanding sebelumnya). Row 1 dibuat pendek/kosong secara teks, hanya
-  // berisi gambar mengambang. Dibungkus try/catch: kalau addImage gagal karena alasan
-  // apapun, laporan tetap ter-generate tanpa logo daripada gagal total.
+  // Kop -- baris 1 dikhususkan untuk logo GENSITI (kiri, kolom A) & PPG (kanan, mendekati
+  // kolom terakhir tabel) supaya tidak menimpa teks org/app name yang di-merge & center di
+  // baris 2-3 (baris judul digeser turun 1 dibanding sebelumnya). Row 1 dibuat pendek/kosong
+  // secara teks, hanya berisi gambar mengambang. Dibungkus try/catch: kalau addImage gagal
+  // karena alasan apapun, laporan tetap ter-generate tanpa logo daripada gagal total.
   try {
-    const ppgImageId = workbook.addImage({ base64: PPG_LOGO_BASE64, extension: 'png' })
-    sheet.addImage(ppgImageId, { tl: { col: 0.15, row: 0.1 }, ext: { width: 34, height: 34 } })
     const gensitiImageId = workbook.addImage({ base64: GENSITI_LOGO_BASE64, extension: 'png' })
-    sheet.addImage(gensitiImageId, { tl: { col: 0.95, row: 0.1 }, ext: { width: 34, height: 34 } })
+    sheet.addImage(gensitiImageId, { tl: { col: 0.15, row: 0.1 }, ext: { width: 34, height: 34 } })
+    const ppgImageId = workbook.addImage({ base64: PPG_LOGO_BASE64, extension: 'png' })
+    sheet.addImage(ppgImageId, { tl: { col: Math.max(0.95, opts.columns.length - 1.05), row: 0.1 }, ext: { width: 34, height: 34 } })
     sheet.getRow(1).height = 26
   } catch {
     // non-fatal -- lanjut tanpa logo

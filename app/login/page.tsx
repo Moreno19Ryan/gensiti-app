@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { signIn, authFetch } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { PPG_LOGO_LOGIN_BASE64 } from '@/lib/logo'
+import PasswordInput from '@/components/PasswordInput'
 
 export default function LoginPage() {
   // Login memakai NAMA PENGGUNA (bukan email) -- keputusan produk karena banyak Generus
@@ -55,6 +56,15 @@ export default function LoginPage() {
     // ("MORENO RYANDIKA"). Endpoint /api/resolve-login melakukan normalisasi yang SAMA
     // PERSIS sebagai jaring pengaman kedua (jangan diubah salah satu tanpa yang lain).
     const normalizedUsername = username.trim().replace(/\s+/g, ' ').toUpperCase()
+
+    // Validasi manual pengganti atribut HTML `required` -- field password sekarang pakai
+    // PasswordInput (input type="text" custom, bukan <input type="password"> native), jadi
+    // browser tidak lagi otomatis mencegah submit kosong seperti sebelumnya.
+    if (!normalizedUsername || !password) {
+      setError('Nama pengguna dan password wajib diisi')
+      setLoading(false)
+      return
+    }
 
     try {
       const res = await fetch('/api/resolve-login', {
@@ -167,13 +177,12 @@ export default function LoginPage() {
                   Lupa password?
                 </Link>
               </div>
-              <input
-                type="password"
+              <PasswordInput
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
+                onChange={setPassword}
                 placeholder="Password"
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                autoComplete="current-password"
+                className="w-full pl-4 pr-11 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               />
             </div>
 

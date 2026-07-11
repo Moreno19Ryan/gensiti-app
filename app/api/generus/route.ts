@@ -92,6 +92,32 @@ function canActOnScope(caller: Caller, targetDesaId: string | null, targetKelomp
   return false
 }
 
+// Duplikat dari generateUniqueLoginUsername() di app/api/users/route.ts (sengaja, sama seperti
+// getCaller/canManageMembers/canActOnScope di atas -- masing-masing endpoint independen).
+// Normalisasi HARUS identik dengan app/login/page.tsx & app/api/resolve-login/route.ts (trim +
+// collapse spasi ganda + uppercase).
+async function generateUniqueLoginUsername(
+  supabaseAdmin: ReturnType<typeof adminClient>,
+  baseName: string,
+  excludeUserId: string
+): Promise<string> {
+  const base = baseName.trim().replace(/\s+/g, ' ').toUpperCase()
+  let candidate = base
+  let suffix = 2
+  for (let i = 0; i < 100; i++) {
+    const { data } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .eq('login_username', candidate)
+      .neq('id', excludeUserId)
+      .maybeSingle()
+    if (!data) return candidate
+    candidate = `${base} (${suffix})`
+    suffix++
+  }
+  return `${base} (${Date.now()})`
+}
+
 // GET: Ambil biodata Generus by userId (server-side, bypass RLS)
 // Diizinkan untuk: pemilik data sendiri, atau pengguna yang berwenang mengelola Generus.
 export async function GET(req: NextRequest) {
@@ -195,8 +221,48 @@ export async function PATCH(req: NextRequest) {
     if (anak_ke !== undefined) generusPayload.anak_ke = anak_ke || null
     if (jumlah_saudara !== undefined) generusPayload.jumlah_saudara = jumlah_saudara || null
 
-    if (Object.keys(generusPayload).length === 0) {
+    // Sinkronkan login_username setiap kali nama_panggilan berubah -- login_username dibuat
+    // dari nama_panggilan saat akun pertama dibuat (lihat generateUniqueLoginUsername di
+    // app/api/users/route.ts), tapi TIDAK PERNAH disinkronkan ulang kalau nama_panggilan
+    // diedit belakangan lewat form biodata -- ini menyebabkan bug nyata: user "Moreno Ryandika
+    // Fernando" (nama_panggilan "Reno") tidak bisa login pakai "Reno" karena login_username-nya
+    // masih "MORENO RYANDIKA FERNANDO" (fallback nama_lengkap saat akun dibuat sebelum
+    // nama_panggilan diisi). Regenerate HANYA kalau nilai normalisasi-nya benar-benar berubah
+    // (bukan setiap kali form disave) supaya login_username tidak berubah tanpa alasan --
+    // login_username yang berubah berarti password lama tetap sama tapi user harus tahu nama
+    // login barunya, jadi perubahan ini sebaiknya memang cuma terjadi saat nama_panggilan-nya
+    // sendiri benar-benar berubah.
+    let newLoginUsername: string | null = null
+    if (nama_panggilan !== undefined && nama_panggilan) {
+      const { data: currentUser } = await supabaseAdmin
+        .from('users')
+        .select('login_username, nama_lengkap')
+        .eq('id', user_id)
+        .single()
+      const normalizedNew = String(nama_panggilan).trim().replace(/\s+/g, ' ').toUpperCase()
+      const currentUsername = currentUser?.login_username || ''
+      if (normalizedNew && normalizedNew !== currentUsername) {
+        newLoginUsername = await generateUniqueLoginUsername(supabaseAdmin, nama_panggilan, user_id)
+      }
+    }
+
+    if (Object.keys(generusPayload).length === 0 && !newLoginUsername) {
       return NextResponse.json({ success: true })
+    }
+
+    if (newLoginUsername) {
+      const { error: usernameErr } = await supabaseAdmin
+        .from('users')
+        .update({ login_username: newLoginUsername })
+        .eq('id', user_id)
+      if (usernameErr) {
+        console.error('login_username sync error:', usernameErr.message)
+        return NextResponse.json({ error: `Gagal menyinkronkan nama login: ${usernameErr.message}` }, { status: 500 })
+      }
+    }
+
+    if (Object.keys(generusPayload).length === 0) {
+      return NextResponse.json({ success: true, newLoginUsername })
     }
 
     // Selalu cari generus by user_id dulu (lebih reliable daripada upsert tanpa constraint).
@@ -235,7 +301,7 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, newLoginUsername })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }

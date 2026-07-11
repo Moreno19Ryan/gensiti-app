@@ -80,6 +80,9 @@ export default function DataPembinaPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [exporting, setExporting] = useState(false)
+  // Diisi kalau /api/generus PATCH mengembalikan newLoginUsername (nama_panggilan berubah,
+  // login_username ikut disinkronkan otomatis -- lihat komentar di app/api/generus/route.ts).
+  const [usernameChangedNotice, setUsernameChangedNotice] = useState<{ nama: string; username: string } | null>(null)
 
   const canManage = checkCanManageMembers(user)
   // Sama seperti Data Generus: Super Admin + semua Pengurus Muda-Mudi + PPG boleh melihat.
@@ -189,6 +192,9 @@ export default function DataPembinaPage() {
       })
       const json = await res.json()
       if (json.error) { setError(json.error); return }
+      if (json.newLoginUsername) {
+        setUsernameChangedNotice({ nama: editTarget.users.nama_lengkap, username: json.newLoginUsername })
+      }
 
       if (user) {
         await logAudit(user, 'UPDATE', 'Data Pembina', editTarget.users.nama_lengkap, {}, editTarget.users.id)
@@ -518,6 +524,27 @@ export default function DataPembinaPage() {
                 </button>
               )}
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal pemberitahuan nama login berubah -- muncul setiap kali nama_panggilan diedit
+          dan login_username disinkronkan ulang otomatis (lihat app/api/generus/route.ts).
+          Password TIDAK berubah, hanya nama yang dipakai untuk login. */}
+      {usernameChangedNotice && (
+        <Modal open={!!usernameChangedNotice} onClose={() => setUsernameChangedNotice(null)} title="Nama Login Diperbarui" size="sm">
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Nama panggilan <span className="font-semibold">{usernameChangedNotice.nama}</span> berubah, jadi nama login-nya ikut diperbarui. Sampaikan nama login baru ini ke pengguna (password tidak berubah):
+            </p>
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+              <p className="text-xs text-slate-400 mb-0.5">Nama Pengguna Baru (untuk login)</p>
+              <p className="font-mono font-semibold text-slate-800">{usernameChangedNotice.username}</p>
+            </div>
+            <button onClick={() => setUsernameChangedNotice(null)}
+              className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition">
+              Sudah Dicatat
+            </button>
           </div>
         </Modal>
       )}

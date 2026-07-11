@@ -9,6 +9,7 @@ import { canManageMembers as checkCanManageMembers, getAllowedTargetTingkatan } 
 import { useFeatureAccess } from '@/lib/feature-toggles'
 import { formatAge } from '@/lib/date'
 import Modal from '@/components/Modal'
+import PasswordInput from '@/components/PasswordInput'
 
 interface Member {
   id: string
@@ -155,6 +156,11 @@ export default function PenggunaPage() {
   // admin bisa langsung mencatat/menyampaikan ke pengguna baru. Tidak disimpan di
   // state lain manapun setelah modal ini ditutup (sesuai sifat password sekali-lihat).
   const [newCredentials, setNewCredentials] = useState<{ nama: string; username: string; password: string; biodataWarning?: string } | null>(null)
+  // Diisi kalau /api/generus PATCH mengembalikan newLoginUsername (nama_panggilan berubah,
+  // login_username ikut disinkronkan otomatis -- lihat komentar di app/api/generus/route.ts).
+  // User yang mengedit WAJIB diberi tahu, kalau tidak mereka akan bingung kenapa nama login
+  // lama tiba-tiba tidak bisa dipakai lagi.
+  const [usernameChangedNotice, setUsernameChangedNotice] = useState<{ nama: string; username: string } | null>(null)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -379,6 +385,9 @@ export default function PenggunaPage() {
           })
           const jsonGenerus = await resGenerus.json()
           if (jsonGenerus.error) { setError(jsonGenerus.error); return }
+          if (jsonGenerus.newLoginUsername) {
+            setUsernameChangedNotice({ nama: form.nama_lengkap, username: jsonGenerus.newLoginUsername })
+          }
         }
       }
 
@@ -843,9 +852,9 @@ export default function PenggunaPage() {
               <div className="pt-2 border-t border-slate-100 space-y-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Ganti Password (opsional)</label>
-                  <input type="password" value={form.password} onChange={e => set('password', e.target.value)}
-                    placeholder="Kosongkan jika tidak diubah"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <PasswordInput value={form.password} onChange={v => set('password', v)}
+                    placeholder="Kosongkan jika tidak diubah" autoComplete="new-password"
+                    className="w-full pl-3 pr-10 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={form.is_active} onChange={e => set('is_active', e.target.checked)}
@@ -1028,6 +1037,27 @@ export default function PenggunaPage() {
               Password ini hanya ditampilkan sekali dan tidak tersimpan di sistem dalam bentuk terbaca. Untuk mengganti password, pengguna dapat mengajukan permintaan lewat halaman &quot;Lupa Password&quot;.
             </div>
             <button onClick={() => setNewCredentials(null)}
+              className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition">
+              Sudah Dicatat
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal pemberitahuan nama login berubah -- muncul setiap kali nama_panggilan diedit
+          dan login_username disinkronkan ulang otomatis (lihat app/api/generus/route.ts).
+          Password TIDAK berubah, hanya nama yang dipakai untuk login. */}
+      {usernameChangedNotice && (
+        <Modal open={!!usernameChangedNotice} onClose={() => setUsernameChangedNotice(null)} title="Nama Login Diperbarui" size="sm">
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Nama panggilan <span className="font-semibold">{usernameChangedNotice.nama}</span> berubah, jadi nama login-nya ikut diperbarui. Sampaikan nama login baru ini ke pengguna (password tidak berubah):
+            </p>
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+              <p className="text-xs text-slate-400 mb-0.5">Nama Pengguna Baru (untuk login)</p>
+              <p className="font-mono font-semibold text-slate-800">{usernameChangedNotice.username}</p>
+            </div>
+            <button onClick={() => setUsernameChangedNotice(null)}
               className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition">
               Sudah Dicatat
             </button>
