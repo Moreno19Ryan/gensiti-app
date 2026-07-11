@@ -461,4 +461,53 @@ export async function exportToExcel(opts: ExportOptions) {
 
   sheet.mergeCells(2, 1, 2, opts.columns.length)
   sheet.getCell(2, 1).value = ORG_NAME
-  sheet.getCell(2, 1).font = { bold:
+  sheet.getCell(2, 1).font = { bold: true, size: 14 }
+  sheet.getCell(2, 1).alignment = { horizontal: 'center' }
+
+  sheet.mergeCells(3, 1, 3, opts.columns.length)
+  sheet.getCell(3, 1).value = opts.title + (opts.subtitle ? ` -- ${opts.subtitle}` : '')
+  sheet.getCell(3, 1).font = { bold: true, size: 11 }
+  sheet.getCell(3, 1).alignment = { horizontal: 'center' }
+
+  sheet.addRow([])
+
+  // Header kolom
+  const headerRow = sheet.addRow(opts.columns.map(c => c.header))
+  headerRow.eachCell(cell => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } }
+    cell.alignment = { horizontal: 'center' }
+  })
+
+  // Data
+  opts.rows.forEach(row => {
+    sheet.addRow(opts.columns.map(c => row[c.key] ?? '-'))
+  })
+
+  // Ringkasan
+  if (opts.summary && opts.summary.length > 0) {
+    sheet.addRow([])
+    opts.summary.forEach(s => {
+      const r = sheet.addRow([s.label])
+      r.getCell(1).font = { bold: true }
+      sheet.getCell(r.number, opts.columns.length).value = s.value
+      sheet.getCell(r.number, opts.columns.length).font = { bold: true }
+    })
+  }
+
+  // Lebar kolom
+  opts.columns.forEach((c, i) => {
+    sheet.getColumn(i + 1).width = c.width || 18
+  })
+
+  const buffer = await workbook.xlsx.writeBuffer()
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${opts.fileName}.xlsx`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}

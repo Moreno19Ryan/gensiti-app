@@ -736,4 +736,16 @@ export default function AbsensiPage() {
         onClose={() => setPreviewOpen(false)}
         options={previewOptions}
         onExported={handleExported}
-    
+      />
+
+      {canLihatLaporan && user && laporanScope && (
+        <LaporanBulananModal
+          open={laporanBulananOpen}
+          onClose={() => setLaporanBulananOpen(false)}
+          user={user}
+          scope={laporanScope}
+        />
+      )}
+    </div>
+  )
+}

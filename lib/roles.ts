@@ -228,4 +228,38 @@ const TINGKATAN_HIERARKI = ['kelompok', 'desa', 'daerah', 'ppg', 'super_admin'] 
  *                  setingkat sendiri)
  *   - Daerah    -> boleh membuat Generus + pengurus Kelompok + pengurus Desa + pengurus Daerah
  *                  (turun penuh + setingkat sendiri), TAPI TIDAK PPG/Super Admin
- *   - PPG       -> tidak relevan, PPG memang sudah dikecualikan dari canMan
+ *   - PPG       -> tidak relevan, PPG memang sudah dikecualikan dari canManageMembers() di
+ *                  atas (PPG murni pengawas read-only, tidak pernah bisa membuat user apapun)
+ *   - Super Admin -> boleh membuat semua tingkatan TERMASUK PPG, kecuali sesama Super Admin
+ *                  (Super Admin adalah akun tunggal mutlak -- lihat isSuperAdminRole di
+ *                  app/api/users/route.ts, aturan itu tetap berlaku terpisah/di atas ini)
+ *
+ * HARUS SELALU KONSISTEN dengan pengecekan yang sama persis di app/api/users/route.ts
+ * (fungsi getAllowedTargetTingkatan versi server) -- di sana adalah enforcement sesungguhnya
+ * (service role, bypass RLS), fungsi di sini hanya dipakai UI supaya dropdown role di form
+ * Tambah/Edit Pengguna tidak menampilkan pilihan yang toh akan ditolak server.
+ */
+export function getAllowedTargetTingkatan(user: Pick<UserProfile, 'role'> | null | undefined): string[] {
+  if (!user?.role) return []
+  const tingkatan = user.role.tingkatan
+
+  if (tingkatan === 'super_admin') {
+    // Semua tingkatan kecuali super_admin sendiri (diblokir terpisah, lihat isSuperAdminRole).
+    return TINGKATAN_HIERARKI.filter(t => t !== 'super_admin')
+  }
+
+  // PPG dicek eksplisit di sini (bukan cuma mengandalkan canManageMembers() di caller) --
+  // 'ppg' SENDIRI adalah anggota TINGKATAN_HIERARKI (dipakai sbg batas atas utk role Daerah),
+  // jadi kalau tidak di-exclude eksplisit, indexOf('ppg') akan mengembalikan index valid dan
+  // fungsi ini keliru mengizinkan PPG "membuat" role sampai ke jenjangnya sendiri. PPG memang
+  // tidak pernah boleh membuat/mengubah role siapapun, konsisten dgn PPG dikecualikan dari
+  // canManageMembers() di atas.
+  if (tingkatan === 'ppg') return []
+
+  const idx = TINGKATAN_HIERARKI.indexOf(tingkatan as typeof TINGKATAN_HIERARKI[number])
+  if (idx === -1) return [] // tingkatan tak dikenal -- tidak boleh membuat siapapun
+
+  // Semua tingkatan dari index 0 sampai posisi caller sendiri (turun penuh + setingkat sendiri),
+  // tidak termasuk apapun di atasnya.
+  return TINGKATAN_HIERARKI.slice(0, idx + 1) as unknown as string[]
+}

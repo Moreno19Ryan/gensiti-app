@@ -13,7 +13,7 @@ import {
   getMultiSectionPdfPreviewDataUrl,
 } from '@/lib/export'
 import {
-  ResponsiveContainer, BarChart, Bar, AreaChart, Area,
+  ResponsiveContainer, BarChart, Bar, AreaChart, Area, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts'
 import { toPng } from 'html-to-image'
@@ -83,6 +83,16 @@ interface PertumbuhanRow {
   jumlah: number
 }
 
+// Rata-rata 6 bulan per unit (v3) -- dari RPC get_rata_rata_kehadiran_6bulan_{daerah,desa,
+// kelompok}, dinormalisasi jadi `label` generik sama seperti KehadiranRow di atas. Dipakai
+// sbg garis pembanding di grafik & basis deteksi anomali (lonjakan alpha vs histori unit itu
+// sendiri, bukan ambang tetap sama utk semua unit spt v2).
+interface RataRataRow {
+  label: string
+  rataPctHadir: number
+  rataPctAlpha: number
+}
+
 // Label untuk breakdown grouping, disesuaikan per scope -- dipakai di header tabel & judul
 // section export supaya konsisten dengan apa yang sebenarnya sedang di-breakdown.
 const GROUPING_LABEL: Record<Props['scope']['tingkatan'], string> = {
@@ -111,6 +121,7 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
   const [kelasNgaji, setKelasNgaji] = useState<KelasNgajiRow[]>([])
   const [tren, setTren] = useState<TrenRow[]>([])
   const [pertumbuhan, setPertumbuhan] = useState<PertumbuhanRow[]>([])
+  const [rataRata, setRataRata] = useState<RataRataRow[]>([])
 
   // Ref ke tiap DOM node grafik -- dipakai html-to-image (toPng) utk capture grafik jadi PNG
   // sesaat sebelum export, supaya grafik yang sudah tampil di layar bisa ikut disisipkan ke
@@ -121,6 +132,7 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
   const trenChartRef = useRef<HTMLDivElement>(null)
   const pertumbuhanChartRef = useRef<HTMLDivElement>(null)
   const kehadiranDesaChartRef = useRef<HTMLDivElement>(null)
+  const trenPersenChartRef = useRef<HTMLDivElement>(null) // v3: grafik persentase vs rata-rata 6 bulan
 
   useEffect(() => {
     if (!open) return
@@ -143,6 +155,7 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
         { data: kelasNgajiData, error: errKelasNgaji },
         { data: trenData, error: errTren },
         { data: pertumbuhanData, error: errPertumbuhan },
+        { data: rataRataData, error: errRataRata },
       ] = await Promise.all([
         supabase.rpc(`get_laporan_kehadiran_bulanan_${rpcSuffix}`, { ...scopeParam, p_bulan: bulan, p_tahun: tahun }),
         supabase.rpc(`get_laporan_kelas_ngaji_${rpcSuffix}`, { ...scopeParam, p_bulan: bulan, p_tahun: tahun }),
@@ -152,10 +165,12 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
           p_kelompok_id: scope.tingkatan === 'kelompok' ? scope.scopeId : null,
           p_range_start: `${tahun}-01-01`,
         }),
+        // v3: rata-rata 6 bulan per unit -- garis pembanding grafik & basis deteksi anomali.
+        supabase.rpc(`get_rata_rata_kehadiran_6bulan_${rpcSuffix}`, { ...scopeParam, p_bulan: bulan, p_tahun: tahun }),
       ])
       if (cancelled) return
 
-      const firstError = errKehadiran || errKelasNgaji || errTren || errPertumbuhan
+      const firstError = errKehadiran || errKelasNgaji || errTren || errPertumbuhan || errRataRata
       if (firstError) {
         setError(firstError.message)
         setLoading(false)
@@ -187,6 +202,11 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
       })))
       setTren((trenData as TrenRow[]) || [])
       setPertumbuhan((pertumbuhanData as PertumbuhanRow[]) || [])
+      setRataRata(((rataRataData as RawRow[]) || []).map(r => ({
+        label: toLabel(r),
+        rataPctHadir: Number(r.rata_pct_hadir) || 0,
+        rataPctAlpha: Number(r.rata_pct_alpha) || 0,
+      })))
       setLoading(false)
     })()
     return () => { cancelled = true }
@@ -223,7 +243,8 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
   // `TidakHadir` = gabungan izin+sakit+tidak_hadir(alpha), dipakai grafik area (v2) yg
   // membandingkan hadir vs semua bentuk ketidakhadiran jadi satu garis -- lebih gampang
   // dibaca polanya drpd 4 garis terpisah bertumpuk (lihat diskusi desain: versi lama LineChart
-  // 4-garis diganti AreaChart 2-area).
+  // 4-garis diganti AreaChart 2-area). `Hadir` di sini masih dalam JUMLAH ORANG (bukan %) --
+  // dipertahankan spt semula supaya grafik tetap merepresentasikan volume absensi riil.
   const trenChartData = useMemo(() => {
     return tren.map(r => ({
       bulan: BULAN_LABEL[r.bulan - 1].slice(0, 3),
@@ -243,7 +264,18 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
   // (persentase hadir) & `status` ('baik'/'perhatian') ditambahkan di sini (bukan cuma di JSX)
   // supaya bisa dipakai juga oleh ringkasanOtomatis di bawah dan buildSections utk export --
   // satu sumber kebenaran, tidak dihitung ulang beda tempat.
-  const AMBANG_ALPHA_PERHATIAN = 10 // % -- di atas ini, unit ditandai "Perlu perhatian"
+  //
+  // v3: "perluPerhatian" sekarang deteksi LONJAKAN vs histori 6-bulan unit itu SENDIRI (dari
+  // RPC get_rata_rata_kehadiran_6bulan_*), bukan ambang tetap sama utk semua unit spt v2.
+  // Unit dianggap anomali kalau alpha rate bulan ini >= 2x rata-rata alpha 6-bulan-nya SENDIRI
+  // (MULTIPLIER_ANOMALI). Kalau unit belum punya histori sama sekali (rataPctAlpha 0, mis.
+  // baru dibentuk bulan ini), fallback ke AMBANG_ALPHA_ABSOLUT supaya tidak salah tandai "2x
+  // dari 0" jadi selalu true utk alpha berapa pun -- perbandingan relatif tidak bermakna tanpa
+  // baseline, jadi pakai ambang absolut sbg pengaman.
+  const MULTIPLIER_ANOMALI = 2
+  const AMBANG_ALPHA_ABSOLUT = 10 // % -- fallback kalau unit belum punya histori 6 bulan
+
+  const rataRataMap = useMemo(() => new Map(rataRata.map(r => [r.label, r])), [rataRata])
 
   const kehadiranPerUnitChartData = useMemo(() => {
     const map = new Map<string, { unit: string; Hadir: number; Izin: number; Sakit: number; Alpha: number }>()
@@ -259,9 +291,37 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
       const total = u.Hadir + u.Izin + u.Sakit + u.Alpha
       const pctHadir = total > 0 ? Math.round((u.Hadir / total) * 100) : 0
       const pctAlpha = total > 0 ? Math.round((u.Alpha / total) * 100) : 0
-      return { ...u, pctHadir, perluPerhatian: pctAlpha >= AMBANG_ALPHA_PERHATIAN }
+      const histori = rataRataMap.get(u.unit)
+      const punyaHistori = !!histori && histori.rataPctAlpha > 0
+      const perluPerhatian = punyaHistori
+        ? pctAlpha >= histori!.rataPctAlpha * MULTIPLIER_ANOMALI
+        : pctAlpha >= AMBANG_ALPHA_ABSOLUT
+      return {
+        ...u, pctHadir, perluPerhatian,
+        rataPctHadirHistori: histori?.rataPctHadir ?? null,
+      }
     })
+  }, [kehadiran, rataRataMap])
+
+  // Task 46: breakdown per gender per unit, utk drill-down di tabel "Status per Unit" --
+  // data mentahnya sudah ada di state `kehadiran` (sudah pecah per unit+gender dari RPC),
+  // tinggal di-grouping ulang per unit jadi Map<unit, {laki-laki, perempuan}> supaya bisa
+  // langsung dipakai saat baris unit diklik utk expand, TANPA fetch/RPC tambahan.
+  const genderBreakdownPerUnit = useMemo(() => {
+    const map = new Map<string, { jk: string; hadir: number; izin: number; sakit: number; alpha: number; total: number }[]>()
+    for (const r of kehadiran) {
+      const existing = map.get(r.label) || []
+      const total = r.hadir + r.izin + r.sakit + r.tidak_hadir
+      existing.push({
+        jk: r.jenis_kelamin === 'laki-laki' ? 'Laki-laki' : r.jenis_kelamin === 'perempuan' ? 'Perempuan' : '-',
+        hadir: r.hadir, izin: r.izin, sakit: r.sakit, alpha: r.tidak_hadir, total,
+      })
+      map.set(r.label, existing)
+    }
+    return map
   }, [kehadiran])
+
+  const [expandedUnit, setExpandedUnit] = useState<string | null>(null)
 
   // Unit dgn alpha rate tertinggi (dipakai utk menyebut nama unit di kalimat ringkasan) --
   // null kalau tidak ada satupun yang melewati ambang perhatian, atau scope kelompok (tidak
@@ -272,6 +332,35 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
     if (kandidat.length === 0) return null
     return kandidat.reduce((max, u) => (u.pctHadir < max.pctHadir ? u : max), kandidat[0])
   }, [kehadiranPerUnitChartData, scope.tingkatan])
+
+  // Rata-rata pct hadir 6 bulan GABUNGAN semua unit (bukan per-unit) -- dipakai sbg satu
+  // angka pembanding di kartu hero & garis putus-putus di grafik persentase kehadiran.
+  // Dihitung sbg rata-rata sederhana dari rata-rata per-unit (bukan weighted by total baris)
+  // krn RPC sumbernya sudah agregat per-unit, bukan per-baris mentah -- cukup presisi utk
+  // konteks "kebiasaan umum scope ini", tidak diklaim sbg statistik presisi tinggi.
+  const rataPctHadirGabungan = useMemo(() => {
+    if (rataRata.length === 0) return null
+    const total = rataRata.reduce((sum, r) => sum + r.rataPctHadir, 0)
+    return Math.round(total / rataRata.length)
+  }, [rataRata])
+
+  // v3: data khusus grafik PERSENTASE kehadiran (beda dari trenChartData di atas yang dalam
+  // jumlah orang) -- dipakai bareng garis rata-rata 6 bulan supaya skalanya sebanding (garis
+  // pembanding dalam %, area chart jumlah orang tidak bisa dibandingkan apple-to-apple dgn
+  // garis % tanpa dua sumbu Y). Dirender sbg grafik TERPISAH dari AreaChart Hadir/TidakHadir
+  // yang sudah ada (lihat JSX) -- bukan menggantikannya, krn keduanya kasih insight berbeda
+  // (volume vs rasio).
+  const trenPersenChartData = useMemo(() => {
+    return tren.map(r => {
+      const total = r.hadir + r.izin + r.sakit + r.tidak_hadir
+      const pctHadir = total > 0 ? Math.round((r.hadir / total) * 100) : 0
+      return {
+        bulan: BULAN_LABEL[r.bulan - 1].slice(0, 3),
+        Kehadiran: pctHadir,
+        RataRata6Bulan: rataPctHadirGabungan,
+      }
+    })
+  }, [tren, rataPctHadirGabungan])
 
   // Persentase kehadiran bulan ini vs bulan sebelumnya -- diambil dari state `tren` yang
   // SUDAH memuat data 12 bulan tahun berjalan (RPC get_tren_kehadiran_tahunan_*), jadi tidak
@@ -292,10 +381,11 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
   }, [tren, bulan])
 
   // Kalimat ringkasan otomatis -- murni template teks diisi hasil perhitungan di atas (BUKAN
-  // AI/LLM), supaya akurat & bisa ditelusuri persis dari mana angkanya berasal. Dua bagian:
-  // (1) perbandingan kehadiran vs bulan lalu (kalau datanya ada), (2) unit yang perlu
-  // perhatian krn alpha rate tinggi (kalau ada & scope punya breakdown unit). Kalau tidak ada
-  // data sama sekali (grandTotal 0), ringkasan dilewati (lihat kondisi render di JSX).
+  // AI/LLM), supaya akurat & bisa ditelusuri persis dari mana angkanya berasal. Tiga bagian:
+  // (1) perbandingan kehadiran vs bulan lalu, (2) perbandingan vs rata-rata 6 bulan (v3, kalau
+  // datanya ada), (3) unit yang melonjak alpha-nya dari kebiasaan sendiri (v3: relatif thd
+  // histori unit itu, bukan ambang tetap spt v2). Kalau tidak ada data sama sekali (grandTotal
+  // 0), ringkasan dilewati (lihat kondisi render di JSX).
   const ringkasanOtomatis = useMemo(() => {
     const bagian: string[] = []
     if (deltaKehadiran.pctSekarang !== null) {
@@ -309,11 +399,21 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
         bagian.push(`Kehadiran stabil, sama seperti ${BULAN_LABEL[bulan - 2]}.`)
       }
     }
+    if (rataPctHadirGabungan !== null && deltaKehadiran.pctSekarang !== null) {
+      const selisih = deltaKehadiran.pctSekarang - rataPctHadirGabungan
+      if (Math.abs(selisih) >= 1) {
+        bagian.push(selisih > 0
+          ? `Sedikit di atas rata-rata 6 bulan (${rataPctHadirGabungan}%).`
+          : `Sedikit di bawah rata-rata 6 bulan (${rataPctHadirGabungan}%).`)
+      } else {
+        bagian.push(`Sejalan dengan rata-rata 6 bulan (${rataPctHadirGabungan}%).`)
+      }
+    }
     if (unitPerluPerhatian) {
-      bagian.push(`${GROUPING_LABEL[scope.tingkatan]} ${unitPerluPerhatian.unit} perlu perhatian -- tingkat alpha di atas ${AMBANG_ALPHA_PERHATIAN}%.`)
+      bagian.push(`${GROUPING_LABEL[scope.tingkatan]} ${unitPerluPerhatian.unit} melonjak dari kebiasaannya sendiri -- tingkat alpha jauh di atas rata-rata 6 bulan terakhir, layak ditindaklanjuti.`)
     }
     return bagian.join(' ')
-  }, [deltaKehadiran, unitPerluPerhatian, bulan, scope.tingkatan])
+  }, [deltaKehadiran, unitPerluPerhatian, rataPctHadirGabungan, bulan, scope.tingkatan])
 
   // Bangun ExportSection dari data yang sudah dimuat -- dipakai baik utk preview PDF maupun
   // export final, supaya keduanya selalu identik (sama seperti pola ExportPreviewModal yang
@@ -336,11 +436,13 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
         columns: [
           { header: groupingLabel, key: 'unit', width: 22 },
           { header: 'Persentase Hadir', key: 'pct', width: 16 },
+          { header: 'Rata-rata 6 Bulan', key: 'rata', width: 16 },
           { header: 'Status', key: 'status', width: 16 },
         ],
         rows: kehadiranPerUnitChartData.map(u => ({
           unit: u.unit,
           pct: `${u.pctHadir}%`,
+          rata: u.rataPctHadirHistori !== null ? `${u.rataPctHadirHistori}%` : '-',
           status: u.perluPerhatian ? 'Perlu perhatian' : 'Baik',
         })),
       })
@@ -411,6 +513,25 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
       })),
     })
 
+    // v3: tabel persentase kehadiran vs rata-rata 6 bulan gabungan -- versi tabular dari
+    // grafik trenPersenChartRef, supaya angka persisnya ikut terbawa ke PDF/Excel (grafik
+    // sendiri sudah ikut lewat charts[], ini pelengkap datanya dalam bentuk tabel).
+    if (rataPctHadirGabungan !== null && trenPersenChartData.some(r => r.Kehadiran > 0)) {
+      sections.push({
+        heading: `Persentase Kehadiran vs Rata-rata 6 Bulan Tahun ${tahun}`,
+        columns: [
+          { header: 'Bulan', key: 'bulan', width: 14 },
+          { header: 'Kehadiran', key: 'kehadiran', width: 14 },
+          { header: 'Rata-rata 6 Bulan', key: 'rata', width: 16 },
+        ],
+        rows: trenPersenChartData.map(r => ({
+          bulan: r.bulan,
+          kehadiran: `${r.Kehadiran}%`,
+          rata: r.RataRata6Bulan !== null ? `${r.RataRata6Bulan}%` : '-',
+        })),
+      })
+    }
+
     sections.push({
       heading: `Pertumbuhan Database Generus Tahun ${tahun}`,
       columns: [
@@ -465,6 +586,7 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
       await new Promise(resolve => setTimeout(resolve, 250))
     }
     const targets: { ref: React.RefObject<HTMLDivElement | null>; title: string }[] = [
+      { ref: trenPersenChartRef, title: `Persentase Kehadiran vs Rata-rata 6 Bulan -- ${tahun}` },
       { ref: trenChartRef, title: `Tren Kehadiran ${tahun} (12 Bulan)` },
       { ref: pertumbuhanChartRef, title: `Pertumbuhan Database Generus ${tahun} (12 Bulan)` },
       { ref: kehadiranDesaChartRef, title: `Perbandingan Kehadiran per Desa -- ${BULAN_LABEL[bulan - 1]} ${tahun}` },
@@ -553,4 +675,281 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
         <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
           {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm mb-4">{error}</div>}
 
-    
+          {loading ? (
+            <div className="h-full flex items-center justify-center text-slate-400">
+              <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : previewOpen ? (
+            previewUrl ? (
+              <iframe src={previewUrl} title="Pratinjau Laporan Bulanan" className="w-full h-full rounded-xl border border-slate-200 bg-white" />
+            ) : (
+              <div className="h-full flex items-center justify-center text-slate-400 text-sm">Gagal membuat pratinjau.</div>
+            )
+          ) : (
+            <div className="space-y-4">
+              {ringkasanOtomatis && (
+                <div className="bg-blue-50 rounded-xl px-4 py-3 flex items-start gap-2.5">
+                  <span className="text-blue-500 shrink-0 mt-0.5">✨</span>
+                  <p className="text-sm text-blue-800 leading-relaxed">{ringkasanOtomatis}</p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-white rounded-xl p-4 border border-slate-100 sm:col-span-1">
+                  <p className="text-xs text-slate-400 mb-1.5">Tingkat kehadiran</p>
+                  <p className="text-3xl font-bold text-green-600">
+                    {deltaKehadiran.pctSekarang !== null ? `${deltaKehadiran.pctSekarang}%` : '-'}
+                  </p>
+                  {deltaKehadiran.delta !== null && (
+                    <p className={`text-xs mt-1.5 ${deltaKehadiran.delta > 0 ? 'text-green-600' : deltaKehadiran.delta < 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                      {deltaKehadiran.delta > 0 ? `↗ naik ${deltaKehadiran.delta}%` : deltaKehadiran.delta < 0 ? `↘ turun ${Math.abs(deltaKehadiran.delta)}%` : 'stabil'} dari {BULAN_LABEL[bulan - 2]}
+                    </p>
+                  )}
+                  {rataPctHadirGabungan !== null && (
+                    <p className="text-xs text-slate-400 mt-1">Rata-rata 6 bulan: {rataPctHadirGabungan}%</p>
+                  )}
+                </div>
+                <div className="bg-white rounded-xl p-4 border border-slate-100">
+                  <p className="text-2xl font-bold text-amber-600">{totalKehadiran.izin}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">Izin</p>
+                </div>
+                <div className="bg-white rounded-xl p-4 border border-slate-100">
+                  <p className="text-2xl font-bold text-purple-600">{totalKehadiran.sakit}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">Sakit</p>
+                </div>
+                <div className="bg-white rounded-xl p-4 border border-slate-100">
+                  <p className="text-2xl font-bold text-red-600">{totalKehadiran.tidak_hadir}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">Alpha</p>
+                </div>
+              </div>
+
+              {/* v3: grafik PERSENTASE kehadiran vs garis rata-rata 6 bulan (putus-putus) --
+                  ditaruh SEBELUM AreaChart volume di bawah krn ini yang paling langsung
+                  menjawab "gimana dibanding kebiasaan kita sendiri", baru detail volume orang. */}
+              {trenPersenChartData.some(r => r.Kehadiran > 0) && rataPctHadirGabungan !== null && (
+                <div ref={trenPersenChartRef} className="bg-white rounded-xl border border-slate-100 p-4">
+                  <h4 className="text-sm font-semibold text-slate-700 mb-3">Persentase Kehadiran vs Rata-rata 6 Bulan -- {tahun}</h4>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <LineChart data={trenPersenChartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="bulan" tick={{ fontSize: 12, fill: '#94a3b8' }} />
+                      <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} unit="%" domain={[0, 100]} />
+                      <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12 }} formatter={(v) => `${v}%`} />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      <Line type="monotone" dataKey="Kehadiran" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} />
+                      <Line type="monotone" dataKey="RataRata6Bulan" name="Rata-rata 6 Bulan" stroke="#94a3b8" strokeWidth={2} strokeDasharray="4 4" dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {(tren.some(r => r.hadir + r.izin + r.sakit + r.tidak_hadir > 0)) && (
+                <div ref={trenChartRef} className="bg-white rounded-xl border border-slate-100 p-4">
+                  <h4 className="text-sm font-semibold text-slate-700 mb-3">Hadir vs Tidak Hadir -- {tahun} (12 Bulan)</h4>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <AreaChart data={trenChartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="bulan" tick={{ fontSize: 12, fill: '#94a3b8' }} />
+                      <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} allowDecimals={false} />
+                      <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12 }} />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      <Area type="monotone" dataKey="Hadir" stroke="#16a34a" fill="#16a34a" fillOpacity={0.15} strokeWidth={2} />
+                      <Area type="monotone" dataKey="TidakHadir" name="Tidak Hadir (Izin+Sakit+Alpha)" stroke="#dc2626" fill="#dc2626" fillOpacity={0.1} strokeWidth={2} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {pertumbuhanChartData.some(r => r.jumlah > 0) && (
+                <div ref={pertumbuhanChartRef} className="bg-white rounded-xl border border-slate-100 p-4">
+                  <h4 className="text-sm font-semibold text-slate-700 mb-3">Pertumbuhan Database Generus {tahun} (12 Bulan)</h4>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={pertumbuhanChartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="bulan" tick={{ fontSize: 12, fill: '#94a3b8' }} />
+                      <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} allowDecimals={false} />
+                      <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12 }} />
+                      <Bar dataKey="jumlah" name="Generus Baru" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* Grafik perbandingan antar-unit hanya relevan kalau ada lebih dari 1 unit di
+                  bawah scope ini (Desa punya banyak Kelompok, Daerah punya banyak Desa) --
+                  scope kelompok adalah unit terkecil, jadi grafik ini tidak pernah dirender
+                  utknya (kehadiranPerUnitChartData akan selalu 1 baris berlabel kosong). */}
+              {scope.tingkatan !== 'kelompok' && kehadiranPerUnitChartData.length > 0 && (
+                <div ref={kehadiranDesaChartRef} className="bg-white rounded-xl border border-slate-100 p-4">
+                  <h4 className="text-sm font-semibold text-slate-700 mb-3">
+                    Perbandingan Kehadiran per {GROUPING_LABEL[scope.tingkatan]} -- {BULAN_LABEL[bulan - 1]} {tahun}
+                  </h4>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={kehadiranPerUnitChartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="unit" tick={{ fontSize: 12, fill: '#94a3b8' }} />
+                      <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} allowDecimals={false} />
+                      <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12 }} />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      <Bar dataKey="Hadir" fill="#16a34a" radius={[6, 6, 0, 0]} />
+                      <Bar dataKey="Izin" fill="#d97706" radius={[6, 6, 0, 0]} />
+                      <Bar dataKey="Sakit" fill="#9333ea" radius={[6, 6, 0, 0]} />
+                      <Bar dataKey="Alpha" fill="#dc2626" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* Status per unit -- ringkasan visual (bar + badge) sebelum tabel detail per
+                  gender di bawah, supaya Ketua bisa langsung scan unit mana yang bermasalah
+                  tanpa hitung manual dari angka mentah. Hanya utk scope yang punya breakdown
+                  unit (daerah/desa) -- scope kelompok tidak relevan krn cuma 1 unit.
+                  Task 46: baris bisa diklik utk expand breakdown per gender di tempat (tanpa
+                  pindah section) -- data dari genderBreakdownPerUnit, sudah tersedia dari
+                  `kehadiran` yg sudah di-fetch, tinggal toggle expandedUnit. */}
+              {scope.tingkatan !== 'kelompok' && kehadiranPerUnitChartData.length > 0 && (
+                <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-slate-100">
+                    <h4 className="text-sm font-semibold text-slate-700">Status per {GROUPING_LABEL[scope.tingkatan]}</h4>
+                    <p className="text-xs text-slate-400 mt-0.5">Klik baris untuk lihat breakdown per jenis kelamin</p>
+                  </div>
+                  <div className="divide-y divide-slate-50">
+                    {kehadiranPerUnitChartData.map((u, i) => {
+                      const isExpanded = expandedUnit === u.unit
+                      const breakdown = genderBreakdownPerUnit.get(u.unit) || []
+                      return (
+                        <div key={i}>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedUnit(isExpanded ? null : u.unit)}
+                            className="w-full px-4 py-2.5 flex items-center gap-3 text-left hover:bg-slate-50 transition"
+                          >
+                            <span className={`text-slate-300 text-xs shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
+                            <span className="text-sm text-slate-700 w-40 shrink-0 truncate">{u.unit}</span>
+                            <div className="flex-1 flex items-center gap-2">
+                              <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${u.pctHadir >= 80 ? 'bg-green-500' : u.pctHadir >= 60 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                  style={{ width: `${u.pctHadir}%` }}
+                                />
+                              </div>
+                              <span className="text-xs text-slate-500 w-9 text-right">{u.pctHadir}%</span>
+                            </div>
+                            {u.rataPctHadirHistori !== null && (
+                              <span className="text-xs text-slate-400 shrink-0 hidden sm:inline">rata² 6bln: {u.rataPctHadirHistori}%</span>
+                            )}
+                            {u.perluPerhatian ? (
+                              <span className="text-xs bg-red-50 text-red-600 px-2 py-0.5 rounded-md shrink-0">Perlu perhatian</span>
+                            ) : (
+                              <span className="text-xs bg-green-50 text-green-600 px-2 py-0.5 rounded-md shrink-0">Baik</span>
+                            )}
+                          </button>
+                          {isExpanded && (
+                            <div className="px-4 pb-3 pl-11">
+                              {breakdown.length === 0 ? (
+                                <p className="text-xs text-slate-400 py-2">Belum ada data absensi per gender untuk unit ini.</p>
+                              ) : (
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className="text-left text-slate-400 border-b border-slate-100">
+                                      <th className="py-1.5 font-medium">JK</th>
+                                      <th className="py-1.5 font-medium text-center">Hadir</th>
+                                      <th className="py-1.5 font-medium text-center">Izin</th>
+                                      <th className="py-1.5 font-medium text-center">Sakit</th>
+                                      <th className="py-1.5 font-medium text-center">Alpha</th>
+                                      <th className="py-1.5 font-medium text-center">% Hadir</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {breakdown.map((b, bi) => (
+                                      <tr key={bi} className="border-b border-slate-50 last:border-0">
+                                        <td className="py-1.5 text-slate-600">{b.jk}</td>
+                                        <td className="py-1.5 text-center text-slate-600">{b.hadir}</td>
+                                        <td className="py-1.5 text-center text-slate-600">{b.izin}</td>
+                                        <td className="py-1.5 text-center text-slate-600">{b.sakit}</td>
+                                        <td className="py-1.5 text-center text-slate-600">{b.alpha}</td>
+                                        <td className="py-1.5 text-center text-slate-600">
+                                          {b.total > 0 ? Math.round((b.hadir / b.total) * 100) : 0}%
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {kehadiran.length === 0 && kelasNgaji.length === 0 ? (
+                <div className="bg-white rounded-xl p-8 text-center text-slate-400 text-sm">
+                  Belum ada data absensi/kegiatan untuk periode ini. Klik &ldquo;Pratinjau PDF&rdquo; untuk melihat format laporan lengkap (termasuk tren &amp; pertumbuhan Generus).
+                </div>
+              ) : (
+                <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-slate-100">
+                    <h4 className="text-sm font-semibold text-slate-700">
+                      Rekap Kehadiran{scope.tingkatan !== 'kelompok' ? ` per ${GROUPING_LABEL[scope.tingkatan]}` : ''}
+                    </h4>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-slate-500 border-b border-slate-100 bg-slate-50">
+                          {scope.tingkatan !== 'kelompok' && (
+                            <th className="px-4 py-2 font-medium">{GROUPING_LABEL[scope.tingkatan]}</th>
+                          )}
+                          <th className="px-4 py-2 font-medium">JK</th>
+                          <th className="px-4 py-2 font-medium text-center">Hadir</th>
+                          <th className="px-4 py-2 font-medium text-center">Izin</th>
+                          <th className="px-4 py-2 font-medium text-center">Sakit</th>
+                          <th className="px-4 py-2 font-medium text-center">Alpha</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {kehadiran.map((r, i) => (
+                          <tr key={i} className="border-b border-slate-50">
+                            {scope.tingkatan !== 'kelompok' && (
+                              <td className="px-4 py-2 text-slate-700">{r.label}</td>
+                            )}
+                            <td className="px-4 py-2 text-slate-500 text-xs">{r.jenis_kelamin === 'laki-laki' ? 'L' : r.jenis_kelamin === 'perempuan' ? 'P' : '-'}</td>
+                            <td className="px-4 py-2 text-center">{r.hadir}</td>
+                            <td className="px-4 py-2 text-center">{r.izin}</td>
+                            <td className="px-4 py-2 text-center">{r.sakit}</td>
+                            <td className="px-4 py-2 text-center">{r.tidak_hadir}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              <p className="text-xs text-slate-400 text-center">
+                Rekap lengkap (breakdown kelas ngaji, tren 12 bulan, pertumbuhan Generus) tersedia di pratinjau PDF & hasil export.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="px-6 py-4 border-t border-slate-100 shrink-0 flex items-center justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition">
+            Tutup
+          </button>
+          <button onClick={handleExportPDF} disabled={loading || exportingPdf}
+            className="px-4 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
+            {exportingPdf ? 'Menyimpan...' : '📄 Export PDF'}
+          </button>
+          <button onClick={handleExportExcel} disabled={loading || exportingExcel}
+            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-1.5">
+            {exportingExcel ? 'Menyimpan...' : '📊 Export Excel'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
