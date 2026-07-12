@@ -50,8 +50,11 @@ export default function CatatanPembinaanPage() {
     setLoading(false)
   }, [])
 
+  // Data-fetching on mount/dependency-change (bukan derived state) -- lihat catatan serupa
+  // di dashboard/page.tsx. Disable per-baris supaya perilaku persis sama.
   useEffect(() => {
     if (!user) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData()
     if (isPPGUser) {
       Promise.all([

@@ -34,7 +34,10 @@ export default function NotifikasiPage() {
     setLoading(false)
   }
 
+  // Data-fetching on mount/dependency-change (bukan derived state) -- lihat catatan serupa
+  // di dashboard/page.tsx. Disable per-baris supaya perilaku persis sama.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (user) loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])

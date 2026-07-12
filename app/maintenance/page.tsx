@@ -42,6 +42,7 @@ export default function MaintenancePage() {
   }, [router])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadConfig()
     // Polling ringan tiap 15 detik -- pola sama seperti checkSessionMasihValid di
     // lib/user-context.tsx, supaya pengguna tidak perlu me-refresh manual saat maintenance

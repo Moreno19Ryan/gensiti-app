@@ -71,8 +71,11 @@ export default function PengaturanFiturPage() {
     setLoading(false)
   }, [])
 
+  // Data-fetching on mount/dependency-change (bukan derived state) -- lihat catatan serupa
+  // di dashboard/page.tsx. Disable per-baris supaya perilaku persis sama.
   useEffect(() => {
     if (!isSuperAdmin) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadToggles()
   }, [isSuperAdmin, loadToggles])
 

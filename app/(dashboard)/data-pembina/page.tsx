@@ -114,8 +114,11 @@ export default function DataPembinaPage() {
     setLoading(false)
   }, [hasAccess])
 
+  // Data-fetching on mount/dependency-change (bukan derived state) -- lihat catatan serupa
+  // di dashboard/page.tsx. Disable per-baris supaya perilaku persis sama.
   useEffect(() => {
     if (!user) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData()
   }, [user, loadData])
 
@@ -502,7 +505,7 @@ export default function DataPembinaPage() {
                 </select>
                 {form.status_pengguna === 'menikah' && (
                   <p className="text-xs text-emerald-600 mt-1.5">
-                    ✓ Status "Menikah" tidak mengarsipkan akun PPG -- mayoritas pengurus PPG memang sudah menikah.
+                    ✓ Status &quot;Menikah&quot; tidak mengarsipkan akun PPG -- mayoritas pengurus PPG memang sudah menikah.
                   </p>
                 )}
                 {form.status_pengguna === 'meninggal_dunia' && (

@@ -57,7 +57,10 @@ export default function PengajuanIzinPanel({ kegiatan, user }: Props) {
     }
   }, [user, kegiatan.id, tampilkan])
 
+  // Data-fetching on mount/dependency-change (bukan derived state) -- lihat catatan serupa
+  // di dashboard/page.tsx. Disable per-baris supaya perilaku persis sama.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     cekStatus()
   }, [cekStatus])
 

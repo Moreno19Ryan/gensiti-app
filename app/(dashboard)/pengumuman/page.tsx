@@ -49,7 +49,10 @@ export default function PengumumanPage() {
     setLoading(false)
   }, [])
 
+  // Data-fetching on mount/dependency-change (bukan derived state) -- lihat catatan serupa
+  // di dashboard/page.tsx. Disable per-baris supaya perilaku persis sama.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData()
     Promise.all([
       supabase.from('desa').select('id, nama_desa').eq('is_active', true).order('nama_desa'),

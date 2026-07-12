@@ -74,6 +74,7 @@ export default function MonitoringPage() {
     // sekali di awal kalau tabnya valid & tersedia untuk role ini, supaya link "Perlu
     // Perhatian" di dashboard bisa langsung membuka tab yang relevan.
     const fromQuery = searchParams.get('tab') as Tab | null
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTab(prev => {
       if (prev && availableTabs.some(t => t.key === prev)) return prev
       if (fromQuery && availableTabs.some(t => t.key === fromQuery)) return fromQuery
@@ -172,6 +173,9 @@ function KesehatanTab() {
     }
   }, [])
 
+  // Data-fetching on mount/dependency-change (bukan derived state) -- lihat catatan serupa
+  // di dashboard/page.tsx. Disable per-baris supaya perilaku persis sama.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load() }, [load])
 
   if (loading || !stats) {
@@ -262,6 +266,9 @@ function AuditTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user
     setLoading(false)
   }, [user])
 
+  // Data-fetching on mount/dependency-change (bukan derived state) -- lihat catatan serupa
+  // di dashboard/page.tsx. Disable per-baris supaya perilaku persis sama.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { loadData() }, [loadData])
 
   const uniqueUsers = Array.from(new Set(data.map(a => a.user_email).filter(Boolean))) as string[]
@@ -442,6 +449,9 @@ function EmailTab() {
     setLoading(false)
   }, [])
 
+  // Data-fetching on mount/dependency-change (bukan derived state) -- lihat catatan serupa
+  // di dashboard/page.tsx. Disable per-baris supaya perilaku persis sama.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { loadData() }, [loadData])
 
   const filtered = data.filter(e => {
@@ -614,6 +624,9 @@ function SesiTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user'
     setLoading(false)
   }, [])
 
+  // Data-fetching on mount/dependency-change (bukan derived state) -- lihat catatan serupa
+  // di dashboard/page.tsx. Disable per-baris supaya perilaku persis sama.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { loadSessions() }, [loadSessions])
 
   const paksaLogout = async () => {
@@ -772,6 +785,9 @@ function MaintenanceTab({ user }: { user: NonNullable<ReturnType<typeof useUser>
     setLoading(false)
   }, [])
 
+  // Data-fetching on mount/dependency-change (bukan derived state) -- lihat catatan serupa
+  // di dashboard/page.tsx. Disable per-baris supaya perilaku persis sama.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { loadConfig() }, [loadConfig])
 
   // Polling ringan supaya UI (khususnya hitung mundur jadwal) tetap ter-update tanpa refresh
@@ -806,6 +822,7 @@ function MaintenanceTab({ user }: { user: NonNullable<ReturnType<typeof useUser>
   // Hitung mundur per detik untuk jadwal yang masih pending -- murni tampilan, tidak memicu
   // network request (data aslinya tetap dari polling 15 detik di atas).
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!config?.scheduled_activation_at || config.maintenance_mode) { setCountdown(null); return }
     const target = new Date(config.scheduled_activation_at).getTime()
     const tick = () => {

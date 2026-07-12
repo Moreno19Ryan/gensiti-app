@@ -70,7 +70,10 @@ export function UserProvider({ children }: { children: ReactNode }) {
     setLoading(false)
   }
 
+  // Data-fetching on mount (bukan derived state) -- lihat catatan serupa di dashboard/page.tsx.
+  // Disable per-baris supaya perilaku persis sama, tidak restrukturisasi auth flow yang kritikal.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadUser()
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session?.user) {
@@ -117,6 +120,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         supabase.removeChannel(channelRef.current)
         channelRef.current = null
       }
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setOnlineCount(0)
       return
     }

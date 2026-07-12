@@ -116,6 +116,7 @@ export default function ProfilPage() {
 
   useEffect(() => {
     if (!user) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setForm({ nama_lengkap: user.nama_lengkap || '', no_hp: user.no_hp || '' })
     const url = user.avatar_url || user.foto_url || null
     setAvatarUrl(url)
@@ -133,6 +134,7 @@ export default function ProfilPage() {
   // di tab Notifikasi langsung mencerminkan kondisi device ini (bukan device lain milik
   // user yang sama, karena subscription bersifat per-device/per-browser).
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPushPermission(getPushPermission())
     getExistingPushSubscription().then((sub) => setPushActive(!!sub))
   }, [])
