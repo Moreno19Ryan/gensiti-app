@@ -40,12 +40,38 @@ export async function POST(req: NextRequest) {
     }
 
     const supabaseAdmin = adminClient()
-    const { data } = await supabaseAdmin
+
+    // Coba cocok ke login_username dulu (nama panggilan, jalur utama & tercepat -- kolom
+    // ini yang di-generate saat akun dibuat, lihat generateUniqueLoginUsername di
+    // app/api/users/route.ts). Kalau tidak ketemu, fallback cocok ke nama_lengkap
+    // (uppercase, exact match) -- BUG FIX: placeholder di app/login/page.tsx sudah lama
+    // menjanjikan "NAMA LENGKAP ATAU NAMA PANGGILAN" tapi endpoint ini sebelumnya HANYA
+    // mengecek login_username, jadi user yang selalu login pakai nama lengkap (mis. tidak
+    // tahu/lupa nama panggilannya tersimpan sbg apa) tidak pernah bisa masuk walau
+    // kredensialnya benar. nama_lengkap tidak di-normalize spasi krn tersimpan apa adanya
+    // dari form (bukan hasil generate spt login_username), jadi hanya di-uppercase+trim.
+    let { data } = await supabaseAdmin
       .from('users')
       .select('email')
       .eq('login_username', normalized)
       .eq('is_active', true)
       .maybeSingle()
+
+    if (!data?.email) {
+      // .limit(1) (bukan .maybeSingle()) sengaja dipakai di sini -- beda dari pencarian
+      // login_username di atas yang dijamin unik oleh generateUniqueLoginUsername,
+      // nama_lengkap TIDAK punya constraint unique di database (dua Generus beda
+      // Kelompok bisa kebetulan punya nama sama persis). .maybeSingle() akan melempar
+      // error kalau lebih dari 1 baris cocok -- .limit(1) + [0] lebih aman, ambil baris
+      // pertama saja daripada gagal total.
+      const byNamaLengkap = await supabaseAdmin
+        .from('users')
+        .select('email')
+        .ilike('nama_lengkap', normalized)
+        .eq('is_active', true)
+        .limit(1)
+      data = byNamaLengkap.data?.[0] ?? null
+    }
 
     if (!data?.email) {
       // Sengaja pesan generik -- sama seperti kredensial salah, supaya tidak bisa dipakai
