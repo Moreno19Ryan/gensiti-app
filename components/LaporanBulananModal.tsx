@@ -93,6 +93,24 @@ interface RataRataRow {
   rataPctAlpha: number
 }
 
+// v4: rekap kehadiran per generus (individu) selama 1 bulan -- request user setelah lihat
+// contoh laporan Excel manual lama ("5. JULI.xlsx") yang selalu mencantumkan nama tiap
+// Generus per Kelompok, bukan cuma angka agregat spt laporan digital kita sebelumnya. Dari
+// RPC get_rekap_generus_bulanan_{daerah,desa,kelompok} -- beda dari row lain di atas, row ini
+// TIDAK dinormalisasi ke `label` generik krn butuh 2 tingkat grouping sekaligus utk scope
+// daerah (Desa lalu Kelompok), jadi field grouping-nya dipertahankan apa adanya per scope.
+interface RekapGenerusRow {
+  id: string
+  namaLengkap: string
+  jenisKelamin: string | null
+  namaDesa: string | null // hanya terisi utk scope daerah
+  namaKelompok: string | null // terisi utk scope daerah & desa, kosong utk scope kelompok
+  hadir: number
+  izin: number
+  sakit: number
+  tidakHadir: number
+}
+
 // Label untuk breakdown grouping, disesuaikan per scope -- dipakai di header tabel & judul
 // section export supaya konsisten dengan apa yang sebenarnya sedang di-breakdown.
 const GROUPING_LABEL: Record<Props['scope']['tingkatan'], string> = {
@@ -122,6 +140,7 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
   const [tren, setTren] = useState<TrenRow[]>([])
   const [pertumbuhan, setPertumbuhan] = useState<PertumbuhanRow[]>([])
   const [rataRata, setRataRata] = useState<RataRataRow[]>([])
+  const [rekapGenerus, setRekapGenerus] = useState<RekapGenerusRow[]>([])
 
   // Ref ke tiap DOM node grafik -- dipakai html-to-image (toPng) utk capture grafik jadi PNG
   // sesaat sebelum export, supaya grafik yang sudah tampil di layar bisa ikut disisipkan ke
@@ -156,6 +175,7 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
         { data: trenData, error: errTren },
         { data: pertumbuhanData, error: errPertumbuhan },
         { data: rataRataData, error: errRataRata },
+        { data: rekapGenerusData, error: errRekapGenerus },
       ] = await Promise.all([
         supabase.rpc(`get_laporan_kehadiran_bulanan_${rpcSuffix}`, { ...scopeParam, p_bulan: bulan, p_tahun: tahun }),
         supabase.rpc(`get_laporan_kelas_ngaji_${rpcSuffix}`, { ...scopeParam, p_bulan: bulan, p_tahun: tahun }),
@@ -167,10 +187,12 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
         }),
         // v3: rata-rata 6 bulan per unit -- garis pembanding grafik & basis deteksi anomali.
         supabase.rpc(`get_rata_rata_kehadiran_6bulan_${rpcSuffix}`, { ...scopeParam, p_bulan: bulan, p_tahun: tahun }),
+        // v4: rekap kehadiran per generus (nama individu) -- section "Daftar Generus".
+        supabase.rpc(`get_rekap_generus_bulanan_${rpcSuffix}`, { ...scopeParam, p_bulan: bulan, p_tahun: tahun }),
       ])
       if (cancelled) return
 
-      const firstError = errKehadiran || errKelasNgaji || errTren || errPertumbuhan || errRataRata
+      const firstError = errKehadiran || errKelasNgaji || errTren || errPertumbuhan || errRataRata || errRekapGenerus
       if (firstError) {
         setError(firstError.message)
         setLoading(false)
@@ -206,6 +228,17 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
         label: toLabel(r),
         rataPctHadir: Number(r.rata_pct_hadir) || 0,
         rataPctAlpha: Number(r.rata_pct_alpha) || 0,
+      })))
+      setRekapGenerus(((rekapGenerusData as RawRow[]) || []).map(r => ({
+        id: String(r.generus_id ?? ''),
+        namaLengkap: String(r.nama_lengkap ?? '-'),
+        jenisKelamin: (r.jenis_kelamin as string | null) ?? null,
+        namaDesa: (r.nama_desa as string | null) ?? null,
+        namaKelompok: (r.nama_kelompok as string | null) ?? null,
+        hadir: Number(r.hadir) || 0,
+        izin: Number(r.izin) || 0,
+        sakit: Number(r.sakit) || 0,
+        tidakHadir: Number(r.tidak_hadir) || 0,
       })))
       setLoading(false)
     })()
@@ -322,6 +355,35 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
   }, [kehadiran])
 
   const [expandedUnit, setExpandedUnit] = useState<string | null>(null)
+  const [showDaftarGenerus, setShowDaftarGenerus] = useState(false)
+  const [cariGenerus, setCariGenerus] = useState('')
+
+  // v4: rekap per-generus diolah jadi bentuk siap-render -- tambah pctHadir, totalKegiatan,
+  // status "perlu perhatian" (alpha tinggi individu, ambang absolut krn histori per-ORANG
+  // blm ada RPC-nya -- beda dari deteksi anomali per-UNIT di atas yg sudah punya baseline 6
+  // bulan), dan groupLabel (nama Kelompok, atau "Nama Desa -- Nama Kelompok" utk scope daerah
+  // supaya tabel besar tetap bisa di-scan per grup tanpa 2 kolom terpisah). Diurutkan per grup
+  // lalu nama, dan generus tanpa kegiatan sama sekali (total 0) diletakkan apa adanya (bukan
+  // dianggap alpha -- tidak ada data kehadiran utk dinilai).
+  const AMBANG_ALPHA_INDIVIDU = 50 // % -- ambang perhatian utk individu (blm ada baseline historis per-orang)
+  const rekapGenerusRows = useMemo(() => {
+    return rekapGenerus
+      .map(r => {
+        const total = r.hadir + r.izin + r.sakit + r.tidakHadir
+        const pctHadir = total > 0 ? Math.round((r.hadir / total) * 100) : 0
+        const pctAlpha = total > 0 ? Math.round((r.tidakHadir / total) * 100) : 0
+        const groupLabel =
+          scope.tingkatan === 'daerah' ? `${r.namaDesa ?? '-'} -- ${r.namaKelompok ?? '-'}`
+          : scope.tingkatan === 'desa' ? (r.namaKelompok ?? '-')
+          : ''
+        return {
+          ...r, total, pctHadir,
+          perluPerhatian: total > 0 && pctAlpha >= AMBANG_ALPHA_INDIVIDU,
+          groupLabel,
+        }
+      })
+      .sort((a, b) => a.groupLabel.localeCompare(b.groupLabel) || a.namaLengkap.localeCompare(b.namaLengkap))
+  }, [rekapGenerus, scope.tingkatan])
 
   // Unit dgn alpha rate tertinggi (dipakai utk menyebut nama unit di kalimat ringkasan) --
   // null kalau tidak ada satupun yang melewati ambang perhatian, atau scope kelompok (tidak
@@ -476,6 +538,38 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
         { label: 'Grand Total', value: String(grandTotal) },
       ],
     })
+
+    // v4: Daftar Generus -- rekap H/I/S/A per ORANG selama sebulan, request user setelah
+    // membandingkan dgn contoh laporan Excel manual lama yg selalu mencantumkan nama tiap
+    // Generus. Ditaruh SETELAH rekap agregat per gender di atas (angka besar dulu, baru
+    // detail nama per orang) supaya urutan baca laporan tetap dari umum ke rinci.
+    if (rekapGenerusRows.length > 0) {
+      sections.push({
+        heading: 'Daftar Generus',
+        columns: [
+          ...(scope.tingkatan !== 'kelompok' ? [{ header: scope.tingkatan === 'daerah' ? 'Desa -- Kelompok' : 'Kelompok', key: 'group', width: 24 }] : []),
+          { header: 'Nama Lengkap', key: 'nama', width: 26 },
+          { header: 'JK', key: 'jk', width: 6 },
+          { header: 'Hadir', key: 'hadir', width: 8 },
+          { header: 'Izin', key: 'izin', width: 8 },
+          { header: 'Sakit', key: 'sakit', width: 8 },
+          { header: 'Alpha', key: 'alpha', width: 8 },
+          { header: '% Hadir', key: 'pct', width: 10 },
+          { header: 'Status', key: 'status', width: 14 },
+        ],
+        rows: rekapGenerusRows.map(r => ({
+          group: r.groupLabel,
+          nama: r.namaLengkap,
+          jk: r.jenisKelamin === 'laki-laki' ? 'L' : r.jenisKelamin === 'perempuan' ? 'P' : '-',
+          hadir: r.hadir,
+          izin: r.izin,
+          sakit: r.sakit,
+          alpha: r.tidakHadir,
+          pct: r.total > 0 ? `${r.pctHadir}%` : '-',
+          status: r.total === 0 ? 'Belum ada data' : r.perluPerhatian ? 'Perlu perhatian' : 'Baik',
+        })),
+      })
+    }
 
     sections.push({
       heading: `Breakdown Kelas Ngaji per ${showGrouping ? `${groupingLabel} & ` : ''}Jenis Kelamin (Generus Aktif Saat Ini)`,
@@ -926,6 +1020,84 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
                       </tbody>
                     </table>
                   </div>
+                </div>
+              )}
+
+              {/* v4: Daftar Generus -- nama per orang dgn rekap H/I/S/A sebulan. Bisa berisi
+                  ratusan baris (scope daerah), jadi TIDAK auto-expand spt section lain --
+                  disembunyikan di balik toggle + search box supaya modal tetap ringan dibuka,
+                  konsisten dgn filosofi "ringkasan dulu, detail on-demand" di seluruh modal ini. */}
+              {rekapGenerusRows.length > 0 && (
+                <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setShowDaftarGenerus(v => !v)}
+                    className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-slate-50 transition"
+                  >
+                    <h4 className="text-sm font-semibold text-slate-700">
+                      Daftar Generus ({rekapGenerusRows.length})
+                    </h4>
+                    <span className={`text-slate-300 text-xs transition-transform ${showDaftarGenerus ? 'rotate-90' : ''}`}>▶</span>
+                  </button>
+                  {showDaftarGenerus && (
+                    <div className="border-t border-slate-100">
+                      <div className="px-4 py-2.5 border-b border-slate-100">
+                        <input
+                          type="text"
+                          value={cariGenerus}
+                          onChange={e => setCariGenerus(e.target.value)}
+                          placeholder="Cari nama generus..."
+                          className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                        <table className="w-full text-sm">
+                          <thead className="sticky top-0 bg-slate-50">
+                            <tr className="text-left text-slate-500 border-b border-slate-100">
+                              {scope.tingkatan !== 'kelompok' && (
+                                <th className="px-4 py-2 font-medium">{scope.tingkatan === 'daerah' ? 'Desa -- Kelompok' : 'Kelompok'}</th>
+                              )}
+                              <th className="px-4 py-2 font-medium">Nama</th>
+                              <th className="px-4 py-2 font-medium">JK</th>
+                              <th className="px-4 py-2 font-medium text-center">Hadir</th>
+                              <th className="px-4 py-2 font-medium text-center">Izin</th>
+                              <th className="px-4 py-2 font-medium text-center">Sakit</th>
+                              <th className="px-4 py-2 font-medium text-center">Alpha</th>
+                              <th className="px-4 py-2 font-medium text-center">% Hadir</th>
+                              <th className="px-4 py-2 font-medium">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rekapGenerusRows
+                              .filter(r => r.namaLengkap.toLowerCase().includes(cariGenerus.toLowerCase()))
+                              .map(r => (
+                                <tr key={r.id} className="border-b border-slate-50">
+                                  {scope.tingkatan !== 'kelompok' && (
+                                    <td className="px-4 py-2 text-slate-500 text-xs">{r.groupLabel}</td>
+                                  )}
+                                  <td className="px-4 py-2 text-slate-700">{r.namaLengkap}</td>
+                                  <td className="px-4 py-2 text-slate-500 text-xs">{r.jenisKelamin === 'laki-laki' ? 'L' : r.jenisKelamin === 'perempuan' ? 'P' : '-'}</td>
+                                  <td className="px-4 py-2 text-center">{r.hadir}</td>
+                                  <td className="px-4 py-2 text-center">{r.izin}</td>
+                                  <td className="px-4 py-2 text-center">{r.sakit}</td>
+                                  <td className="px-4 py-2 text-center">{r.tidakHadir}</td>
+                                  <td className="px-4 py-2 text-center">{r.total > 0 ? `${r.pctHadir}%` : '-'}</td>
+                                  <td className="px-4 py-2">
+                                    {r.total === 0 ? (
+                                      <span className="text-xs text-slate-400">Belum ada data</span>
+                                    ) : r.perluPerhatian ? (
+                                      <span className="text-xs bg-red-50 text-red-600 px-2 py-0.5 rounded-md">Perlu perhatian</span>
+                                    ) : (
+                                      <span className="text-xs bg-green-50 text-green-600 px-2 py-0.5 rounded-md">Baik</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
