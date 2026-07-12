@@ -6,7 +6,7 @@
 'use client'
 
 import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
+import autoTable, { CellHookData } from 'jspdf-autotable'
 import ExcelJS from 'exceljs'
 import { GENSITI_LOGO_BASE64, PPG_LOGO_BASE64 } from './logo'
 
@@ -15,6 +15,15 @@ export interface ExportColumn {
   key: string
   // Lebar kolom untuk Excel (dalam karakter, opsional)
   width?: number
+  // Redesain laporan (permintaan user: "kurang modern, intuitif, interaktif") -- tandai kolom
+  // ini sbg badge berwarna alih-alih teks polos, baik di PDF (kotak kecil berwarna di belakang
+  // teks) maupun Excel (conditional formatting: fill sel otomatis). Warna DITENTUKAN OTOMATIS
+  // dari isi teks tiap sel (lihat resolveBadgeTone di bawah) -- dicocokkan lewat kata kunci umum
+  // Indonesia yg dipakai di seluruh aplikasi (hadir/lunas/baik -> hijau, tidak hadir/alpha/
+  // perlu perhatian/ditolak -> merah, izin/sakit/pending -> netral abu), BUKAN dikonfigurasi
+  // manual per laporan -- supaya kolom status apapun (Kehadiran, Status Reimbursement, Status
+  // Kegiatan, dst) otomatis dapat treatment yg sama tanpa tiap halaman pemanggil perlu diubah.
+  isBadge?: boolean
 }
 
 export interface ExportOptions {
@@ -70,10 +79,166 @@ export interface MultiSectionExportOptions {
 const ORG_NAME = 'KMM Bekasi Timur'
 const APP_NAME = 'GENSITI - Smart Organization Management System'
 
+// Tone badge -- 3 kategori generik yg mencakup semua status di aplikasi (kehadiran, keuangan,
+// approval kegiatan/pengumuman, dst): 'positif' (hijau, hasil baik/selesai), 'negatif' (merah,
+// butuh perhatian/gagal/ditolak), 'netral' (abu, kondisi wajar tapi bukan status "baik" -- Izin/
+// Sakit/Pending -- SENGAJA dibedakan dari 'negatif' krn izin/sakit itu wajar, bukan masalah).
+type BadgeTone = 'positif' | 'negatif' | 'netral'
+
+const BADGE_KEYWORDS: { tone: BadgeTone; katas: string[] }[] = [
+  // Urutan penting: 'negatif' dicek SEBELUM 'netral' krn beberapa kata (mis. "belum") bisa
+  // tumpang tindih maksud -- lihat resolveBadgeTone, larik ini diproses berurutan dan berhenti
+  // di kecocokan pertama.
+  {
+    tone: 'negatif',
+    katas: ['tidak hadir', 'alpha', 'perlu perhatian', 'ditolak', 'gagal', 'terlambat', 'belum ditandai', 'nonaktif', 'expired', 'kadaluarsa'],
+  },
+  {
+    tone: 'netral',
+    katas: ['izin', 'sakit', 'pending', 'menunggu', 'diajukan', 'draft'],
+  },
+  {
+    tone: 'positif',
+    katas: ['hadir', 'lunas', 'baik', 'aktif', 'disetujui', 'selesai', 'diterima', 'approved'],
+  },
+]
+
+function resolveBadgeTone(text: string): BadgeTone | null {
+  const lower = text.toLowerCase().trim()
+  for (const group of BADGE_KEYWORDS) {
+    if (group.katas.some(k => lower.includes(k))) return group.tone
+  }
+  return null // teks tidak cocok kata kunci apapun -- dirender polos, bukan dipaksa jadi badge
+}
+
+// Warna badge dalam RGB (dipakai jsPDF, skala 0-255) -- palet earthy/muted (bukan merah/hijau
+// terang saturasi tinggi khas alert web) supaya tetap terbaca profesional saat dicetak di
+// kertas, konsisten dgn arah desain "minimalis modern" yg dipilih (bukan gaya dashboard
+// berwarna-warni).
+const BADGE_COLOR_PDF: Record<BadgeTone, { bg: [number, number, number]; text: [number, number, number] }> = {
+  positif: { bg: [222, 240, 226], text: [22, 101, 52] },
+  negatif: { bg: [252, 226, 226], text: [153, 27, 27] },
+  netral: { bg: [237, 237, 234], text: [82, 82, 78] },
+}
+
+// Warna badge dalam ARGB hex (dipakai ExcelJS conditional formatting/fill) -- sengaja SAMA
+// PERSIS dgn palet PDF di atas (dikonversi ke hex) supaya laporan yg dibuka di kedua format
+// terasa konsisten satu identitas visual, bukan dua desain berbeda.
+const BADGE_COLOR_EXCEL: Record<BadgeTone, { fill: string; font: string }> = {
+  positif: { fill: 'FFDEF0E2', font: 'FF166534' },
+  negatif: { fill: 'FFFCE2E2', font: 'FF991B1B' },
+  netral: { fill: 'FFEDEDEA', font: 'FF52524E' },
+}
+
 function formatTanggalCetak() {
   return new Date().toLocaleString('id-ID', {
     day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
   })
+}
+
+// Menggambar kop laporan (logo, nama organisasi, judul/subtitle) -- diekstrak jadi fungsi
+// bersama dipakai baik oleh buildPdfDoc (single-table) maupun buildMultiSectionPdfDoc, supaya
+// kop SELALU identik persis di semua jenis laporan (redesain: garis pemisah dari solid tebal
+// jadi tipis abu-abu, lebih halus/minimalis -- lihat diskusi desain "gaya A").
+function drawPdfHeader(doc: jsPDF, pageWidth: number, title: string, subtitle?: string): number {
+  try {
+    doc.addImage(GENSITI_LOGO_BASE64, 'PNG', 14, 8, 14, 14)
+    doc.addImage(PPG_LOGO_BASE64, 'PNG', pageWidth - 28, 8, 14, 14)
+  } catch {
+    // non-fatal -- lanjut tanpa logo
+  }
+  doc.setFontSize(13)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(30, 30, 28)
+  doc.text(ORG_NAME, pageWidth / 2, 15, { align: 'center' })
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(140, 140, 135)
+  doc.text(APP_NAME, pageWidth / 2, 20.5, { align: 'center' })
+  doc.setDrawColor(225, 225, 220)
+  doc.setLineWidth(0.2)
+  doc.line(14, 24, pageWidth - 14, 24)
+
+  doc.setFontSize(12)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(20, 20, 18)
+  doc.text(title, pageWidth / 2, 32, { align: 'center' })
+  let cursorY = 32
+  if (subtitle) {
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(110, 110, 105)
+    doc.text(subtitle, pageWidth / 2, 38, { align: 'center' })
+    cursorY = 38
+  }
+  doc.setTextColor(0, 0, 0)
+  return cursorY
+}
+
+// Kartu ringkasan (redesain -- dulu teks kecil rata-kanan DI BAWAH tabel, sekarang angka besar
+// DI ATAS tabel, mirip hero metric yg sudah dipakai LaporanBulananModal on-screen). Alasan
+// dipindah ke atas: pembaca laporan (Ketua/Sekretaris) biasanya cuma butuh angka total dulu
+// utk gambaran cepat, baru scroll ke tabel detail kalau perlu -- pola "ringkasan dulu, detail
+// belakangan" yg sudah konsisten dipakai di seluruh redesain laporan bulanan sebelumnya.
+// Dibagi rata dalam grid horizontal, maks 5 kartu per baris (kalau lebih, redesain kolom bukan
+// tujuan fungsi ini -- summary laporan di app ini tidak pernah lebih dari 5 item).
+function drawSummaryCards(doc: jsPDF, pageWidth: number, startY: number, summary: { label: string; value: string }[]): number {
+  const marginX = 14
+  const usableWidth = pageWidth - marginX * 2
+  const cardCount = summary.length
+  const gap = 3
+  const cardWidth = (usableWidth - gap * (cardCount - 1)) / cardCount
+  const cardHeight = 16
+
+  summary.forEach((s, i) => {
+    const x = marginX + i * (cardWidth + gap)
+    doc.setFillColor(247, 247, 245)
+    doc.roundedRect(x, startY, cardWidth, cardHeight, 1.5, 1.5, 'F')
+    doc.setFontSize(11)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(20, 20, 18)
+    doc.text(s.value, x + cardWidth / 2, startY + 7, { align: 'center' })
+    doc.setFontSize(6.5)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(130, 130, 125)
+    doc.text(s.label, x + cardWidth / 2, startY + 12, { align: 'center' })
+  })
+  doc.setTextColor(0, 0, 0)
+  return startY + cardHeight + 6
+}
+
+function drawPdfFooter(doc: jsPDF) {
+  const pageCount = doc.getNumberOfPages()
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i)
+    doc.setFontSize(7)
+    doc.setTextColor(160, 160, 155)
+    doc.text(
+      `Dicetak: ${formatTanggalCetak()} -- Halaman ${i}/${pageCount}`,
+      14,
+      doc.internal.pageSize.getHeight() - 8
+    )
+  }
+}
+
+// didParseCell hook (jspdf-autotable) -- dipanggil per-sel sebelum digambar, dipakai di sini
+// utk merender kolom bertanda isBadge sbg kotak kecil berwarna alih-alih teks polos. Warna
+// ditentukan otomatis dari isi teks (resolveBadgeTone) -- kalau teks tidak cocok kata kunci
+// apapun (mis. tanggal atau nilai lain yg kebetulan ada di kolom isBadge), sel dirender polos
+// spt biasa, tidak dipaksa jadi badge kosong.
+function makeBadgeCellHook(columns: ExportColumn[]) {
+  return (data: CellHookData) => {
+    if (data.section !== 'body') return
+    const col = columns[data.column.index]
+    if (!col?.isBadge) return
+    const tone = resolveBadgeTone(String(data.cell.raw ?? ''))
+    if (!tone) return
+    const { bg, text } = BADGE_COLOR_PDF[tone]
+    data.cell.styles.fillColor = bg
+    data.cell.styles.textColor = text
+    data.cell.styles.fontStyle = 'bold'
+    data.cell.styles.halign = 'center'
+  }
 }
 
 // Membangun dokumen jsPDF dari ExportOptions -- diekstrak dari exportToPDF supaya bisa
@@ -83,71 +248,26 @@ function buildPdfDoc(opts: ExportOptions): jsPDF {
   const doc = new jsPDF({ orientation: opts.columns.length > 5 ? 'landscape' : 'portrait', unit: 'mm' })
   const pageWidth = doc.internal.pageSize.getWidth()
 
-  // Kop laporan -- logo GENSITI (nama aplikasi) di margin KIRI, logo PPG (organisasi induk)
-  // di margin KANAN, teks org/app name tetap center di antara keduanya. addImage dibungkus
-  // try/catch: kalau base64 gagal dirender karena alasan apapun, laporan tetap tercetak
-  // tanpa logo daripada gagal total.
-  try {
-    doc.addImage(GENSITI_LOGO_BASE64, 'PNG', 14, 8, 14, 14)
-    doc.addImage(PPG_LOGO_BASE64, 'PNG', pageWidth - 28, 8, 14, 14)
-  } catch {
-    // non-fatal -- lanjut tanpa logo
-  }
-  doc.setFontSize(14)
-  doc.setFont('helvetica', 'bold')
-  doc.text(ORG_NAME, pageWidth / 2, 15, { align: 'center' })
-  doc.setFontSize(9)
-  doc.setFont('helvetica', 'normal')
-  doc.text(APP_NAME, pageWidth / 2, 21, { align: 'center' })
-  doc.setLineWidth(0.5)
-  doc.line(14, 25, pageWidth - 14, 25)
+  const headerBottomY = drawPdfHeader(doc, pageWidth, opts.title, opts.subtitle)
+  let cursorY = headerBottomY + 6
 
-  doc.setFontSize(12)
-  doc.setFont('helvetica', 'bold')
-  doc.text(opts.title, pageWidth / 2, 33, { align: 'center' })
-  if (opts.subtitle) {
-    doc.setFontSize(9)
-    doc.setFont('helvetica', 'normal')
-    doc.text(opts.subtitle, pageWidth / 2, 39, { align: 'center' })
+  // Kartu ringkasan dipindah ke ATAS tabel (redesain) -- lihat komentar drawSummaryCards.
+  if (opts.summary && opts.summary.length > 0) {
+    cursorY = drawSummaryCards(doc, pageWidth, cursorY, opts.summary)
   }
 
   autoTable(doc, {
-    startY: opts.subtitle ? 44 : 38,
+    startY: cursorY,
     head: [opts.columns.map(c => c.header)],
     body: opts.rows.map(row => opts.columns.map(c => String(row[c.key] ?? '-'))),
-    styles: { fontSize: 8, cellPadding: 2 },
-    headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: 'bold' },
-    alternateRowStyles: { fillColor: [248, 250, 252] },
+    styles: { fontSize: 8, cellPadding: 2.2, lineColor: [235, 235, 231], lineWidth: 0.1 },
+    headStyles: { fillColor: [247, 247, 245], textColor: [70, 70, 66], fontStyle: 'bold', lineWidth: 0.1, lineColor: [225, 225, 220] },
+    alternateRowStyles: { fillColor: [252, 252, 251] },
     margin: { left: 14, right: 14 },
+    didParseCell: makeBadgeCellHook(opts.columns),
   })
 
-  // Ringkasan setelah tabel (kalau ada)
-  if (opts.summary && opts.summary.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let y = (doc as any).lastAutoTable.finalY + 8
-    doc.setFontSize(9)
-    opts.summary.forEach(s => {
-      doc.setFont('helvetica', 'normal')
-      doc.text(s.label, pageWidth - 70, y)
-      doc.setFont('helvetica', 'bold')
-      doc.text(s.value, pageWidth - 14, y, { align: 'right' })
-      y += 6
-    })
-  }
-
-  // Footer: tanggal cetak
-  const pageCount = doc.getNumberOfPages()
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i)
-    doc.setFontSize(7)
-    doc.setTextColor(150)
-    doc.text(
-      `Dicetak: ${formatTanggalCetak()} -- Halaman ${i}/${pageCount}`,
-      14,
-      doc.internal.pageSize.getHeight() - 8
-    )
-  }
-
+  drawPdfFooter(doc)
   return doc
 }
 
@@ -469,30 +589,69 @@ export async function exportToExcel(opts: ExportOptions) {
   sheet.getCell(3, 1).font = { bold: true, size: 11 }
   sheet.getCell(3, 1).alignment = { horizontal: 'center' }
 
-  sheet.addRow([])
-
-  // Header kolom
-  const headerRow = sheet.addRow(opts.columns.map(c => c.header))
-  headerRow.eachCell(cell => {
-    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } }
-    cell.alignment = { horizontal: 'center' }
-  })
-
-  // Data
-  opts.rows.forEach(row => {
-    sheet.addRow(opts.columns.map(c => row[c.key] ?? '-'))
-  })
-
-  // Ringkasan
+  // Ringkasan (redesain -- dipindah ke ATAS tabel, konsisten dgn PDF, lihat drawSummaryCards)
+  // sbg baris "Label: Value" berjejer horizontal di satu baris, bold, sblm header kolom --
+  // supaya pembaca lihat angka total dulu sblm scroll ke data mentah.
   if (opts.summary && opts.summary.length > 0) {
     sheet.addRow([])
-    opts.summary.forEach(s => {
-      const r = sheet.addRow([s.label])
-      r.getCell(1).font = { bold: true }
-      sheet.getCell(r.number, opts.columns.length).value = s.value
-      sheet.getCell(r.number, opts.columns.length).font = { bold: true }
+    const summaryRowNum = sheet.rowCount + 1
+    opts.summary.forEach((s, i) => {
+      const cell = sheet.getCell(summaryRowNum, i + 1)
+      cell.value = `${s.label}: ${s.value}`
+      cell.font = { bold: true, size: 10, color: { argb: 'FF3D3D3A' } }
     })
+    sheet.getRow(summaryRowNum).commit()
+  }
+
+  sheet.addRow([])
+
+  // Header kolom -- redesain dari biru solid jadi abu-abu halus (konsisten dgn PDF, lihat
+  // BADGE_COLOR_EXCEL & drawPdfHeader), lebih minimalis drpd warna mencolok penuh satu baris.
+  const headerRow = sheet.addRow(opts.columns.map(c => c.header))
+  headerRow.eachCell(cell => {
+    cell.font = { bold: true, size: 10, color: { argb: 'FF46463F' } }
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF7F7F5' } }
+    cell.alignment = { horizontal: 'center' }
+    cell.border = { bottom: { style: 'thin', color: { argb: 'FFE1E1DC' } } }
+  })
+  const headerRowNum = headerRow.number
+
+  // Data
+  const badgeColIndexes = opts.columns
+    .map((c, i) => (c.isBadge ? i + 1 : null))
+    .filter((i): i is number => i !== null)
+
+  opts.rows.forEach(row => {
+    const dataRow = sheet.addRow(opts.columns.map(c => row[c.key] ?? '-'))
+    // Kolom bertanda isBadge diwarnai langsung per-sel di sini (bukan lewat ExcelJS
+    // conditionalFormatting rule) -- lebih sederhana & pasti benar krn tone-nya sudah
+    // ditentukan sekali di JS (resolveBadgeTone) tanpa perlu menerjemahkan ulang jadi formula
+    // Excel (mis. rule ISNUMBER(SEARCH(...))) yg rawan salah cocok dgn kata kunci berbahasa
+    // Indonesia yg dipakai di sini.
+    badgeColIndexes.forEach(colIdx => {
+      const cell = dataRow.getCell(colIdx)
+      const tone = resolveBadgeTone(String(cell.value ?? ''))
+      if (!tone) return
+      const { fill, font } = BADGE_COLOR_EXCEL[tone]
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } }
+      cell.font = { bold: true, color: { argb: font } }
+      cell.alignment = { horizontal: 'center' }
+    })
+  })
+
+  // Freeze pane -- baris di atas & termasuk header kolom tetap terlihat saat scroll data
+  // panjang (mis. Daftar Generus bisa ratusan baris utk scope Daerah).
+  sheet.views = [{ state: 'frozen', ySplit: headerRowNum }]
+
+  // AutoFilter -- user bisa filter/sortir sendiri per kolom langsung di Excel tanpa perlu
+  // edit apapun, salah satu permintaan eksplisit dari diskusi redesain ("Excel kurang fitur
+  // built-in"). Range dari header sampai baris data terakhir.
+  const lastDataRow = sheet.rowCount
+  if (lastDataRow > headerRowNum) {
+    sheet.autoFilter = {
+      from: { row: headerRowNum, column: 1 },
+      to: { row: lastDataRow, column: opts.columns.length },
+    }
   }
 
   // Lebar kolom

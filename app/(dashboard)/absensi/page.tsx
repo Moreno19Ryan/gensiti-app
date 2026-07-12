@@ -414,7 +414,10 @@ export default function AbsensiPage() {
     { header: 'Jenis Kelamin', key: 'jk', width: 14 },
     { header: 'Kelas Ngaji', key: 'kelas_ngaji', width: 18 },
     { header: 'Jam Hadir', key: 'jam', width: 12 },
-    { header: 'Status Kehadiran', key: 'status', width: 18 },
+    // isBadge: true -- kolom ini otomatis dirender sbg kotak kecil berwarna di export PDF
+    // (hijau utk "Hadir", merah utk "Tidak Hadir"/"Belum Ditandai", abu netral utk "Izin"/
+    // "Sakit") lewat resolveBadgeTone di lib/export.ts, bukan teks polos spt sebelumnya.
+    { header: 'Status Kehadiran', key: 'status', width: 18, isBadge: true },
   ]
 
   const buildExportData = () => scopedGenerus.map(a => {
