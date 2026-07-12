@@ -26,14 +26,6 @@ export interface ExportColumn {
   isBadge?: boolean
 }
 
-// Satu segmen pie chart -- label + nilai + warna opsional (kalau tidak diisi, warna diambil
-// otomatis dari resolveBadgeTone(label) supaya konsisten dgn warna badge kolom Status, mis.
-// segmen "Hadir" otomatis hijau sama spt badge "Hadir" di tabel).
-export interface PieChartSlice {
-  label: string
-  value: number
-}
-
 export interface ExportOptions {
   // Judul laporan, contoh: "Laporan Keuangan"
   title: string
@@ -43,13 +35,6 @@ export interface ExportOptions {
   rows: Record<string, string | number>[]
   // Baris ringkasan opsional di akhir (misal Total Pemasukan/Pengeluaran/Saldo)
   summary?: { label: string; value: string }[]
-  // Upgrade v2 (permintaan user: grafik built-in di Excel) -- pie chart opsional, ditempel di
-  // bawah tabel saat export Excel. ExcelJS TIDAK mendukung native Excel chart (limitasi resmi
-  // library, dikonfirmasi lewat riset sebelum implementasi) -- pie chart di sini digambar
-  // manual via Canvas API (generatePieChartImage) lalu ditempel sbg gambar PNG statis, SAMA
-  // seperti pola grafik di LaporanBulananModal (bedanya: itu capture dari Recharts on-screen,
-  // ini di-generate headless krn ExportOptions dipakai halaman tanpa chart di layar).
-  pieChart?: { title: string; slices: PieChartSlice[] }
   // Nama file tanpa ekstensi
   fileName: string
 }
@@ -151,95 +136,6 @@ function formatTanggalCetak() {
   })
 }
 
-// Warna solid (bukan pasangan bg-muted/text-gelap spt badge) utk segmen pie chart -- diambil
-// dari stop 400 palet badge (lebih jenuh drpd bg badge yg sengaja pudar) supaya segmen pie
-// tetap saling terpisah jelas walau berdampingan, sementara tone-nya (hijau/merah/abu) TETAP
-// konsisten dgn makna yg sama persis di kolom badge tabel -- "Hadir" selalu hijau di mana pun
-// dia muncul di laporan ini, bukan warna acak per konteks.
-const PIE_SLICE_COLOR: Record<BadgeTone, string> = {
-  positif: '#4ade80',
-  negatif: '#f87171',
-  netral: '#a8a29e',
-}
-const PIE_SLICE_COLOR_FALLBACK = ['#60a5fa', '#c084fc', '#fbbf24', '#22d3ee', '#fb923c']
-
-// Generate pie chart sbg PNG data URL via Canvas API browser NATIVE (bukan library eksternal
-// spt Chart.js -- project ini blm punya dependency chart headless, dan pie chart sederhana
-// H/I/S/A tidak butuh library sebesar itu, lihat diskusi "native Canvas vs install Chart.js").
-// HANYA jalan di browser (dipakai 'use client' export.ts) -- OffscreenCanvas/document tidak
-// tersedia di server, tapi seluruh file ini memang sudah client-only (lihat baris 6).
-function generatePieChartImage(slices: PieChartSlice[], size = 480): { dataUrl: string; aspectRatio: number } | null {
-  const total = slices.reduce((sum, s) => sum + s.value, 0)
-  if (total <= 0) return null
-
-  const canvas = document.createElement('canvas')
-  canvas.width = size
-  canvas.height = size
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return null
-
-  const cx = size / 2
-  const cy = size / 2
-  const radius = size * 0.38
-  let fallbackIdx = 0
-  let angleStart = -Math.PI / 2 // mulai dari jam 12, searah jarum jam
-
-  slices.forEach(slice => {
-    if (slice.value <= 0) return
-    const tone = resolveBadgeTone(slice.label)
-    const color = tone ? PIE_SLICE_COLOR[tone] : PIE_SLICE_COLOR_FALLBACK[fallbackIdx++ % PIE_SLICE_COLOR_FALLBACK.length]
-    const sliceAngle = (slice.value / total) * Math.PI * 2
-    const angleEnd = angleStart + sliceAngle
-
-    ctx.beginPath()
-    ctx.moveTo(cx, cy)
-    ctx.arc(cx, cy, radius, angleStart, angleEnd)
-    ctx.closePath()
-    ctx.fillStyle = color
-    ctx.fill()
-
-    // Label persentase di tengah segmen (hanya kalau segmennya cukup besar utk terbaca)
-    const pct = Math.round((slice.value / total) * 100)
-    if (pct >= 6) {
-      const midAngle = (angleStart + angleEnd) / 2
-      const labelR = radius * 0.65
-      ctx.fillStyle = '#ffffff'
-      ctx.font = `bold ${Math.round(size * 0.042)}px sans-serif`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(`${pct}%`, cx + Math.cos(midAngle) * labelR, cy + Math.sin(midAngle) * labelR)
-    }
-    angleStart = angleEnd
-  })
-
-  // Legenda di bawah lingkaran -- kotak warna kecil + label + nilai, disusun horizontal rata
-  // tengah. Ukuran font/kotak proporsional thd `size` supaya tetap terbaca di ukuran berapa
-  // pun canvas ini dipanggil.
-  const legendY = cy + radius + size * 0.09
-  const fontSize = Math.round(size * 0.035)
-  ctx.font = `${fontSize}px sans-serif`
-  ctx.textBaseline = 'middle'
-  const itemTexts = slices.filter(s => s.value > 0).map(s => `${s.label} (${s.value})`)
-  const boxSize = fontSize * 0.8
-  const gap = size * 0.025
-  const itemWidths = itemTexts.map(t => boxSize + 6 + ctx.measureText(t).width)
-  const totalWidth = itemWidths.reduce((a, b) => a + b, 0) + gap * (itemWidths.length - 1)
-  let legendX = cx - totalWidth / 2
-  let fbIdx2 = 0
-  slices.filter(s => s.value > 0).forEach((slice, i) => {
-    const tone = resolveBadgeTone(slice.label)
-    const color = tone ? PIE_SLICE_COLOR[tone] : PIE_SLICE_COLOR_FALLBACK[fbIdx2++ % PIE_SLICE_COLOR_FALLBACK.length]
-    ctx.fillStyle = color
-    ctx.fillRect(legendX, legendY - boxSize / 2, boxSize, boxSize)
-    ctx.fillStyle = '#46463f'
-    ctx.textAlign = 'left'
-    ctx.fillText(itemTexts[i], legendX + boxSize + 6, legendY)
-    legendX += itemWidths[i] + gap
-  })
-
-  return { dataUrl: canvas.toDataURL('image/png'), aspectRatio: size / (size + size * 0.22) }
-}
-
 // Menggambar kop laporan (logo, nama organisasi, judul/subtitle) -- diekstrak jadi fungsi
 // bersama dipakai baik oleh buildPdfDoc (single-table) maupun buildMultiSectionPdfDoc, supaya
 // kop SELALU identik persis di semua jenis laporan (redesain: garis pemisah dari solid tebal
@@ -279,36 +175,69 @@ function drawPdfHeader(doc: jsPDF, pageWidth: number, title: string, subtitle?: 
   return cursorY
 }
 
-// Kartu ringkasan (redesain -- dulu teks kecil rata-kanan DI BAWAH tabel, sekarang angka besar
-// DI ATAS tabel, mirip hero metric yg sudah dipakai LaporanBulananModal on-screen). Alasan
-// dipindah ke atas: pembaca laporan (Ketua/Sekretaris) biasanya cuma butuh angka total dulu
-// utk gambaran cepat, baru scroll ke tabel detail kalau perlu -- pola "ringkasan dulu, detail
-// belakangan" yg sudah konsisten dipakai di seluruh redesain laporan bulanan sebelumnya.
-// Dibagi rata dalam grid horizontal, maks 5 kartu per baris (kalau lebih, redesain kolom bukan
-// tujuan fungsi ini -- summary laporan di app ini tidak pernah lebih dari 5 item).
+// Aksen warna kartu ringkasan (polish v3) -- ditentukan otomatis dari LABEL kartu (bukan
+// value-nya, beda dari resolveBadgeTone yg baca teks status) lewat kata kunci yg sama dgn
+// BADGE_KEYWORDS supaya "Hadir"/"Tidak Hadir"/"Izin"/"Sakit" dst konsisten warnanya dgn badge
+// status di tabel di bawahnya. Kartu yg labelnya tidak cocok kata kunci apapun (mis. "Total
+// Generus", "Total Pemasukan") jatuh ke warna netral abu -- tetap rapi, tidak dipaksa berwarna.
+function resolveCardAccent(label: string): { accent: [number, number, number]; bg: [number, number, number] } {
+  const tone = resolveBadgeTone(label)
+  if (tone === 'positif') return { accent: [34, 139, 87], bg: [237, 247, 239] }
+  if (tone === 'negatif') return { accent: [200, 60, 60], bg: [253, 238, 238] }
+  if (tone === 'netral') return { accent: [150, 130, 60], bg: [250, 245, 230] }
+  return { accent: [90, 90, 130], bg: [240, 240, 246] }
+}
+
+// Kartu ringkasan (redesain v1 -- dulu teks kecil rata-kanan DI BAWAH tabel, dipindah jadi angka
+// besar DI ATAS tabel, mirip hero metric yg sudah dipakai LaporanBulananModal on-screen; polish
+// v3 -- tiap kartu dapat aksen warna kiri + background tint sesuai makna labelnya (lihat
+// resolveCardAccent), bukan lagi kotak abu seragam, supaya sekilas pandang pembaca laporan
+// langsung bisa bedakan mana angka "baik" (hijau) vs "butuh perhatian" (merah) tanpa baca detail
+// tabel). Alasan dipindah ke atas: pembaca laporan (Ketua/Sekretaris) biasanya cuma butuh angka
+// total dulu utk gambaran cepat, baru scroll ke tabel detail kalau perlu -- pola "ringkasan
+// dulu, detail belakangan" yg sudah konsisten dipakai di seluruh redesain laporan bulanan
+// sebelumnya. Dibagi rata dalam grid horizontal, maks 5 kartu per baris (kalau lebih, redesain
+// kolom bukan tujuan fungsi ini -- summary laporan di app ini tidak pernah lebih dari 5 item).
 function drawSummaryCards(doc: jsPDF, pageWidth: number, startY: number, summary: { label: string; value: string }[]): number {
   const marginX = 14
   const usableWidth = pageWidth - marginX * 2
   const cardCount = summary.length
-  const gap = 3
+  const gap = 3.5
   const cardWidth = (usableWidth - gap * (cardCount - 1)) / cardCount
-  const cardHeight = 16
+  const cardHeight = 20
+  const accentBarWidth = 1.3
 
   summary.forEach((s, i) => {
     const x = marginX + i * (cardWidth + gap)
-    doc.setFillColor(247, 247, 245)
-    doc.roundedRect(x, startY, cardWidth, cardHeight, 1.5, 1.5, 'F')
-    doc.setFontSize(11)
+    const { accent, bg } = resolveCardAccent(s.label)
+
+    // Kartu: background tint halus + border sangat tipis, radius lebih besar drpd v1 (2.2 vs 1.5)
+    // supaya kesan "kartu" lebih jelas, bukan sekadar kotak.
+    doc.setFillColor(...bg)
+    doc.setDrawColor(bg[0] - 12, bg[1] - 12, bg[2] - 12)
+    doc.setLineWidth(0.15)
+    doc.roundedRect(x, startY, cardWidth, cardHeight, 2.2, 2.2, 'FD')
+
+    // Aksen bar vertikal di sisi kiri kartu -- warna solid penuh (bukan tint), penanda cepat
+    // "kartu ini soal apa" bahkan sebelum baca angkanya.
+    doc.setFillColor(...accent)
+    doc.roundedRect(x, startY, accentBarWidth + 1, cardHeight, 1, 1, 'F')
+    // Tutup sudut kanan aksen bar yg ikut membulat (efek roundedRect) dgn kotak tajam supaya
+    // sisi kanan bar tetap lurus, hanya sisi kiri kartu yg membulat mengikuti bentuk kartu.
+    doc.rect(x + accentBarWidth, startY, 1, cardHeight, 'F')
+
+    doc.setFontSize(13)
     doc.setFont('helvetica', 'bold')
-    doc.setTextColor(20, 20, 18)
-    doc.text(s.value, x + cardWidth / 2, startY + 7, { align: 'center' })
-    doc.setFontSize(6.5)
+    doc.setTextColor(accent[0] * 0.55, accent[1] * 0.55, accent[2] * 0.55)
+    doc.text(s.value, x + cardWidth / 2 + 1, startY + 9.5, { align: 'center' })
+    doc.setFontSize(6.8)
     doc.setFont('helvetica', 'normal')
-    doc.setTextColor(130, 130, 125)
-    doc.text(s.label, x + cardWidth / 2, startY + 12, { align: 'center' })
+    doc.setTextColor(110, 110, 108)
+    doc.text(s.label, x + cardWidth / 2 + 1, startY + 15.5, { align: 'center' })
   })
   doc.setTextColor(0, 0, 0)
-  return startY + cardHeight + 6
+  doc.setDrawColor(0, 0, 0)
+  return startY + cardHeight + 7
 }
 
 function drawPdfFooter(doc: jsPDF) {
@@ -330,6 +259,9 @@ function drawPdfFooter(doc: jsPDF) {
 // ditentukan otomatis dari isi teks (resolveBadgeTone) -- kalau teks tidak cocok kata kunci
 // apapun (mis. tanggal atau nilai lain yg kebetulan ada di kolom isBadge), sel dirender polos
 // spt biasa, tidak dipaksa jadi badge kosong.
+// Polish v3: badge sekarang dibatasi lebar (bukan mengisi penuh sel) & dikasih padding
+// vertikal lebih kecil supaya terlihat spt "pill" kecil di tengah sel, bukan blok warna penuh
+// sepanjang kolom -- konsisten dgn tampilan badge di layar aplikasi (rounded-full).
 function makeBadgeCellHook(columns: ExportColumn[]) {
   return (data: CellHookData) => {
     if (data.section !== 'body') return
@@ -342,6 +274,7 @@ function makeBadgeCellHook(columns: ExportColumn[]) {
     data.cell.styles.textColor = text
     data.cell.styles.fontStyle = 'bold'
     data.cell.styles.halign = 'center'
+    data.cell.styles.valign = 'middle'
   }
 }
 
@@ -360,13 +293,33 @@ function buildPdfDoc(opts: ExportOptions): jsPDF {
     cursorY = drawSummaryCards(doc, pageWidth, cursorY, opts.summary)
   }
 
+  // Polish v3: header lebih tegas (uppercase, letter-spacing via ukuran font lebih kecil +
+  // bold, border bawah lebih gelap drpd border antar-baris data) supaya batas header/data jelas
+  // tanpa perlu warna solid mencolok. Baris data pakai garis horizontal tipis SAJA (bukan grid
+  // penuh vertikal+horizontal) -- lebih bersih/minimalis, garis vertikal antar kolom dihapus
+  // krn dgn zebra striping yang ada, pembatas kolom eksplisit jadi berlebihan (redundant
+  // dgn beda warna latar tiap baris genap/ganjil).
   autoTable(doc, {
     startY: cursorY,
-    head: [opts.columns.map(c => c.header)],
+    head: [opts.columns.map(c => c.header.toUpperCase())],
     body: opts.rows.map(row => opts.columns.map(c => String(row[c.key] ?? '-'))),
-    styles: { fontSize: 8, cellPadding: 2.2, lineColor: [235, 235, 231], lineWidth: 0.1 },
-    headStyles: { fillColor: [247, 247, 245], textColor: [70, 70, 66], fontStyle: 'bold', lineWidth: 0.1, lineColor: [225, 225, 220] },
-    alternateRowStyles: { fillColor: [252, 252, 251] },
+    styles: {
+      fontSize: 8,
+      cellPadding: { top: 2.6, bottom: 2.6, left: 2.5, right: 2.5 },
+      lineColor: [240, 240, 236],
+      lineWidth: { top: 0.1, bottom: 0.1, left: 0, right: 0 },
+      textColor: [55, 55, 52],
+      valign: 'middle',
+    },
+    headStyles: {
+      fillColor: [40, 40, 38],
+      textColor: [245, 245, 243],
+      fontStyle: 'bold',
+      fontSize: 7.2,
+      cellPadding: { top: 3, bottom: 3, left: 2.5, right: 2.5 },
+      lineWidth: 0,
+    },
+    alternateRowStyles: { fillColor: [249, 249, 247] },
     margin: { left: 14, right: 14 },
     didParseCell: makeBadgeCellHook(opts.columns),
   })
@@ -762,27 +715,6 @@ export async function exportToExcel(opts: ExportOptions) {
   opts.columns.forEach((c, i) => {
     sheet.getColumn(i + 1).width = c.width || 18
   })
-
-  // Pie chart (upgrade v2, opsional) -- ditempel di bawah tabel data, bukan gambar Excel
-  // chart asli (lihat komentar `pieChart` di ExportOptions kenapa) tapi PNG hasil
-  // generatePieChartImage. Ditaruh SETELAH lebar kolom di-set (bukan sebelum) krn posisi
-  // gambar dihitung dari sheet.rowCount TERKINI -- kalau ditempel sebelum semua baris data
-  // selesai ditulis, posisinya bisa salah/tertindih.
-  if (opts.pieChart) {
-    const chart = generatePieChartImage(opts.pieChart.slices)
-    if (chart) {
-      sheet.addRow([])
-      const headingRow = sheet.addRow([opts.pieChart.title])
-      headingRow.getCell(1).font = { bold: true, size: 11, color: { argb: 'FF46463F' } }
-      const startRow = sheet.rowCount + 1
-      const imgWidth = 320
-      const imgHeight = imgWidth / chart.aspectRatio
-      const imgId = workbook.addImage({ base64: chart.dataUrl.split(',')[1] || chart.dataUrl, extension: 'png' })
-      sheet.addImage(imgId, { tl: { col: 0, row: startRow - 1 }, ext: { width: imgWidth, height: imgHeight } })
-      const rowsNeeded = Math.ceil(imgHeight / 20)
-      for (let i = 0; i < rowsNeeded; i++) sheet.addRow([])
-    }
-  }
 
   const buffer = await workbook.xlsx.writeBuffer()
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })

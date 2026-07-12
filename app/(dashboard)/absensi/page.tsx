@@ -483,10 +483,8 @@ export default function AbsensiPage() {
     }
   })
 
-  // Dihitung sekali (bukan 4x .filter() terpisah spt sebelumnya) -- dipakai baik utk
-  // exportSummary (kartu ringkasan) maupun exportPieChart (upgrade v2, segmen pie chart Excel)
-  // supaya kedua tempat SELALU konsisten angkanya, tidak mungkin drift krn dihitung ulang beda
-  // tempat.
+  // Dihitung sekali (bukan 4x .filter() terpisah spt sebelumnya) -- dipakai utk exportSummary
+  // (kartu ringkasan) supaya angkanya konsisten dgn kolom Status Kehadiran di tabel.
   const hitungStatus = () => {
     const acc = { hadir: 0, tidak_hadir: 0, izin: 0, sakit: 0 }
     scopedGenerus.forEach(g => {
@@ -505,23 +503,6 @@ export default function AbsensiPage() {
       { label: 'Sakit', value: `${s.sakit} orang` },
       { label: 'Total Generus', value: `${rekap.total} orang` },
     ]
-  }
-
-  // Upgrade v2: pie chart H/I/S/A di export Excel -- label sengaja sama persis dgn label di
-  // exportSummary/kolom Status Kehadiran ("Hadir", "Tidak Hadir", dst) supaya
-  // resolveBadgeTone (lib/export.ts) otomatis kasih warna segmen yg konsisten dgn warna badge
-  // status di tabel.
-  const exportPieChart = () => {
-    const s = hitungStatus()
-    return {
-      title: 'Distribusi Status Kehadiran',
-      slices: [
-        { label: 'Hadir', value: s.hadir },
-        { label: 'Tidak Hadir', value: s.tidak_hadir },
-        { label: 'Izin', value: s.izin },
-        { label: 'Sakit', value: s.sakit },
-      ],
-    }
   }
 
   const exportSubtitle = () => {
@@ -547,7 +528,6 @@ export default function AbsensiPage() {
     columns: exportColumns,
     rows: buildExportData(),
     summary: exportSummary(),
-    pieChart: exportPieChart(),
     fileName: exportFileName(),
   }
 
