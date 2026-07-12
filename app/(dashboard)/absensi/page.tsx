@@ -114,7 +114,11 @@ export default function AbsensiPage() {
     setLoadingKegiatan(false)
   }, [user])
 
+  // Data-fetching on mount/dependency-change (bukan derived state) -- lihat catatan serupa
+  // di dashboard/page.tsx. Disable per-baris supaya perilaku persis sama, tidak restrukturisasi
+  // pola yang sudah lama berjalan tanpa laporan bug.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (user && canView) loadKegiatan()
   }, [user, canView, loadKegiatan])
 

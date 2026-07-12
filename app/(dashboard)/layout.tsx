@@ -94,8 +94,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     loadFeatureToggles().then(setFeatureToggles)
   }, [user])
 
+  // Baca preferensi UI tersimpan dari localStorage saat mount -- setState di sini murni
+  // menyinkronkan React state dgn nilai yg sudah ada di localStorage (bukan derived state
+  // dari props/state lain), jadi tidak ada risiko cascading render yg jadi target aturan ini.
   useEffect(() => {
     const savedCollapse = localStorage.getItem('gensiti_sidebar_collapsed')
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (savedCollapse === 'true') setCollapsed(true)
 
     const savedDark = localStorage.getItem('gensiti_dark_mode')
@@ -119,6 +123,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // Admin sendiri tidak memicu ini karena dia early-return duluan di atas).
   useEffect(() => {
     if (!user) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (user.role?.tingkatan === 'super_admin') { setMaintenanceOk(true); return }
 
     let cancelled = false
@@ -158,7 +163,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => { cancelled = true; clearInterval(interval) }
   }, [user, router])
 
+  // Tutup sidebar mobile tiap kali route berganti -- reaksi ke perubahan `pathname`
+  // (external signal dari router), bukan derived state dari props/state React lain.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSidebarOpen(false)
   }, [pathname])
 

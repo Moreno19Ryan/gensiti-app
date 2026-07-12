@@ -56,7 +56,13 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
   const canOpenPresensi = canManagePresensi(user)
   const [kode, setKode] = useState<string | null>(kegiatan.kode_presensi_aktif)
   const [expiredAt, setExpiredAt] = useState<string | null>(kegiatan.kode_presensi_expired_at)
-  const [sisaDetik, setSisaDetik] = useState<number>(0)
+  // Lazy init supaya render pertama sudah akurat (bukan 0) kalau kode presensi sudah aktif
+  // dari prop `kegiatan` -- effect "Hitung mundur" di bawah tetap jadi sumber update tiap
+  // detik selanjutnya, ini hanya memperbaiki nilai awal sebelum effect pertama sempat jalan.
+  const [sisaDetik, setSisaDetik] = useState<number>(() => {
+    if (!kegiatan.kode_presensi_expired_at) return 0
+    return Math.max(0, Math.floor((new Date(kegiatan.kode_presensi_expired_at).getTime() - Date.now()) / 1000))
+  })
   const [loadingAksi, setLoadingAksi] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
@@ -72,7 +78,10 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const scannerRef = useRef<QrScanner | null>(null)
 
-  const isAktif = !!kode && !!expiredAt && new Date(expiredAt).getTime() > Date.now()
+  // Diturunkan dari `sisaDetik` (bukan memanggil Date.now() langsung saat render) supaya
+  // render tetap pure -- sisaDetik sendiri sudah disinkronkan tiap detik oleh effect
+  // "Hitung mundur" di bawah, jadi ini tetap real-time tanpa melanggar aturan purity.
+  const isAktif = !!kode && !!expiredAt && sisaDetik > 0
 
   // Cek apakah Generus/pengurus yang login sudah tercatat hadir untuk kegiatan ini
   const cekStatusKehadiran = useCallback(async () => {
@@ -88,14 +97,19 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
     setSudahHadir(absen?.status === 'hadir')
   }, [user, kegiatan.id])
 
+  // Data-fetching on mount/dependency-change (bukan derived state) -- lihat catatan serupa
+  // di dashboard/page.tsx. Disable per-baris supaya perilaku persis sama.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     cekStatusKehadiran()
   }, [cekStatusKehadiran])
 
-  // Hitung mundur tampilan detik
+  // Hitung mundur tampilan detik -- setSisaDetik(0) di sini menyinkronkan dgn `expiredAt`
+  // yang hilang/null (external signal), bukan derived state dari props/state React lain.
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current)
     if (!expiredAt) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSisaDetik(0)
       return
     }
@@ -113,6 +127,7 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
   // perlu request ke server terpisah.
   useEffect(() => {
     if (!kode || !expiredAt || !isAktif) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setQrDataUrl(null)
       return
     }

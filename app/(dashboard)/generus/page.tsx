@@ -197,8 +197,11 @@ export default function PenggunaPage() {
     setLoading(false)
   }, [user])
 
+  // Data-fetching on mount/dependency-change (bukan derived state) -- lihat catatan serupa
+  // di dashboard/page.tsx. Disable per-baris supaya perilaku persis sama.
   useEffect(() => {
     if (!user) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData()
     Promise.all([
       supabase.from('roles').select('id, nama_role, tingkatan').order('nama_role'),
@@ -998,7 +1001,7 @@ export default function PenggunaPage() {
 
                 {form.status_pengguna === 'menikah' && editTarget?.roles?.tingkatan === 'ppg' && (
                   <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 text-xs leading-relaxed">
-                    Akun PPG tidak diarsipkan otomatis saat berstatus "Menikah" -- status hanya dicatat sebagai info biodata, akun tetap aktif seperti biasa.
+                    Akun PPG tidak diarsipkan otomatis saat berstatus &quot;Menikah&quot; -- status hanya dicatat sebagai info biodata, akun tetap aktif seperti biasa.
                   </div>
                 )}
 

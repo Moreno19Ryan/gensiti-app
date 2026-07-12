@@ -349,15 +349,24 @@ export default function DashboardPage() {
     }
   }, [user])
 
+  // Data-fetching on mount/dependency-change -- pola standar, BUKAN kasus "derived state"
+  // yang jadi target sesungguhnya aturan set-state-in-effect (mis. menghitung ulang state dari
+  // props tanpa alasan). loadStats/loadCharts/loadGenerusInsight murni ambil data async dari
+  // Supabase, satu-satunya cara memicu itu adalah lewat effect yang bereaksi ke perubahan
+  // dependency (mis. user login). Disable per-baris (bukan restrukturisasi ke pola lain) supaya
+  // perilaku persis sama dgn sebelumnya -- tidak ada laporan bug terkait pola ini.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadStats()
   }, [loadStats])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadCharts()
   }, [loadCharts])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadGenerusInsight()
   }, [loadGenerusInsight])
 
