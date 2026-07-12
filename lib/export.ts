@@ -26,6 +26,14 @@ export interface ExportColumn {
   isBadge?: boolean
 }
 
+// Satu segmen pie chart -- label + nilai + warna opsional (kalau tidak diisi, warna diambil
+// otomatis dari resolveBadgeTone(label) supaya konsisten dgn warna badge kolom Status, mis.
+// segmen "Hadir" otomatis hijau sama spt badge "Hadir" di tabel).
+export interface PieChartSlice {
+  label: string
+  value: number
+}
+
 export interface ExportOptions {
   // Judul laporan, contoh: "Laporan Keuangan"
   title: string
@@ -35,6 +43,13 @@ export interface ExportOptions {
   rows: Record<string, string | number>[]
   // Baris ringkasan opsional di akhir (misal Total Pemasukan/Pengeluaran/Saldo)
   summary?: { label: string; value: string }[]
+  // Upgrade v2 (permintaan user: grafik built-in di Excel) -- pie chart opsional, ditempel di
+  // bawah tabel saat export Excel. ExcelJS TIDAK mendukung native Excel chart (limitasi resmi
+  // library, dikonfirmasi lewat riset sebelum implementasi) -- pie chart di sini digambar
+  // manual via Canvas API (generatePieChartImage) lalu ditempel sbg gambar PNG statis, SAMA
+  // seperti pola grafik di LaporanBulananModal (bedanya: itu capture dari Recharts on-screen,
+  // ini di-generate headless krn ExportOptions dipakai halaman tanpa chart di layar).
+  pieChart?: { title: string; slices: PieChartSlice[] }
   // Nama file tanpa ekstensi
   fileName: string
 }
@@ -134,6 +149,95 @@ function formatTanggalCetak() {
   return new Date().toLocaleString('id-ID', {
     day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
   })
+}
+
+// Warna solid (bukan pasangan bg-muted/text-gelap spt badge) utk segmen pie chart -- diambil
+// dari stop 400 palet badge (lebih jenuh drpd bg badge yg sengaja pudar) supaya segmen pie
+// tetap saling terpisah jelas walau berdampingan, sementara tone-nya (hijau/merah/abu) TETAP
+// konsisten dgn makna yg sama persis di kolom badge tabel -- "Hadir" selalu hijau di mana pun
+// dia muncul di laporan ini, bukan warna acak per konteks.
+const PIE_SLICE_COLOR: Record<BadgeTone, string> = {
+  positif: '#4ade80',
+  negatif: '#f87171',
+  netral: '#a8a29e',
+}
+const PIE_SLICE_COLOR_FALLBACK = ['#60a5fa', '#c084fc', '#fbbf24', '#22d3ee', '#fb923c']
+
+// Generate pie chart sbg PNG data URL via Canvas API browser NATIVE (bukan library eksternal
+// spt Chart.js -- project ini blm punya dependency chart headless, dan pie chart sederhana
+// H/I/S/A tidak butuh library sebesar itu, lihat diskusi "native Canvas vs install Chart.js").
+// HANYA jalan di browser (dipakai 'use client' export.ts) -- OffscreenCanvas/document tidak
+// tersedia di server, tapi seluruh file ini memang sudah client-only (lihat baris 6).
+function generatePieChartImage(slices: PieChartSlice[], size = 480): { dataUrl: string; aspectRatio: number } | null {
+  const total = slices.reduce((sum, s) => sum + s.value, 0)
+  if (total <= 0) return null
+
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+
+  const cx = size / 2
+  const cy = size / 2
+  const radius = size * 0.38
+  let fallbackIdx = 0
+  let angleStart = -Math.PI / 2 // mulai dari jam 12, searah jarum jam
+
+  slices.forEach(slice => {
+    if (slice.value <= 0) return
+    const tone = resolveBadgeTone(slice.label)
+    const color = tone ? PIE_SLICE_COLOR[tone] : PIE_SLICE_COLOR_FALLBACK[fallbackIdx++ % PIE_SLICE_COLOR_FALLBACK.length]
+    const sliceAngle = (slice.value / total) * Math.PI * 2
+    const angleEnd = angleStart + sliceAngle
+
+    ctx.beginPath()
+    ctx.moveTo(cx, cy)
+    ctx.arc(cx, cy, radius, angleStart, angleEnd)
+    ctx.closePath()
+    ctx.fillStyle = color
+    ctx.fill()
+
+    // Label persentase di tengah segmen (hanya kalau segmennya cukup besar utk terbaca)
+    const pct = Math.round((slice.value / total) * 100)
+    if (pct >= 6) {
+      const midAngle = (angleStart + angleEnd) / 2
+      const labelR = radius * 0.65
+      ctx.fillStyle = '#ffffff'
+      ctx.font = `bold ${Math.round(size * 0.042)}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(`${pct}%`, cx + Math.cos(midAngle) * labelR, cy + Math.sin(midAngle) * labelR)
+    }
+    angleStart = angleEnd
+  })
+
+  // Legenda di bawah lingkaran -- kotak warna kecil + label + nilai, disusun horizontal rata
+  // tengah. Ukuran font/kotak proporsional thd `size` supaya tetap terbaca di ukuran berapa
+  // pun canvas ini dipanggil.
+  const legendY = cy + radius + size * 0.09
+  const fontSize = Math.round(size * 0.035)
+  ctx.font = `${fontSize}px sans-serif`
+  ctx.textBaseline = 'middle'
+  const itemTexts = slices.filter(s => s.value > 0).map(s => `${s.label} (${s.value})`)
+  const boxSize = fontSize * 0.8
+  const gap = size * 0.025
+  const itemWidths = itemTexts.map(t => boxSize + 6 + ctx.measureText(t).width)
+  const totalWidth = itemWidths.reduce((a, b) => a + b, 0) + gap * (itemWidths.length - 1)
+  let legendX = cx - totalWidth / 2
+  let fbIdx2 = 0
+  slices.filter(s => s.value > 0).forEach((slice, i) => {
+    const tone = resolveBadgeTone(slice.label)
+    const color = tone ? PIE_SLICE_COLOR[tone] : PIE_SLICE_COLOR_FALLBACK[fbIdx2++ % PIE_SLICE_COLOR_FALLBACK.length]
+    ctx.fillStyle = color
+    ctx.fillRect(legendX, legendY - boxSize / 2, boxSize, boxSize)
+    ctx.fillStyle = '#46463f'
+    ctx.textAlign = 'left'
+    ctx.fillText(itemTexts[i], legendX + boxSize + 6, legendY)
+    legendX += itemWidths[i] + gap
+  })
+
+  return { dataUrl: canvas.toDataURL('image/png'), aspectRatio: size / (size + size * 0.22) }
 }
 
 // Menggambar kop laporan (logo, nama organisasi, judul/subtitle) -- diekstrak jadi fungsi
@@ -658,6 +762,27 @@ export async function exportToExcel(opts: ExportOptions) {
   opts.columns.forEach((c, i) => {
     sheet.getColumn(i + 1).width = c.width || 18
   })
+
+  // Pie chart (upgrade v2, opsional) -- ditempel di bawah tabel data, bukan gambar Excel
+  // chart asli (lihat komentar `pieChart` di ExportOptions kenapa) tapi PNG hasil
+  // generatePieChartImage. Ditaruh SETELAH lebar kolom di-set (bukan sebelum) krn posisi
+  // gambar dihitung dari sheet.rowCount TERKINI -- kalau ditempel sebelum semua baris data
+  // selesai ditulis, posisinya bisa salah/tertindih.
+  if (opts.pieChart) {
+    const chart = generatePieChartImage(opts.pieChart.slices)
+    if (chart) {
+      sheet.addRow([])
+      const headingRow = sheet.addRow([opts.pieChart.title])
+      headingRow.getCell(1).font = { bold: true, size: 11, color: { argb: 'FF46463F' } }
+      const startRow = sheet.rowCount + 1
+      const imgWidth = 320
+      const imgHeight = imgWidth / chart.aspectRatio
+      const imgId = workbook.addImage({ base64: chart.dataUrl.split(',')[1] || chart.dataUrl, extension: 'png' })
+      sheet.addImage(imgId, { tl: { col: 0, row: startRow - 1 }, ext: { width: imgWidth, height: imgHeight } })
+      const rowsNeeded = Math.ceil(imgHeight / 20)
+      for (let i = 0; i < rowsNeeded; i++) sheet.addRow([])
+    }
+  }
 
   const buffer = await workbook.xlsx.writeBuffer()
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })

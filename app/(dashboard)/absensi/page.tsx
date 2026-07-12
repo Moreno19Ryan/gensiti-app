@@ -70,6 +70,13 @@ export default function AbsensiPage() {
 
   const [generusScope, setGenerusScope] = useState<GenerusRow[]>([])
   const [absensiMap, setAbsensiMap] = useState<Record<string, Absensi>>({})
+  // Riwayat kehadiran BULAN BERJALAN per generus (upgrade v2 export, permintaan user: "info
+  // kehadiran generus itu sebelumnya" -- bukan cuma snapshot 1 kegiatan) -- key: generus_id,
+  // value: { hadir, total } dihitung dari SEMUA kegiatan bulan ini yang generus tsb ikut
+  // absensi-nya (bukan cuma kegiatan yang sedang dibuka di layar). Dipakai di kolom export
+  // "Riwayat Bulan Ini" (format "X/Y"), BUKAN ditampilkan di tabel on-screen (supaya tidak
+  // menambah query/beban tampilan utama yg sudah cukup padat) -- hanya dihitung saat export.
+  const [riwayatBulanMap, setRiwayatBulanMap] = useState<Record<string, { hadir: number; total: number }>>({})
   // Nama pengurus yang melakukan koreksi manual (key: user id dari absensi.dikoreksi_oleh) --
   // dipakai untuk badge "Dikoreksi oleh ..." di daftar, supaya tidak perlu join manual di
   // query utama (baris yang tidak pernah dikoreksi tidak butuh data ini sama sekali).
@@ -200,6 +207,42 @@ export default function AbsensiPage() {
       if (row.generus_id) map[row.generus_id] = row
     }
     setAbsensiMap(map)
+
+    // Riwayat kehadiran bulan berjalan -- dihitung dari SEMUA record absensi generus dalam
+    // scope ini, utk kegiatan apapun yg tanggal_mulai-nya di bulan yg sama dgn kegiatan yg
+    // sedang dibuka (bukan cuma bulan kalender "sekarang" -- supaya laporan kegiatan lama yg
+    // dibuka lagi tetap konsisten menampilkan riwayat bulan kegiatan itu, bukan bulan hari
+    // ini). Query terpisah (bukan RPC) krn RLS absensi_select/absensi_all_desa_kelompok sudah
+    // cukup permisif utk pengurus yg berwenang buka halaman ini -- join client-side ke
+    // kegiatan.tanggal_mulai via .gte/.lt lebih sederhana drpd bikin RPC baru utk kasus ini.
+    if (sortedGenerus.length > 0 && kegiatan.tanggal_mulai) {
+      const tglKegiatan = new Date(kegiatan.tanggal_mulai)
+      const awalBulan = new Date(tglKegiatan.getFullYear(), tglKegiatan.getMonth(), 1).toISOString()
+      const awalBulanBerikutnya = new Date(tglKegiatan.getFullYear(), tglKegiatan.getMonth() + 1, 1).toISOString()
+      const generusIds = sortedGenerus.map(g => g.id)
+      const { data: riwayatRows, error: errRiwayat } = await supabase
+        .from('absensi')
+        .select('generus_id, status, kegiatan:kegiatan_id!inner(tanggal_mulai)')
+        .in('generus_id', generusIds)
+        .gte('kegiatan.tanggal_mulai', awalBulan)
+        .lt('kegiatan.tanggal_mulai', awalBulanBerikutnya)
+        .limit(5000)
+      if (errRiwayat) {
+        console.error('Gagal memuat riwayat kehadiran bulan berjalan:', errRiwayat.message)
+        setRiwayatBulanMap({})
+      } else {
+        const riwayat: Record<string, { hadir: number; total: number }> = {}
+        for (const r of (riwayatRows || []) as { generus_id: string; status: string }[]) {
+          const existing = riwayat[r.generus_id] || { hadir: 0, total: 0 }
+          existing.total += 1
+          if (r.status === 'hadir') existing.hadir += 1
+          riwayat[r.generus_id] = existing
+        }
+        setRiwayatBulanMap(riwayat)
+      }
+    } else {
+      setRiwayatBulanMap({})
+    }
 
     // Ambil nama pengurus yang pernah melakukan koreksi manual pada kegiatan ini (kalau ada)
     // -- query terpisah & hanya jalan kalau memang ada baris yang punya dikoreksi_oleh,
@@ -418,10 +461,16 @@ export default function AbsensiPage() {
     // (hijau utk "Hadir", merah utk "Tidak Hadir"/"Belum Ditandai", abu netral utk "Izin"/
     // "Sakit") lewat resolveBadgeTone di lib/export.ts, bukan teks polos spt sebelumnya.
     { header: 'Status Kehadiran', key: 'status', width: 18, isBadge: true },
+    // Upgrade v2 (permintaan user: "riwayat kehadiran generus itu sebelumnya") -- format
+    // "X/Y" (X = jumlah kegiatan yg dihadiri bulan ini, Y = total kegiatan yg diikuti absensi-
+    // nya bulan ini, TERMASUK kegiatan yg sedang di-export ini sendiri). Bukan badge (nilainya
+    // pecahan, bukan status tunggal spt kolom Status Kehadiran) -- dibiarkan teks polos.
+    { header: 'Riwayat Bulan Ini', key: 'riwayat', width: 16 },
   ]
 
   const buildExportData = () => scopedGenerus.map(a => {
     const status = absensiMap[a.id]?.status
+    const riwayat = riwayatBulanMap[a.id]
     return {
       no: a.nomor_generus,
       nama: a.users?.nama_lengkap || '-',
@@ -430,16 +479,50 @@ export default function AbsensiPage() {
       kelas_ngaji: a.kelas_ngaji ? (kelasNgajiLabel[a.kelas_ngaji] || a.kelas_ngaji) : '-',
       jam: status === 'hadir' ? jamHadir(a.id) : '-',
       status: status ? kehadiranLabel[status]?.label : 'Belum Ditandai',
+      riwayat: riwayat ? `${riwayat.hadir}/${riwayat.total} kegiatan` : '-',
     }
   })
 
-  const exportSummary = () => [
-    { label: 'Hadir', value: `${scopedGenerus.filter(g => absensiMap[g.id]?.status === 'hadir').length} orang` },
-    { label: 'Tidak Hadir', value: `${scopedGenerus.filter(g => absensiMap[g.id]?.status === 'tidak_hadir').length} orang` },
-    { label: 'Izin', value: `${scopedGenerus.filter(g => absensiMap[g.id]?.status === 'izin').length} orang` },
-    { label: 'Sakit', value: `${scopedGenerus.filter(g => absensiMap[g.id]?.status === 'sakit').length} orang` },
-    { label: 'Total Generus', value: `${rekap.total} orang` },
-  ]
+  // Dihitung sekali (bukan 4x .filter() terpisah spt sebelumnya) -- dipakai baik utk
+  // exportSummary (kartu ringkasan) maupun exportPieChart (upgrade v2, segmen pie chart Excel)
+  // supaya kedua tempat SELALU konsisten angkanya, tidak mungkin drift krn dihitung ulang beda
+  // tempat.
+  const hitungStatus = () => {
+    const acc = { hadir: 0, tidak_hadir: 0, izin: 0, sakit: 0 }
+    scopedGenerus.forEach(g => {
+      const s = absensiMap[g.id]?.status
+      if (s && s in acc) acc[s as keyof typeof acc] += 1
+    })
+    return acc
+  }
+
+  const exportSummary = () => {
+    const s = hitungStatus()
+    return [
+      { label: 'Hadir', value: `${s.hadir} orang` },
+      { label: 'Tidak Hadir', value: `${s.tidak_hadir} orang` },
+      { label: 'Izin', value: `${s.izin} orang` },
+      { label: 'Sakit', value: `${s.sakit} orang` },
+      { label: 'Total Generus', value: `${rekap.total} orang` },
+    ]
+  }
+
+  // Upgrade v2: pie chart H/I/S/A di export Excel -- label sengaja sama persis dgn label di
+  // exportSummary/kolom Status Kehadiran ("Hadir", "Tidak Hadir", dst) supaya
+  // resolveBadgeTone (lib/export.ts) otomatis kasih warna segmen yg konsisten dgn warna badge
+  // status di tabel.
+  const exportPieChart = () => {
+    const s = hitungStatus()
+    return {
+      title: 'Distribusi Status Kehadiran',
+      slices: [
+        { label: 'Hadir', value: s.hadir },
+        { label: 'Tidak Hadir', value: s.tidak_hadir },
+        { label: 'Izin', value: s.izin },
+        { label: 'Sakit', value: s.sakit },
+      ],
+    }
+  }
 
   const exportSubtitle = () => {
     const tgl = selectedKegiatan?.tanggal_mulai
@@ -464,6 +547,7 @@ export default function AbsensiPage() {
     columns: exportColumns,
     rows: buildExportData(),
     summary: exportSummary(),
+    pieChart: exportPieChart(),
     fileName: exportFileName(),
   }
 
