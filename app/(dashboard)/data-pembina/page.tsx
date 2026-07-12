@@ -38,6 +38,8 @@ interface PembinaRow {
     id: string
     nama_lengkap: string
     no_hp: string | null
+    is_active: boolean
+    is_archived: boolean
     desa: { id: string; nama_desa: string } | null
     kelompok: { id: string; nama_kelompok: string } | null
     roles: { nama_role: string; tingkatan: string } | null
@@ -102,7 +104,7 @@ export default function DataPembinaPage() {
       .select(`
         id, user_id, nomor_generus, nama_panggilan, tempat_lahir, tanggal_lahir, jenis_kelamin,
         alamat, tinggi_badan, berat_badan, status_pengguna,
-        users:user_id(id, nama_lengkap, no_hp, desa:desa_id(id, nama_desa), kelompok:kelompok_id(id, nama_kelompok), roles:role_id(nama_role, tingkatan))
+        users:user_id(id, nama_lengkap, no_hp, is_active, is_archived, desa:desa_id(id, nama_desa), kelompok:kelompok_id(id, nama_kelompok), roles:role_id(nama_role, tingkatan))
       `)
       .order('nomor_generus')
 
@@ -136,6 +138,44 @@ export default function DataPembinaPage() {
       berat_badan: g.berat_badan?.toString() || '',
       status_pengguna: g.status_pengguna || 'lajang',
     })
+  }
+
+  // Memulihkan akun PPG yang sebelumnya diarsipkan (satu-satunya jalur arsip otomatis di
+  // halaman ini adalah status_pengguna = 'meninggal_dunia', lihat needsArchive di handleSave
+  // -- PPG DIKECUALIKAN dari arsip otomatis saat 'menikah'). Pola & pembagian tanggung jawab
+  // endpoint PERSIS sama dengan restoreAccount() di app/(dashboard)/generus/page.tsx (/api/users
+  // murni field akun, /api/generus murni biodata, status_pengguna selalu direset ke 'lajang').
+  // Sebelum fix ini, akun PPG yang diarsipkan tidak punya jalur pemulihan sama sekali di UI --
+  // halaman ini bahkan tidak mengambil is_active/is_archived dari database, jadi status arsip
+  // PPG tidak pernah terlihat di sini walau datanya sudah diarsipkan lewat handleSave.
+  const restoreAccount = async (g: PembinaRow) => {
+    if (!g.users) return
+    const nama = g.users.nama_lengkap
+    if (!confirm(`Pulihkan akun "${nama}"? Akun akan diaktifkan kembali dengan status "Lajang".`)) return
+    const res = await authFetch('/api/users', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: g.users.id, nama_lengkap: nama, restore: true }),
+    })
+    const json = await res.json()
+    if (json.error) { alert(json.error); return }
+
+    const resGenerus = await authFetch('/api/generus', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: g.users.id,
+        generus_id: g.id,
+        status_pengguna: 'lajang',
+      }),
+    })
+    const jsonGenerus = await resGenerus.json()
+    if (jsonGenerus.error) { alert(jsonGenerus.error); return }
+
+    if (user) {
+      await logAudit(user, 'ACTIVATE', 'Pengguna', nama, { alasan: 'Dipulihkan dari arsip' }, g.users.id)
+    }
+    loadData()
   }
 
   const set = (key: string, val: string) => setForm(f => ({ ...f, [key]: val }))
@@ -387,9 +427,16 @@ export default function DataPembinaPage() {
                       <td className="px-4 py-3 text-slate-600 text-xs">{g.jenis_kelamin?.toUpperCase() || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{g.tanggal_lahir ? formatAge(g.tanggal_lahir) : '—'}</td>
                       <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusPenggunaBadge[sp]}`}>
-                          {statusPenggunaLabel[sp]}
-                        </span>
+                        <div className="flex flex-col gap-1 w-fit">
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium w-fit ${statusPenggunaBadge[sp]}`}>
+                            {statusPenggunaLabel[sp]}
+                          </span>
+                          {g.users?.is_archived && (
+                            <span className="px-2 py-0.5 rounded-full text-xs font-medium w-fit bg-orange-100 text-orange-700">
+                              Diarsipkan
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${lengkap ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
@@ -398,9 +445,16 @@ export default function DataPembinaPage() {
                       </td>
                       {canManage && (
                         <td className="px-4 py-3">
-                          <button onClick={() => openEdit(g)} className="text-blue-600 hover:text-blue-800 font-medium text-xs">
-                            Lihat / Edit
-                          </button>
+                          <div className="flex items-center gap-3">
+                            <button onClick={() => openEdit(g)} className="text-blue-600 hover:text-blue-800 font-medium text-xs">
+                              Lihat / Edit
+                            </button>
+                            {g.users?.is_archived && (
+                              <button onClick={() => restoreAccount(g)} className="text-orange-500 hover:text-orange-700 font-medium text-xs">
+                                Pulihkan
+                              </button>
+                            )}
+                          </div>
                         </td>
                       )}
                     </tr>
