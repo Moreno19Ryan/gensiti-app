@@ -472,6 +472,48 @@ export default function PenggunaPage() {
     loadData()
   }
 
+  // Memulihkan akun yang sebelumnya diarsipkan (menikah/meninggal dunia/pindah sambung ke
+  // daerah lain) -- kebalikan dari alur arsip otomatis di doActualSave. Dua panggilan API
+  // terpisah (users lalu generus) mengikuti pemisahan tanggung jawab yang sama seperti alur
+  // simpan biasa: /api/users murni field akun (is_active/is_archived/alasan_arsip/tanggal_arsip),
+  // /api/generus murni biodata (status_pengguna & field pindah sambung). status_pengguna
+  // SELALU direset ke 'lajang' apapun alasan arsip sebelumnya -- setelah dipulihkan, pengurus
+  // yang memulihkan diasumsikan akan mengedit ulang biodata kalau status sebenarnya berbeda
+  // (mis. tetap menikah tapi akun perlu aktif lagi karena alasan lain), bukan tugas restore
+  // untuk menebak status mana yang "benar".
+  const restoreAccount = async (m: Member) => {
+    if (!confirm(`Pulihkan akun "${m.nama_lengkap}"? Akun akan diaktifkan kembali dengan status "Lajang".`)) return
+    const res = await authFetch('/api/users', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: m.id, nama_lengkap: m.nama_lengkap, restore: true }),
+    })
+    const json = await res.json()
+    if (json.error) { alert(json.error); return }
+
+    if (m.generus?.id) {
+      const resGenerus = await authFetch('/api/generus', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: m.id,
+          generus_id: m.generus.id,
+          status_pengguna: 'lajang',
+          pindah_desa_id: null,
+          pindah_kelompok_id: null,
+          pindah_ke_daerah_lain: false,
+        }),
+      })
+      const jsonGenerus = await resGenerus.json()
+      if (jsonGenerus.error) { alert(jsonGenerus.error); return }
+    }
+
+    if (user) {
+      await logAudit(user, 'ACTIVATE', 'Pengguna', m.nama_lengkap, { alasan: 'Dipulihkan dari arsip' }, m.id)
+    }
+    loadData()
+  }
+
   const set = (key: string, val: string | boolean) => setForm(f => ({ ...f, [key]: val }))
   const setUpper = (key: string, val: string) => setForm(f => ({ ...f, [key]: toUpperWords(val) }))
 
@@ -646,7 +688,9 @@ export default function PenggunaPage() {
                               <span className="text-xs text-slate-300 italic">Permanen</span>
                             )}
                             {m.is_archived && (
-                              <span className="text-xs text-orange-400 italic">Diarsipkan</span>
+                              <button onClick={() => restoreAccount(m)} className="text-orange-500 hover:text-orange-700 font-medium text-xs">
+                                Pulihkan
+                              </button>
                             )}
                           </div>
                         </td>

@@ -329,6 +329,7 @@ export async function PATCH(req: NextRequest) {
       id, nama_lengkap, no_hp, role_id, desa_id, kelompok_id, is_active, password,
       avatar_url,
       archive, alasan_arsip,
+      restore,
     } = await req.json()
 
     if (!id) return NextResponse.json({ error: 'ID wajib diisi' }, { status: 400 })
@@ -358,7 +359,7 @@ export async function PATCH(req: NextRequest) {
       // Semua field lain — termasuk nama_lengkap — diblokir sepenuhnya
       const hasProtectedFields = nama_lengkap !== undefined
         || role_id !== undefined || desa_id !== undefined || kelompok_id !== undefined
-        || is_active !== undefined || archive !== undefined
+        || is_active !== undefined || archive !== undefined || restore !== undefined
       if (hasProtectedFields) {
         return NextResponse.json({ error: 'Profil Super Admin tidak dapat diubah.' }, { status: 403 })
       }
@@ -366,7 +367,7 @@ export async function PATCH(req: NextRequest) {
 
     // Field administratif (role, scope, status akun) hanya boleh diubah oleh yang berwenang
     // mengelola Generus — mencegah pengguna menaikkan hak aksesnya sendiri lewat halaman profil.
-    const hasAdminFields = role_id !== undefined || is_active !== undefined || archive !== undefined
+    const hasAdminFields = role_id !== undefined || is_active !== undefined || archive !== undefined || restore !== undefined
     if (hasAdminFields && !canManageMembers(caller)) {
       return NextResponse.json({ error: 'Anda tidak berwenang mengubah role atau status akun.' }, { status: 403 })
     }
@@ -409,6 +410,19 @@ export async function PATCH(req: NextRequest) {
       userPayload.is_archived = true
       userPayload.alasan_arsip = alasan_arsip || 'Tidak diketahui'
       userPayload.tanggal_arsip = new Date().toISOString()
+    }
+
+    // Pulihkan akun yang sebelumnya diarsipkan (menikah/meninggal dunia/pindah sambung ke
+    // daerah lain) -- kebalikan dari blok `archive` di atas. Akun diaktifkan kembali & jejak
+    // arsip (alasan/tanggal) dihapus supaya tidak ada info arsip basi menempel di akun yang
+    // sudah dipulihkan. Biodata terkait (generus.status_pengguna dikembalikan ke 'lajang',
+    // pindah_desa_id/kelompok_id/pindah_ke_daerah_lain direset) ditangani terpisah oleh
+    // caller lewat app/api/generus/route.ts PATCH -- endpoint ini (users) tetap murni akun.
+    if (restore === true) {
+      userPayload.is_active = true
+      userPayload.is_archived = false
+      userPayload.alasan_arsip = null
+      userPayload.tanggal_arsip = null
     }
 
     if (Object.keys(userPayload).length > 0) {
