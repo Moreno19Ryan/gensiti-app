@@ -7,7 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  typecheck-and-lint:
+  verify:
+    name: Type check, lint, and test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,3 +25,6 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Test
+        run: npm run test
