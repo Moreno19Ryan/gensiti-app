@@ -57,7 +57,9 @@ async function getCaller(req: NextRequest, supabaseAdmin: ReturnType<typeof admi
   if (!profile) {
     return { caller: null, reason: 'Profil pengguna tidak ditemukan di database.' }
   }
-  if (profile.is_active === false) {
+  // Fail-closed: apapun selain is_active TEPAT true (termasuk null/undefined) dianggap
+  // TIDAK aktif -- lihat komentar identik di app/api/users/route.ts getCaller.
+  if (profile.is_active !== true) {
     return { caller: null, reason: 'Akun tidak aktif.' }
   }
 
@@ -130,8 +132,24 @@ export async function GET(req: NextRequest) {
     const userId = searchParams.get('userId')
     if (!userId) return NextResponse.json({ error: 'userId wajib diisi' }, { status: 400 })
 
-    if (userId !== caller.id && !canManageMembers(caller)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    // SECURITY FIX (IDOR) -- sebelumnya hanya cek "apakah caller pengurus" tanpa cek
+    // scope, sehingga Ketua/Sekretaris Kelompok A bisa menarik biodata sensitif (alamat,
+    // tanggal lahir, nama ortu/wali, no HP) milik Generus manapun di seluruh organisasi,
+    // bukan cuma yang ada dalam scope-nya. Sekarang scope target (desa/kelompok AKUN,
+    // dari tabel users) ikut divalidasi lewat canActOnScope, konsisten dengan PATCH di
+    // bawah dan dengan app/api/users/route.ts.
+    if (userId !== caller.id) {
+      if (!canManageMembers(caller)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      const { data: targetUser } = await supabaseAdmin
+        .from('users')
+        .select('desa_id, kelompok_id')
+        .eq('id', userId)
+        .single()
+      if (!canActOnScope(caller, targetUser?.desa_id ?? null, targetUser?.kelompok_id ?? null)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
     }
 
     const { data, error } = await supabaseAdmin
@@ -196,6 +214,24 @@ export async function PATCH(req: NextRequest) {
       || pindah_desa_id !== undefined || pindah_kelompok_id !== undefined || pindah_ke_daerah_lain !== undefined
     if (hasAdminFields && !canManageMembers(caller)) {
       return NextResponse.json({ error: 'Anda tidak berwenang mengubah status keanggotaan.' }, { status: 403 })
+    }
+
+    // SECURITY FIX -- desa_id/kelompok_id di sini adalah TEMPAT SAMBUNG Generus (beda dari
+    // scope akun di users/route.ts, tapi otorisasinya harus sama ketatnya). Field ini
+    // sebelumnya TIDAK termasuk hasAdminFields, jadi siapapun bisa mengubah tempat
+    // sambungnya sendiri lewat halaman Profil tanpa lolos canManageMembers. Sekarang WAJIB
+    // canManageMembers DAN caller harus berwenang ATAS Desa/Kelompok TUJUAN (bukan cuma
+    // lokasi lama) -- mencegah Ketua Desa A memindahkan tempat sambung anggotanya sendiri
+    // ke Desa B tanpa Desa B pernah menyetujui.
+    if (desa_id !== undefined || kelompok_id !== undefined) {
+      if (!canManageMembers(caller)) {
+        return NextResponse.json({ error: 'Anda tidak berwenang mengubah tempat sambung (Desa/Kelompok).' }, { status: 403 })
+      }
+      const newDesaId = desa_id || null
+      const newKelompokId = kelompok_id || null
+      if (!canActOnScope(caller, newDesaId, newKelompokId)) {
+        return NextResponse.json({ error: 'Anda tidak berwenang memindahkan tempat sambung ke Desa/Kelompok tujuan ini.' }, { status: 403 })
+      }
     }
 
     const generusPayload: Record<string, unknown> = {}

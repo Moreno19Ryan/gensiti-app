@@ -9,6 +9,16 @@ function adminClient() {
   )
 }
 
+// Meng-escape wildcard `%`/`_` (dan backslash sbg escape char-nya) sebelum dipakai di
+// .ilike() -- `reqRow.email` berasal dari insert PUBLIK tanpa autentikasi (form
+// /lupa-password, RLS reset_request_insert mengizinkan siapapun insert email string bebas),
+// jadi tanpa escape ini penyerang bisa mengirim pola wildcard (mis. email korban dgn satu
+// karakter diganti `_`) sebagai emailnya sendiri agar cocok ke akun lain saat permintaannya
+// diproses Super Admin -- password akun yang salah bisa ter-reset.
+function escapeIlike(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+}
+
 // Memverifikasi bearer token dan memastikan pemanggil adalah Super Admin. Sama seperti
 // app/api/users/route.ts -- endpoint ini memakai service role key (bypass RLS) untuk bisa
 // mengubah password akun ORANG LAIN lewat supabase.auth.admin, jadi verifikasi manual di
@@ -29,7 +39,8 @@ async function requireSuperAdmin(req: NextRequest, supabaseAdmin: ReturnType<typ
     .eq('id', userData.user.id)
     .single()
 
-  if (!profile || profile.is_active === false) return null
+  // Fail-closed: apapun selain is_active TEPAT true dianggap TIDAK aktif.
+  if (!profile || profile.is_active !== true) return null
   const role = profile.roles as { tingkatan?: string } | { tingkatan?: string }[] | null
   const roleObj = Array.isArray(role) ? role[0] : role
   if (roleObj?.tingkatan !== 'super_admin') return null
@@ -104,12 +115,18 @@ export async function POST(req: NextRequest) {
       }
 
       // Cari akun berdasarkan email yang tertulis di permintaan
-      const { data: targetUser } = await supabaseAdmin
+      const { data: targetUser, error: targetUserErr } = await supabaseAdmin
         .from('users')
         .select('id, email')
-        .ilike('email', reqRow.email)
+        .ilike('email', escapeIlike(reqRow.email))
         .maybeSingle()
 
+      if (targetUserErr) {
+        // .maybeSingle() melempar error kalau lebih dari 1 baris cocok -- sebelumnya
+        // error ini dibuang diam-diam (destructuring tanpa `error`) sehingga kondisi
+        // multi-match tersamar jadi pesan generik "akun tidak ditemukan" di bawah.
+        return NextResponse.json({ error: `Gagal mencari akun: ${targetUserErr.message}` }, { status: 500 })
+      }
       if (!targetUser) {
         return NextResponse.json({ error: `Tidak ditemukan akun dengan email ${reqRow.email}. Periksa kembali permintaan atau tolak jika tidak valid.` }, { status: 404 })
       }

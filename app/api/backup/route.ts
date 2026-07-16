@@ -42,7 +42,8 @@ async function getCallerIsSuperAdmin(req: NextRequest, supabaseAdmin: ReturnType
     .eq('id', userData.user.id)
     .single()
 
-  if (!profile || profile.is_active === false) return false
+  // Fail-closed: apapun selain is_active TEPAT true dianggap TIDAK aktif.
+  if (!profile || profile.is_active !== true) return false
   const role = profile.roles as { tingkatan?: string } | { tingkatan?: string }[] | null
   const roleObj = Array.isArray(role) ? role[0] : role
   return roleObj?.tingkatan === 'super_admin'

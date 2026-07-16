@@ -176,7 +176,13 @@ export default function KeuanganPage() {
   const handleSave = async () => {
     setError('')
     if (!form.jumlah || !form.tanggal || !form.kategori || !form.deskripsi || !form.desa_id) return
-    const nominal = parseFloat(form.jumlah.replace(/\./g, '').replace(',', '.'))
+    // form.jumlah berasal dari <input type="number"> native -- desimalnya SELALU pakai "."
+    // (format browser, bukan format Indonesia "." ribuan/"," desimal). Parsing sebelumnya
+    // (replace "." lalu "," jadi ".") mengasumsikan string terformat manual, sehingga input
+    // desimal spt "1000.5" ikut kehilangan titiknya dan tersimpan diam-diam jadi 10005 --
+    // salah 10x tanpa validasi apapun menangkapnya (bug sekelas PasswordInput lama: transformasi
+    // input berdasarkan asumsi format yang keliru).
+    const nominal = parseFloat(form.jumlah)
     if (!Number.isFinite(nominal) || nominal <= 0) {
       setError('Jumlah harus berupa angka lebih dari 0.')
       return
@@ -230,7 +236,9 @@ export default function KeuanganPage() {
   const handleSavePengajuan = async () => {
     setPengajuanError('')
     if (!pengajuanForm.jumlah || !pengajuanForm.tanggal || !pengajuanForm.kategori || !pengajuanForm.deskripsi) return
-    const nominal = parseFloat(pengajuanForm.jumlah.replace(/\./g, '').replace(',', '.'))
+    // Lihat komentar identik di handleSave -- pengajuanForm.jumlah juga dari
+    // <input type="number"> native, bukan string terformat Indonesia.
+    const nominal = parseFloat(pengajuanForm.jumlah)
     if (!Number.isFinite(nominal) || nominal <= 0) {
       setPengajuanError('Jumlah harus berupa angka lebih dari 0.')
       return

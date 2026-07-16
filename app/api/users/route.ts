@@ -53,7 +53,10 @@ async function getCaller(req: NextRequest, supabaseAdmin: ReturnType<typeof admi
   if (!profile) {
     return { caller: null, reason: 'Profil pengguna tidak ditemukan di database.' }
   }
-  if (profile.is_active === false) {
+  // Fail-closed: apapun selain is_active TEPAT true (termasuk null/undefined dari row
+  // legacy atau kolom yang gagal ter-backfill) dianggap TIDAK aktif -- sebelumnya memakai
+  // `=== false` yang keliru meloloskan is_active null/undefined sebagai "aktif".
+  if (profile.is_active !== true) {
     return { caller: null, reason: 'Akun tidak aktif.' }
   }
 
@@ -344,13 +347,37 @@ export async function PATCH(req: NextRequest) {
     const isTargetSuperAdmin = (Array.isArray(targetRole) ? targetRole[0]?.tingkatan : targetRole?.tingkatan) === 'super_admin'
 
     const isSelf = id === caller.id
+    const currentDesaId = targetUserRole?.desa_id ?? null
+    const currentKelompokId = targetUserRole?.kelompok_id ?? null
     // Otorisasi: harus salah satu dari — mengubah data diri sendiri, atau berwenang
     // mengelola anggota lain dalam scope-nya (Ketua/Wakil/Super Admin sesuai desa/kelompok).
     if (!isSelf) {
-      const targetDesaId = targetUserRole?.desa_id ?? null
-      const targetKelompokId = targetUserRole?.kelompok_id ?? null
-      if (!canActOnScope(caller, targetDesaId, targetKelompokId)) {
+      if (!canActOnScope(caller, currentDesaId, currentKelompokId)) {
         return NextResponse.json({ error: 'Anda tidak berwenang mengubah pengguna ini.' }, { status: 403 })
+      }
+    }
+
+    // SECURITY FIX -- desa_id/kelompok_id (scope akun, dipakai utk otorisasi & filter)
+    // SELALU harus melalui pengurus berwenang (canManageMembers), TIDAK PERNAH lewat
+    // self-edit -- sebelumnya field ini luput dari hasAdminFields di bawah DAN dari cek
+    // scope di atas (yang di-skip total kalau isSelf), sehingga siapapun yang login bisa
+    // memindahkan desa_id/kelompok_id akunnya sendiri ke Desa/Kelompok manapun lalu
+    // mewarisi hak kelola scope tujuan itu di request berikutnya. Selain itu, cek scope
+    // di atas hanya memvalidasi lokasi LAMA target -- tanpa cek lokasi BARU (tujuan
+    // pindah), Ketua Desa A yang sah bisa memindahkan anggotanya sendiri ke Desa B tanpa
+    // Desa B pernah menyetujui. Di bawah ini keduanya divalidasi: caller harus berwenang
+    // ATAS scope lama maupun scope baru sebelum pemindahan diizinkan.
+    if (desa_id !== undefined || kelompok_id !== undefined) {
+      if (!canManageMembers(caller)) {
+        return NextResponse.json({ error: 'Anda tidak berwenang mengubah tempat sambung (Desa/Kelompok) pengguna.' }, { status: 403 })
+      }
+      if (!canActOnScope(caller, currentDesaId, currentKelompokId)) {
+        return NextResponse.json({ error: 'Anda tidak berwenang mengubah pengguna ini.' }, { status: 403 })
+      }
+      const newDesaId = desa_id !== undefined ? (desa_id || null) : currentDesaId
+      const newKelompokId = kelompok_id !== undefined ? (kelompok_id || null) : currentKelompokId
+      if (!canActOnScope(caller, newDesaId, newKelompokId)) {
+        return NextResponse.json({ error: 'Anda tidak berwenang memindahkan pengguna ke Desa/Kelompok tujuan ini.' }, { status: 403 })
       }
     }
 

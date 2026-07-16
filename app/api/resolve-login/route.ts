@@ -22,6 +22,16 @@ function adminClient() {
   )
 }
 
+// Meng-escape wildcard `%`/`_` (dan backslash sbg escape char-nya) sebelum dipakai di
+// .ilike() -- endpoint ini publik/tanpa autentikasi, jadi `normalized` sepenuhnya input
+// penyerang. Tanpa escape ini, mengetik "%" sebagai nama pengguna mencocokkan SEMUA user
+// aktif dan mengembalikan email asli user pertama -- persis celah enumerasi akun yang
+// ingin dicegah komentar di bawah, hanya lewat jalur pencarian nama_lengkap (bukan
+// "tidak ditemukan").
+function escapeIlike(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { username } = await req.json()
@@ -67,7 +77,7 @@ export async function POST(req: NextRequest) {
       const byNamaLengkap = await supabaseAdmin
         .from('users')
         .select('email')
-        .ilike('nama_lengkap', normalized)
+        .ilike('nama_lengkap', escapeIlike(normalized))
         .eq('is_active', true)
         .limit(1)
       data = byNamaLengkap.data?.[0] ?? null
