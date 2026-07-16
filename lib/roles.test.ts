@@ -8,6 +8,7 @@ import {
   canManageKontenOrganisasi,
   canManagePresensi,
   isBendahara,
+  isTeamIT,
   canAjukanReimbursement,
   canLihatLaporanDaerah,
   canLihatLaporanBulanan,
@@ -33,6 +34,7 @@ const ketuaDesa = makeUser('Ketua', 'desa')
 const ketuaDaerah = makeUser('Ketua', 'daerah')
 const sekretarisDaerah = makeUser('Sekretaris', 'daerah')
 const bendaharaDaerah = makeUser('Bendahara', 'daerah')
+const teamITDaerah = makeUser('Team IT Daerah', 'daerah')
 const ppgUser = makeUser('PPG', 'ppg')
 const superAdmin = makeUser('Super Admin', 'super_admin')
 
@@ -141,6 +143,18 @@ describe('isBendahara', () => {
   it('false untuk role lain', () => {
     expect(isBendahara(ketuaKelompok)).toBe(false)
     expect(isBendahara(superAdmin)).toBe(false)
+  })
+})
+
+describe('isTeamIT', () => {
+  it('true untuk role yang mengandung "team it"', () => {
+    expect(isTeamIT(teamITDaerah)).toBe(true)
+  })
+  it('false untuk role lain termasuk Bendahara dan Super Admin', () => {
+    expect(isTeamIT(bendaharaDaerah)).toBe(false)
+    expect(isTeamIT(ketuaDaerah)).toBe(false)
+    expect(isTeamIT(superAdmin)).toBe(false)
+    expect(isTeamIT(null)).toBe(false)
   })
 })
 

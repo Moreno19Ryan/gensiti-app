@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { useUser } from '@/lib/user-context'
 import { signOut } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
-import { isGenerusBiasa, canManageMembers as checkCanManageMembers, canManagePresensi as checkCanManagePresensi } from '@/lib/roles'
+import { isGenerusBiasa, canManageMembers as checkCanManageMembers, canManagePresensi as checkCanManagePresensi, isTeamIT } from '@/lib/roles'
 import { loadFeatureToggles, isFeatureEnabled, FeatureToggle } from '@/lib/feature-toggles'
 import GlobalSearch from '@/components/GlobalSearch'
 
@@ -16,6 +16,12 @@ interface NavItem {
   icon: string
   roles: string[]
   requiresKvs?: boolean
+  // Kecuali tambahan atas requiresKvs -- SAAT INI hanya dipakai Monitoring & Log, supaya
+  // Team IT (isTeamIT di lib/roles.ts) juga bisa membuka menu ini untuk tab Kesehatan Sistem,
+  // walau dia bukan Ketua/Wakil Ketua/Sekretaris. Tab lain di dalam halaman (Audit Log, Sesi
+  // Aktif, Perawatan Sistem) tetap mengikuti gate aslinya masing-masing di dalam halaman itu
+  // sendiri -- flag ini cuma membuka pintu MENU-nya, bukan menyamaratakan semua isi di dalamnya.
+  allowTeamIT?: boolean
   // Khusus menu Presensi: Ketua/Wakil Ketua, Sekretaris & Super Admin (beda dgn requiresKvs
   // yang hanya Ketua/Wakil Ketua & Super Admin, dipakai Audit Log).
   requiresPresensiAccess?: boolean
@@ -64,7 +70,7 @@ const navItems: NavItem[] = [
   // app/(dashboard)/monitoring/page.tsx) -- requiresKvs di sini memastikan menu ini muncul
   // di sidebar untuk siapapun yang setidaknya berhak atas Audit Log (kriteria paling longgar
   // di antara 4 sumber gabungan), sisanya baru disaring per-tab di dalam halaman.
-  { href: '/monitoring', label: 'Monitoring & Log', icon: '📊', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], requiresKvs: true, hideForGenerus: true, menuKey: 'monitoring' },
+  { href: '/monitoring', label: 'Monitoring & Log', icon: '📊', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], requiresKvs: true, allowTeamIT: true, hideForGenerus: true, menuKey: 'monitoring' },
   // Pengaturan Fitur -- halaman toggle on/off menu per jenjang role, eksklusif Super Admin.
   // TIDAK punya menuKey (menu Super Admin tidak pernah bisa dimatikan lewat dirinya sendiri).
   { href: '/pengaturan-fitur', label: 'Pengaturan Fitur', icon: '🎛️', roles: ['super_admin'] },
@@ -218,7 +224,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const visibleNav = navItems.filter(item => {
     if (!tingkatan || !item.roles.includes(tingkatan)) return false
-    if (item.requiresKvs && !canManageMembers) return false
+    if (item.requiresKvs && !canManageMembers && !(item.allowTeamIT && isTeamIT(user))) return false
     if (item.requiresPresensiAccess && !canManagePresensi) return false
     if (item.hideForGenerus && isGenerus) return false
     if (item.menuKey && !isFeatureEnabled(featureToggles, item.menuKey, tingkatan)) return false

@@ -140,6 +140,22 @@ export function isBendahara(user: Pick<UserProfile, 'role'> | null | undefined):
 }
 
 /**
+ * True jika user adalah Team IT (jenjang manapun, saat ini hanya ada "Team IT Daerah") --
+ * dipakai HANYA untuk satu pengecualian: mengizinkan lihat tab "Kesehatan Sistem" di menu
+ * Monitoring & Log (app/(dashboard)/monitoring/page.tsx), yang sebelumnya murni Super Admin.
+ * Kesehatan Sistem cuma metrik observability read-only (jumlah pengguna, error rate email,
+ * sesi tersimpan) -- BUKAN kontrol berdampak seperti Sesi Aktif (paksa logout) atau Perawatan
+ * Sistem (blokir seluruh pengguna), yang tetap SENGAJA dibatasi Super Admin saja sesuai
+ * prinsip least privilege. RLS tabel users & email_log sudah lama mengizinkan tingkatan
+ * 'daerah' melihat data lintas wilayah (bukan cuma scope sendiri), jadi tidak ada perubahan
+ * database yang diperlukan untuk ini -- murni membuka gate UI yang sebelumnya tertutup.
+ */
+export function isTeamIT(user: Pick<UserProfile, 'role'> | null | undefined): boolean {
+  if (!user?.role) return false
+  return user.role.nama_role.toLowerCase().includes('team it')
+}
+
+/**
  * True jika user boleh MENGAJUKAN reimbursement (minta approval Bendahara) -- semua
  * pengurus operasional selain Bendahara sendiri (Ketua, Wakil Ketua, Sekretaris,
  * Kemandirian, Keputrian, dll) di jenjang Kelompok/Desa/Daerah. Bendahara tidak perlu

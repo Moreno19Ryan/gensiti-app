@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { logAudit } from '@/lib/audit'
 import Modal from '@/components/Modal'
 import { AuditLog, EmailLog, EmailStatus, SystemConfig } from '@/lib/types'
-import { canManageMembers } from '@/lib/roles'
+import { canManageMembers, isTeamIT } from '@/lib/roles'
 import { useFeatureAccess } from '@/lib/feature-toggles'
 
 // Halaman "Monitoring & Log" -- gabungan sumber observability & kontrol teknis sistem yang
@@ -15,8 +15,14 @@ import { useFeatureAccess } from '@/lib/feature-toggles'
 // Audit Log dan Email Log yang masing-masing punya menu sendiri, plus Perawatan Sistem yang
 // baru). Digabung supaya sidebar lebih ringkas, TAPI visibilitas tiap tab TETAP mengikuti
 // aturan akses aslinya masing-masing -- BUKAN disamaratakan jadi satu gate akses per halaman:
-// - Kesehatan Sistem, Sesi Aktif, & Perawatan Sistem: SUPER ADMIN SAJA (murni administrasi
-//   teknis sistem)
+// - Kesehatan Sistem: Super Admin + Team IT (isTeamIT di lib/roles.ts) -- murni metrik
+//   observability read-only (jumlah pengguna, error rate email, sesi tersimpan), sengaja
+//   dibuka utk Team IT (audit peran per-role 2026-07-16) krn RLS users/email_log memang
+//   sudah lama mengizinkan tingkatan 'daerah' melihat data lintas wilayah, jadi tidak ada
+//   perubahan database yang diperlukan -- murni membuka gate UI yang sebelumnya tertutup.
+// - Sesi Aktif & Perawatan Sistem: SUPER ADMIN SAJA (kontrol berdampak -- paksa logout &
+//   blokir seluruh pengguna -- sengaja TIDAK ikut dibuka utk Team IT, beda dari Kesehatan
+//   Sistem yang murni observability, sesuai prinsip least privilege)
 // - Audit Log: super_admin, daerah, desa, kelompok (Ketua/Wakil/Sekretaris semua jenjang +
 //   Super Admin, via canManageMembers) -- desa/kelompok terfilter scope, daerah/SA lihat semua
 // - Email Log: super_admin, daerah SAJA (selaras RLS email_log_select_admin di database)
@@ -43,6 +49,7 @@ export default function MonitoringPage() {
   const isDaerah = tingkatan === 'daerah'
   const canSeeAudit = canManageMembers(user)
   const canSeeEmail = isSuperAdmin || isDaerah
+  const canSeeKesehatan = isSuperAdmin || isTeamIT(user)
   // Lapisan kedua setelah sidebar -- kalau Super Admin mematikan menu ini utk jenjang role
   // user ini lewat Pengaturan Fitur, akses langsung via URL juga diblok (lihat availableTabs
   // di bawah -- non-Super-Admin yang terkena toggle nonaktif akan punya availableTabs kosong,
@@ -54,16 +61,16 @@ export default function MonitoringPage() {
     const tabs: { key: Tab; label: string }[] = []
     if (featureChecking) return tabs
     // featureEnabled SELALU true utk Super Admin (lihat isFeatureEnabled) -- toggle Monitoring
-    // hanya benar-benar bisa mematikan tab Audit Log & Email Log utk role daerah/desa/kelompok
-    // (Ketua/Wapon/Sekretaris), tab yang eksklusif Super Admin tidak pernah terdampak.
-    if (isSuperAdmin) tabs.push({ key: 'kesehatan', label: '💡 Kesehatan Sistem' })
+    // hanya benar-benar bisa mematikan tab Kesehatan Sistem (utk Team IT), Audit Log & Email
+    // Log utk role daerah/desa/kelompok, tab yang eksklusif Super Admin tidak pernah terdampak.
+    if (isSuperAdmin || (canSeeKesehatan && featureEnabled)) tabs.push({ key: 'kesehatan', label: '💡 Kesehatan Sistem' })
     if (canSeeAudit && featureEnabled) tabs.push({ key: 'audit', label: '📋 Audit Log' })
     if (canSeeEmail && featureEnabled) tabs.push({ key: 'email', label: '✉️ Email Log' })
     if (isSuperAdmin) tabs.push({ key: 'sesi', label: '🔐 Sesi Aktif' })
     if (isSuperAdmin) tabs.push({ key: 'maintenance', label: '🛠️ Perawatan Sistem' })
     return tabs
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuperAdmin, canSeeAudit, canSeeEmail, featureEnabled, featureChecking])
+  }, [isSuperAdmin, canSeeKesehatan, canSeeAudit, canSeeEmail, featureEnabled, featureChecking])
 
   const [tab, setTab] = useState<Tab | null>(null)
 
@@ -113,7 +120,7 @@ export default function MonitoringPage() {
         </div>
       )}
 
-      {tab === 'kesehatan' && isSuperAdmin && <KesehatanTab />}
+      {tab === 'kesehatan' && canSeeKesehatan && <KesehatanTab />}
       {tab === 'audit' && canSeeAudit && <AuditTab user={user} />}
       {tab === 'email' && canSeeEmail && <EmailTab />}
       {tab === 'sesi' && isSuperAdmin && <SesiTab user={user} />}
@@ -245,7 +252,7 @@ function KesehatanTab() {
       </div>
 
       <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700">
-        💡 Indikator teknis murni (jumlah akun, status sesi, keberhasilan pengiriman email) -- bukan data organisasi atau keuangan, sesuai cakupan wewenang Super Admin sebagai pengelola sistem.
+        💡 Indikator teknis murni (jumlah akun, status sesi, keberhasilan pengiriman email) -- bukan data organisasi atau keuangan, sesuai cakupan pengelola sistem (Super Admin & Team IT).
       </div>
     </div>
   )
