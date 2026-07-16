@@ -2,15 +2,32 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-// Input password dgn dua mode tampilan (mirip keyboard HP):
-//  1. Mode default (mata tertutup) -- huruf yang BARU SAJA diketik terlihat sesaat (~700ms),
-//     lalu otomatis ikut di-mask jadi bullet (•) seperti huruf lain. Ini beda dari
-//     <input type="password"> native yang selalu masking semua karakter dari awal.
-//  2. Mode "lihat semua" (klik ikon mata) -- seluruh password tampil jelas selama ikon
-//     ditekan/aktif, sampai user klik lagi utk kembali ke mode default.
+// Input password dgn dua mode tampilan:
+//  1. Mode default (mata tertutup) -- <input type="password"> NATIVE, browser yang
+//     melakukan masking sepenuhnya (selalu benar, tidak pernah kita sentuh/rekonstruksi
+//     value-nya). Sbg umpan balik visual tambahan, karakter yang BARU SAJA diketik muncul
+//     sesaat (~700ms) di badge kecil di bawah field (bukan di dalam field itu sendiri),
+//     lalu badge hilang otomatis -- meniru rasa "tahu apa yang baru diketik" ala keyboard
+//     HP tanpa pernah mengubah cara <input> menyimpan/menampilkan value aslinya.
+//  2. Mode "lihat semua" (klik ikon mata) -- <input> di-toggle jadi type="text" (masih
+//     input NATIVE yang sama, cuma atributnya berubah), value tampil apa adanya.
+//
+// KENAPA DITULIS ULANG (bug besar yang diperbaiki, dilaporkan user 2026-07-14): versi
+// sebelumnya pakai <input type="text"> dgn value hasil masking manual ('•••1' dst) sbg
+// controlled value, lalu mencoba menebak-nebak "karakter apa yg baru diketik" dari
+// e.target.value yang browser kirim -- padahal e.target.value itu SENDIRI sudah berisi
+// campuran bullet + huruf baru (krn value <input>-nya memang teks ber-mask, bukan value
+// asli). Akibatnya karakter '•' bisa ikut tersimpan sungguhan ke dalam password state
+// begitu user mengetik cukup panjang, membuat value yang dikirim ke server BERBEDA dari
+// yang diketik user -- padahal tampilan terakhir yang terlihat (huruf yg sedang di-reveal
+// sesaat) tetap terlihat benar, sehingga user tidak melihat ada yang salah sampai login
+// ditolak. Pendekatan baru ini TIDAK PERNAH merekonstruksi atau menebak value dari teks
+// yang sudah di-mask -- <input> selalu memegang & mengembalikan value asli apa adanya
+// (persis seperti <input type="password"> di web manapun), jadi kelas bug ini terhapus
+// secara struktural, bukan sekadar ditambal.
 //
 // Value asli tetap dikelola oleh parent (controlled component, sama seperti <input> biasa)
-// -- komponen ini hanya mengubah CARA MENAMPILKAN value tsb, bukan menyimpan state terpisah.
+// -- komponen ini hanya menambahkan UI toggle show/hide + badge preview di atasnya.
 // Dipakai di app/login/page.tsx, app/(dashboard)/profil/page.tsx (3x), dan
 // app/(dashboard)/generus/page.tsx supaya kelima field password di aplikasi konsisten.
 
@@ -25,16 +42,20 @@ interface Props {
   disabled?: boolean
 }
 
-const REVEAL_DURATION_MS = 700
+const PREVIEW_DURATION_MS = 700
 
 export default function PasswordInput({
   value, onChange, placeholder, id, name, autoComplete, className, disabled,
 }: Props) {
   const [revealAll, setRevealAll] = useState(false)
-  // Index karakter terakhir yang sedang "terlihat sesaat" (posisi di dalam `value`), atau
-  // null kalau tidak ada karakter yang sedang di-reveal sementara.
-  const [revealIndex, setRevealIndex] = useState<number | null>(null)
+  // Karakter terakhir yang baru diketik, ditampilkan sesaat di badge preview lalu di-clear
+  // otomatis -- MURNI tampilan tambahan di luar <input>, tidak pernah memengaruhi value asli.
+  const [previewChar, setPreviewChar] = useState<string | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Panjang value sebelumnya -- dipakai murni utk mendeteksi "apakah ini penambahan
+  // karakter baru" (utk keputusan tampilkan badge preview atau tidak), TIDAK dipakai utk
+  // merekonstruksi value (beda dari pendekatan lama yg jadi sumber bug).
+  const prevLengthRef = useRef(value.length)
 
   // Bersihkan timer saat unmount supaya tidak setState pada komponen yang sudah hilang.
   useEffect(() => {
@@ -44,44 +65,36 @@ export default function PasswordInput({
   }, [])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Value asli diambil LANGSUNG dari <input> native (type="password" atau "text"),
+    // dikirim ke parent apa adanya -- tidak ada transformasi/masking/rekonstruksi apapun
+    // di jalur ini, sehingga tidak mungkin ada karakter asing (mis. bullet) yang menyusup.
     const newValue = e.target.value
     onChange(newValue)
 
     if (timerRef.current) clearTimeout(timerRef.current)
 
-    // Hanya reveal sesaat kalau ini penambahan karakter (mengetik maju), bukan hapus/paste --
-    // reveal karakter di posisi akhir value baru.
-    if (newValue.length > 0 && newValue.length >= value.length) {
-      const idx = newValue.length - 1
-      setRevealIndex(idx)
-      timerRef.current = setTimeout(() => setRevealIndex(null), REVEAL_DURATION_MS)
+    // Tampilkan badge preview HANYA saat penambahan murni 1+ karakter di akhir (mengetik
+    // maju yg paling umum) -- kasus lain (hapus, edit di tengah, paste, autofill) sengaja
+    // tidak memicu badge supaya tidak menampilkan potongan yg membingungkan/salah konteks.
+    const isSimpleAppend = newValue.length > prevLengthRef.current && newValue.startsWith(value)
+    if (isSimpleAppend && !revealAll) {
+      setPreviewChar(newValue[newValue.length - 1])
+      timerRef.current = setTimeout(() => setPreviewChar(null), PREVIEW_DURATION_MS)
     } else {
-      setRevealIndex(null)
+      setPreviewChar(null)
     }
+    prevLengthRef.current = newValue.length
   }
-
-  // Bangun teks tampilan: semua karakter jadi '•', KECUALI karakter di revealIndex (kalau ada
-  // dan mode default/bukan revealAll) yang ditampilkan aslinya.
-  const displayValue = revealAll
-    ? value
-    : value
-        .split('')
-        .map((ch, i) => (i === revealIndex ? ch : '•'))
-        .join('')
 
   return (
     <div className="relative">
       <input
-        type="text"
-        inputMode="text"
-        autoCapitalize="off"
-        autoCorrect="off"
-        spellCheck={false}
+        type={revealAll ? 'text' : 'password'}
         id={id}
         name={name}
         autoComplete={autoComplete}
         disabled={disabled}
-        value={displayValue}
+        value={value}
         onChange={handleChange}
         placeholder={placeholder}
         className={className}
@@ -89,7 +102,7 @@ export default function PasswordInput({
       <button
         type="button"
         tabIndex={-1}
-        onClick={() => setRevealAll(v => !v)}
+        onClick={() => { setRevealAll(v => !v); setPreviewChar(null) }}
         disabled={disabled}
         aria-label={revealAll ? 'Sembunyikan password' : 'Tampilkan password'}
         className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition disabled:opacity-50"
@@ -107,6 +120,18 @@ export default function PasswordInput({
           </svg>
         )}
       </button>
+
+      {/* Badge preview karakter terakhir -- murni lapisan visual di LUAR <input>, posisinya
+          tidak bergantung pada lebar font/zoom sehingga tidak pernah meleset. Hanya tampil
+          sesaat di mode default (bukan mode "lihat semua", yg sudah menampilkan semuanya). */}
+      {previewChar && !revealAll && (
+        <span
+          aria-hidden="true"
+          className="absolute -bottom-6 right-0 text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md font-mono pointer-events-none select-none animate-pulse"
+        >
+          ...{previewChar}
+        </span>
+      )}
     </div>
   )
 }

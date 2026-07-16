@@ -57,9 +57,9 @@ export default function LoginPage() {
     // PERSIS sebagai jaring pengaman kedua (jangan diubah salah satu tanpa yang lain).
     const normalizedUsername = username.trim().replace(/\s+/g, ' ').toUpperCase()
 
-    // Validasi manual pengganti atribut HTML `required` -- field password sekarang pakai
-    // PasswordInput (input type="text" custom, bukan <input type="password"> native), jadi
-    // browser tidak lagi otomatis mencegah submit kosong seperti sebelumnya.
+    // Validasi manual pengganti atribut HTML `required` -- PasswordInput tidak memasang
+    // `required` pada <input> internalnya (komponen tidak menerima prop itu), jadi
+    // browser tidak otomatis mencegah submit kosong seperti pada <input required> biasa.
     if (!normalizedUsername || !password) {
       setError('Nama pengguna dan password wajib diisi')
       setLoading(false)
