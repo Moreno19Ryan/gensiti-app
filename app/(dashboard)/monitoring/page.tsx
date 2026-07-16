@@ -69,6 +69,16 @@ export default function MonitoringPage() {
 
   useEffect(() => {
     if (!user) return
+    // PENTING: jangan putuskan "tidak ada akses" selama featureChecking masih true --
+    // availableTabs SENGAJA kosong sementara (lihat useMemo di atas, baris awal "if
+    // (featureChecking) return tabs") selama toggle Monitoring belum selesai dimuat dari
+    // database. Redirect harus menunggu featureChecking selesai, supaya render pertama
+    // (user sudah ada, tapi toggle belum sempat di-fetch) tidak salah dianggap "role ini
+    // tidak punya tab manapun" dan menendang user balik ke /dashboard sebelum sempat tahu
+    // hak akses aslinya -- inilah akar bug "klik Monitoring & Log, tidak bisa masuk"
+    // (dilaporkan user 2026-07-15) yang terjadi acak tergantung cepat/lambatnya query
+    // feature_toggles, BUKAN soal role/RLS/toggle itu sendiri (yang semuanya sudah benar).
+    if (featureChecking) return
     if (availableTabs.length === 0) { router.replace('/dashboard'); return }
     // Tab dari query string (?tab=email) untuk deep-link dari Dashboard -- hanya dipakai
     // sekali di awal kalau tabnya valid & tersedia untuk role ini, supaya link "Perlu
@@ -81,9 +91,9 @@ export default function MonitoringPage() {
       return availableTabs[0].key
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, availableTabs, router])
+  }, [user, availableTabs, featureChecking, router])
 
-  if (!user || availableTabs.length === 0 || !tab) return null
+  if (!user || featureChecking || availableTabs.length === 0 || !tab) return null
 
   return (
     <div className="space-y-4">
