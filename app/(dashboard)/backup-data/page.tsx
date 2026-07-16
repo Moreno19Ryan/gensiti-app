@@ -7,6 +7,14 @@
 // Excel akan lossy untuk kasus ini. Tabel yang disertakan SENGAJA tidak termasuk audit_log
 // & email_log (sudah punya viewer sendiri dgn tujuan observability, bukan data organisasi)
 // maupun reset_password_requests (bersifat transient & sensitif, tidak perlu dibackup).
+//
+// TIDAK ADA fitur restore/import di UI -- keputusan sengaja (dikonfirmasi audit peran
+// 2026-07-16), BUKAN gap yang belum sempat dikerjakan. Restore itu operasi langka & berisiko
+// tinggi (urutan insert harus ikut BACKUP_TABLES di atas krn dependency FK, berpotensi bentrok
+// dengan data yang sudah ada, dan salah eksekusi bisa merusak seluruh database) -- sengaja
+// dibiarkan sebagai proses MANUAL lewat SQL Editor Supabase kalau benar-benar darurat, bukan
+// tombol self-service yang bisa diklik tanpa jeda berpikir. Lihat ARCHITECTURE.md § "Restore
+// Data (Darurat)" untuk langkah manualnya.
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'

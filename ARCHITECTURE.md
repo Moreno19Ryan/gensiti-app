@@ -181,7 +181,39 @@ Test otomatis untuk semua fungsi ini ada di [lib/roles.test.ts](lib/roles.test.t
 `reset-password-requests`, `backup-data`, `monitoring`, `admin-sistem`,
 `pengaturan-fitur` (toggle fitur per menu × jenjang).
 
-## 8. Yang Belum Terdokumentasi / Perlu Update Berkala
+## 8. Restore Data (Darurat)
+
+`Backup Data` ([app/(dashboard)/backup-data/page.tsx](app/(dashboard)/backup-data/page.tsx))
+murni **ekspor satu arah** — mengunduh JSON gabungan 10 tabel ke browser Super Admin.
+**Tidak ada tombol/endpoint restore/import** — ini keputusan sengaja (dikonfirmasi audit
+peran 2026-07-16), bukan fitur yang belum sempat dibuat: restore jarang dipakai tapi
+risikonya tinggi (salah urutan insert atau bentrok data bisa merusak seluruh database),
+jadi sengaja dibiarkan manual supaya ada jeda berpikir manusia, bukan self-service.
+
+Kalau restore benar-benar dibutuhkan (mis. data korup/terhapus tidak sengaja):
+
+1. Buka file backup JSON terakhir (struktur: `{ _meta: {...}, data: { <tabel>: [...] } }`).
+2. Aktifkan **Mode Perawatan Sistem** dulu lewat Monitoring & Log (blokir akses pengguna
+   lain selama restore berlangsung — lihat §7 `system_config`).
+3. Insert lewat **Supabase SQL Editor** (atau MCP `execute_sql`/`apply_migration`),
+   **URUT SESUAI `BACKUP_TABLES`** di `app/api/backup/route.ts` (`desa` → `kelompok` →
+   `roles` → `users` → `generus` → `kegiatan` → `absensi` → `pengumuman` → `dokumen` →
+   `notifikasi`) — urutan ini sengaja mengikuti dependency foreign key, membalik urutan
+   akan gagal karena FK constraint. Contoh pola per tabel (sesuaikan nama tabel &
+   tangani konflik ID sesuai kebutuhan — mis. `ON CONFLICT (id) DO NOTHING` kalau restore
+   parsial di atas data yang sudah ada):
+   ```sql
+   insert into public.desa
+   select * from jsonb_populate_recordset(null::public.desa, '<isi data.desa dari JSON>'::jsonb)
+   on conflict (id) do nothing;
+   ```
+4. Setelah semua tabel selesai, jalankan `get_advisors` (Supabase MCP) untuk cek RLS/FK
+   tidak ada yang rusak, lalu nonaktifkan Mode Perawatan.
+5. Tabel yang SENGAJA tidak ada di backup (`keuangan`, `catatan_pembinaan`,
+   `email_preferensi` — lihat `EXCLUDED_TABLES` di kode) tidak bisa direstore dari file
+   ini sama sekali — di luar wewenang Super Admin secara desain.
+
+## 9. Yang Belum Terdokumentasi / Perlu Update Berkala
 
 - Dokumen ini snapshot per tanggal di atas — RPC & tabel baru harus ditambahkan ke §3/§4
   saat migrasi baru diterapkan lewat Supabase MCP (`apply_migration`).
