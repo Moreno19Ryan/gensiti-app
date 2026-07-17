@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { signIn, authFetch, getUserProfile } from '@/lib/auth'
-import { supabase } from '@/lib/supabase'
+import { supabase, setRememberMe } from '@/lib/supabase'
 import { PPG_LOGO_LOGIN_BASE64 } from '@/lib/logo'
 import PasswordInput from '@/components/PasswordInput'
 
@@ -21,6 +21,21 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
   const [googleLoading, setGoogleLoading] = useState(false)
+  // Default true (perilaku lama, sama utk semua orang sebelum fitur ini ada) -- lihat
+  // lib/supabase.ts utk cara flag ini sebenarnya memengaruhi tempat sesi disimpan.
+  const [ingatSaya, setIngatSaya] = useState(true)
+  const [stats, setStats] = useState<{ total_generus_aktif: number; total_kelompok: number; total_desa: number } | null>(null)
+
+  // Statistik agregat publik (RPC get_landing_stats, anon-safe -- lihat komentar di
+  // migration-nya: cuma 3 angka total, tanpa parameter scope, tanpa data individu/PII sama
+  // sekali) utk panel kiri. Gagal diam-diam (mis. RPC belum ter-deploy) -- halaman login
+  // tetap harus bisa dipakai tanpa statistik ini, jadi tidak ditampilkan error apapun kalau
+  // gagal, cukup biarkan stats null (panel kiri render tanpa baris statistik).
+  useEffect(() => {
+    supabase.rpc('get_landing_stats').then(({ data }) => {
+      if (data?.[0]) setStats(data[0])
+    })
+  }, [])
 
   // Jika user tiba di halaman login tapi masih punya session aktif (artinya menekan back
   // button dari dalam app), auto-logout -- KECUALI kalau kedatangannya karena baru saja
@@ -107,6 +122,10 @@ export default function LoginPage() {
     setGoogleLoading(true)
     setError('')
     setInfo('')
+    // Login Google selalu "diingat" (localStorage) -- tidak ada checkbox "Ingat saya" utk
+    // jalur ini, dan reset eksplisit di sini mencegah nilai ingatSaya=false yg sempat
+    // ditinggal percobaan nama+password sebelumnya (di halaman yg sama) ikut memengaruhi.
+    setRememberMe(true)
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: window.location.origin + '/login?google=1' },
@@ -154,6 +173,9 @@ export default function LoginPage() {
         return
       }
 
+      // WAJIB diset SEBELUM signIn -- storage adapter kustom di lib/supabase.ts membaca
+      // flag ini synchronous setiap kali GoTrueClient menulis sesi, jadi urutannya penting.
+      setRememberMe(ingatSaya)
       await signIn(resolved.email, password)
 
       // Klaim sesi tunggal: generate token sesi baru & simpan ke localStorage browser
@@ -190,28 +212,73 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          {/* Logo PPG (organisasi induk) ditampilkan LEBIH BESAR dan DI ATAS logo GENSITI,
-              sesuai keputusan desain: PPG adalah identitas resmi organisasi, sementara
-              GENSITI adalah nama aplikasi/sistemnya. Logo PPG dipakai transparan (tanpa
-              kotak putih) supaya menyatu dengan latar gradient biru halaman login. */}
-          <img
-            src={PPG_LOGO_LOGIN_BASE64}
-            alt="PPG"
-            className="mx-auto mb-4 h-28 w-auto object-contain drop-shadow-lg"
-          />
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-white rounded-xl shadow-lg mb-3 p-1.5">
-            <img src="/icons/icon-512.png" alt="GENSITI" className="w-full h-full object-contain" />
+    <div className="min-h-screen flex font-[system-ui]" style={{ background: '#F5F7FA' }}>
+      {/* Panel brand -- desktop saja (>= lg). Di mobile diganti header ringkas di bawah,
+          murni via breakpoint Tailwind (bukan JS+resize listener spt draft awal di Claude
+          Design) supaya tidak ada risiko hydration mismatch SSR/CSR di Next.js. */}
+      <div
+        className="hidden lg:flex flex-1 min-w-0 flex-col justify-between p-14 text-white relative overflow-hidden"
+        style={{ background: 'linear-gradient(155deg,#1259C3 0%,#0D47A8 60%,#0A3A8C 100%)' }}
+      >
+        <div className="absolute w-[520px] h-[520px] rounded-full bg-white/[0.06] -top-40 -right-40" />
+        <div className="absolute w-80 h-80 rounded-full bg-white/5 -bottom-24 -left-16" />
+
+        {/* Logo PPG (organisasi induk) tetap LEBIH BESAR & mendahului mark GENSITI, sesuai
+            keputusan desain yang sama seperti sebelumnya -- PPG identitas resmi organisasi,
+            GENSITI nama aplikasi/sistemnya. */}
+        <div className="relative flex items-center gap-3.5">
+          <img src={PPG_LOGO_LOGIN_BASE64} alt="PPG" className="h-14 w-auto object-contain drop-shadow-lg" />
+          <div className="w-px h-9 bg-white/25" />
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center p-1.5 shrink-0">
+              <img src="/icons/icon-512.png" alt="GENSITI" className="w-full h-full object-contain" />
+            </div>
+            <span className="font-bold text-lg tracking-wide">GENSITI</span>
           </div>
-          <h1 className="text-3xl font-black text-white tracking-tight">GENSITI</h1>
-          <p className="text-blue-200 mt-1 text-sm">Smart Organization Management System</p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-2xl p-8">
-          <p className="text-slate-500 text-sm mb-1">Assalamualaikum Generus 👋</p>
-          <h2 className="text-xl font-bold text-slate-800 mb-6">Masuk ke Akun Anda</h2>
+        <div className="relative">
+          <h1 className="text-[34px] font-extrabold leading-tight mb-4 max-w-md text-balance">
+            Satu platform untuk seluruh organisasi Anda
+          </h1>
+          <p className="text-[15px] leading-relaxed text-white/80 max-w-sm">
+            Kelola anggota, kegiatan, presensi, keuangan, dan pengumuman dalam satu tempat &mdash; rapi dari Kelompok hingga Daerah.
+          </p>
+        </div>
+
+        {/* Angka live dari RPC get_landing_stats (anon-safe, cuma 3 total agregat -- lihat
+            migration add_public_landing_stats_rpc). Render kosong (bukan '0') selama belum
+            termuat, supaya tidak sempat menampilkan angka salah sebelum data asli datang. */}
+        <div className="relative flex gap-7">
+          {[
+            { value: stats?.total_generus_aktif, label: 'Generus aktif' },
+            { value: stats?.total_kelompok, label: 'Kelompok' },
+            { value: stats?.total_desa, label: 'Desa' },
+          ].map((s) => (
+            <div key={s.label}>
+              <div className="text-[22px] font-extrabold tabular-nums">{s.value ?? ' '}</div>
+              <div className="text-[13px] text-white/70">{s.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Panel form */}
+      <div className="flex-1 flex items-center justify-center p-8">
+        <div className="w-full max-w-[380px]">
+          {/* Header ringkas -- mobile saja (< lg) */}
+          <div className="flex lg:hidden items-center gap-2.5 mb-8">
+            <img src={PPG_LOGO_LOGIN_BASE64} alt="PPG" className="h-10 w-auto object-contain" />
+            <div className="w-px h-7 bg-slate-200" />
+            <div className="w-8 h-8 rounded-lg bg-[#1259C3] flex items-center justify-center p-1.5 shrink-0">
+              <img src="/icons/icon-512.png" alt="GENSITI" className="w-full h-full object-contain" />
+            </div>
+            <span className="font-bold text-[17px] text-slate-800">GENSITI</span>
+          </div>
+
+          <p className="text-slate-500 text-sm mb-1">Assalamualaikum,</p>
+          <h2 className="text-[26px] font-extrabold text-slate-900 mb-2 tracking-tight">Masuk ke akun Anda</h2>
+          <p className="text-slate-400 text-sm mb-8">Gunakan nama pengguna terdaftar untuk melanjutkan.</p>
 
           {info && (
             <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm flex items-center gap-2">
@@ -233,38 +300,61 @@ export default function LoginPage() {
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Nama Pengguna</label>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value.toUpperCase())}
-                required
-                autoCapitalize="characters"
-                placeholder="NAMA LENGKAP ATAU NAMA PANGGILAN"
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition uppercase"
-              />
+              <label className="block text-[13px] font-semibold text-slate-700 mb-1.5">Nama Pengguna</label>
+              <div className="relative">
+                <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 21a8 8 0 1 0-16 0" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value.toUpperCase())}
+                  required
+                  autoCapitalize="characters"
+                  placeholder="cth. MORENO RYANDIKA"
+                  className="w-full pl-11 pr-4 py-3 rounded-[14px] border-[1.5px] border-[#E7EBF2] bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition uppercase"
+                />
+              </div>
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-sm font-medium text-slate-700">Password</label>
-                <Link href="/lupa-password" className="text-xs text-blue-600 hover:underline font-medium">
+                <label className="block text-[13px] font-semibold text-slate-700">Password</label>
+                <Link href="/lupa-password" className="text-xs text-[#1259C3] hover:underline font-semibold">
                   Lupa password?
                 </Link>
               </div>
-              <PasswordInput
-                value={password}
-                onChange={setPassword}
-                placeholder="Password"
-                autoComplete="current-password"
-                className="w-full pl-4 pr-11 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-              />
+              <div className="relative">
+                <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none z-10" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="4" y="10" width="16" height="10" rx="2.2" />
+                  <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+                </svg>
+                <PasswordInput
+                  value={password}
+                  onChange={setPassword}
+                  placeholder="Masukkan password"
+                  autoComplete="current-password"
+                  className="w-full pl-11 pr-11 py-3 rounded-[14px] border-[1.5px] border-[#E7EBF2] bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                />
+              </div>
             </div>
+
+            <label className="flex items-center gap-2 text-[13.5px] text-slate-700 cursor-pointer select-none -mt-0.5">
+              <input
+                type="checkbox"
+                checked={ingatSaya}
+                onChange={(e) => setIngatSaya(e.target.checked)}
+                className="w-4 h-4 accent-[#1259C3]"
+              />
+              Ingat saya di perangkat ini
+            </label>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 mt-2"
+              className="w-full py-3.5 px-4 rounded-[14px] text-white font-bold transition-colors flex items-center justify-center gap-2 mt-2 disabled:opacity-60"
+              style={{ background: '#1259C3', boxShadow: '0 8px 20px rgba(18,89,195,0.28)' }}
             >
               {loading ? (
                 <>
@@ -287,7 +377,7 @@ export default function LoginPage() {
             type="button"
             onClick={handleGoogleLogin}
             disabled={googleLoading}
-            className="w-full py-3 px-4 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-60 text-slate-700 font-semibold rounded-xl transition-colors flex items-center justify-center gap-2.5"
+            className="w-full py-3.5 px-4 bg-white border-[1.5px] border-[#E7EBF2] hover:bg-slate-50 disabled:opacity-60 text-slate-700 font-semibold rounded-[14px] transition-colors flex items-center justify-center gap-2.5"
           >
             {googleLoading ? (
               <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
@@ -305,11 +395,11 @@ export default function LoginPage() {
           <p className="text-center text-slate-400 text-xs mt-4">
             Hanya untuk akun yang sudah menghubungkan Google lewat halaman Profil.
           </p>
-        </div>
 
-        <p className="text-center text-blue-300 text-xs mt-6">
-          &copy; {new Date().getFullYear()} GENSITI. Semua hak dilindungi.
-        </p>
+          <p className="text-center text-slate-400 text-[12.5px] mt-8">
+            GENSITI &middot; Sistem Manajemen Organisasi
+          </p>
+        </div>
       </div>
     </div>
   )

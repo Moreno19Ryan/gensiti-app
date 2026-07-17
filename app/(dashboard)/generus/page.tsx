@@ -58,8 +58,11 @@ interface RoleOpt { id: string; nama_role: string; tingkatan: string }
 interface DesaOpt { id: string; nama_desa: string }
 interface KelompokOpt { id: string; nama_kelompok: string; desa_id: string }
 
-// Menu "Pengguna" (akun) dan "Data Generus" (biodata) DIGABUNG jadi satu halaman dgn 2 tab
-// di modal Edit -- "Akun" & "Biodata". Alasan: audiens kedua menu ini sudah identik persis
+// Menu "Data Generus" -- database akun & biodata Generus se-Bekasi Timur, satu halaman dgn
+// 2 tab di modal Edit -- "Akun" & "Biodata" (dulu dua menu terpisah: "Pengguna" utk akun,
+// "Data Generus" utk biodata; digabung & nama menunya dipakai utk keseluruhan halaman karena
+// isinya memang database Generus, bukan sekadar akun login). Alasan gabung: audiens kedua sisi
+// ini sudah identik persis
 // (roles + hideForGenerus sama, lihat app/(dashboard)/layout.tsx), dan query di bawah sudah
 // menarik data biodata lengkap dalam satu request yang sama sejak awal, jadi menggabungkan
 // UI-nya menyederhanakan navigasi tanpa mengubah model data. DUA endpoint tulis TETAP terpisah
@@ -170,7 +173,7 @@ const exportColumns = [
   { header: 'Kelompok', key: 'kelompok', width: 18 },
 ]
 
-export default function PenggunaPage() {
+export default function DataGenerusPage() {
   const { user } = useUser()
   const [data, setData] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
@@ -615,8 +618,8 @@ export default function PenggunaPage() {
 
   const canManage = canManageMembers
 
-  // Lapisan kedua setelah sidebar -- kalau Super Admin mematikan menu "Pengguna" utk jenjang
-  // role user ini lewat Pengaturan Fitur, akses langsung via URL juga diblok di sini.
+  // Lapisan kedua setelah sidebar -- kalau Super Admin mematikan menu "Data Generus" utk
+  // jenjang role user ini lewat Pengaturan Fitur, akses langsung via URL juga diblok di sini.
   const { enabled: featureEnabled, checking: featureChecking } = useFeatureAccess(user, 'generus')
   // Toggle terpisah utk tab "Biodata" + tombol export -- dulu menggerbangi seluruh halaman
   // "Data Generus", sekarang menggerbangi bagian biodata di dalam halaman gabungan ini saja,
@@ -697,7 +700,7 @@ export default function PenggunaPage() {
       <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
         <div className="text-4xl mb-3">🚫</div>
         <p className="font-semibold text-slate-600">Fitur Dinonaktifkan</p>
-        <p className="text-sm mt-1">Menu Pengguna saat ini dinonaktifkan oleh Super Admin untuk jenjang Anda.</p>
+        <p className="text-sm mt-1">Menu Data Generus saat ini dinonaktifkan oleh Super Admin untuk jenjang Anda.</p>
       </div>
     )
   }
@@ -714,8 +717,8 @@ export default function PenggunaPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h2 className="font-bold text-slate-800">Pengguna</h2>
-          <p className="text-slate-400 text-sm">{data.length} pengguna terdaftar -- akun & biodata dalam satu tempat</p>
+          <h2 className="font-bold text-slate-800">Data Generus</h2>
+          <p className="text-slate-400 text-sm">{data.length} Generus & Pengurus terdaftar se-Bekasi Timur -- akun & biodata dalam satu tempat</p>
         </div>
         <div className="flex items-center gap-2">
           {canManage && biodataEnabled && (
@@ -732,7 +735,7 @@ export default function PenggunaPage() {
           )}
           {canManage && (
             <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
-              + Tambah Pengguna
+              + Tambah Generus
             </button>
           )}
         </div>
@@ -773,7 +776,7 @@ export default function PenggunaPage() {
       ) : filtered.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
           <div className="text-4xl mb-2">👥</div>
-          <p>Belum ada pengguna</p>
+          <p>Belum ada Generus terdaftar</p>
           {canManage && <button onClick={openAdd} className="mt-3 text-blue-600 text-sm font-medium hover:underline">+ Tambah sekarang</button>}
         </div>
       ) : (
@@ -864,7 +867,7 @@ export default function PenggunaPage() {
       {/* Detail Modal -- terbuka utk siapapun yang bisa melihat halaman ini (view-only bagi
           yang bukan Ketua/Wakil/Sekretaris/Super Admin, sebelumnya hanya bisa dibuka manager). */}
       {detailModal && (
-        <Modal open={!!detailModal} onClose={() => setDetailModal(null)} title="Detail Pengguna" size="lg">
+        <Modal open={!!detailModal} onClose={() => setDetailModal(null)} title="Detail Generus" size="lg">
           <div className="space-y-4">
             <div className="flex items-center gap-4">
               <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center text-blue-700 text-2xl font-black shrink-0">
@@ -936,7 +939,7 @@ export default function PenggunaPage() {
       )}
 
       {/* Add/Edit Modal */}
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editTarget ? `Edit ${editTarget.nama_lengkap}` : 'Tambah Pengguna'} size="lg">
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editTarget ? `Edit ${editTarget.nama_lengkap}` : 'Tambah Generus'} size="lg">
         <div className="space-y-4">
           {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
 
@@ -1398,7 +1401,7 @@ export default function PenggunaPage() {
 
       {/* Modal kredensial akun baru */}
       {newCredentials && (
-        <Modal open={!!newCredentials} onClose={() => setNewCredentials(null)} title="Pengguna Berhasil Dibuat" size="sm">
+        <Modal open={!!newCredentials} onClose={() => setNewCredentials(null)} title="Generus Berhasil Dibuat" size="sm">
           <div className="space-y-4">
             <p className="text-sm text-slate-600">
               Akun <span className="font-semibold">{newCredentials.nama}</span> berhasil dibuat. Catat dan sampaikan kredensial berikut ke pengguna:

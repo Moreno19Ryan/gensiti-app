@@ -6,7 +6,8 @@
 // Excel) karena datanya relasional & terstruktur (nested objects, array, boolean, null) --
 // Excel akan lossy untuk kasus ini. Tabel yang disertakan SENGAJA tidak termasuk audit_log
 // & email_log (sudah punya viewer sendiri dgn tujuan observability, bukan data organisasi)
-// maupun reset_password_requests (bersifat transient & sensitif, tidak perlu dibackup).
+// maupun reset_password_requests (fitur retired, tabel dibiarkan ada utk histori) & tabel
+// baru password_reset_otp (kode OTP sesaat/sensitif, tidak perlu dibackup).
 //
 // TIDAK ADA fitur restore/import di UI -- keputusan sengaja (dikonfirmasi audit peran
 // 2026-07-16), BUKAN gap yang belum sempat dikerjakan. Restore itu operasi langka & berisiko

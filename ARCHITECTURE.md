@@ -90,7 +90,8 @@ punya gate sendiri, lihat §4).
 | `audit_log` | Log aksi sensitif (140 baris) |
 | `feature_toggles` | Toggle menu aktif/nonaktif per jenjang role (35 baris), dikelola Super Admin |
 | `system_config` | Mode perawatan (maintenance mode), termasuk penjadwalan otomatis |
-| `reset_password_requests` | Antrian permintaan reset password manual |
+| `reset_password_requests` | *(Retired)* Antrian permintaan reset password manual -- diganti alur OTP self-service (`password_reset_otp`), tabel dibiarkan ada utk histori, tidak dipakai kode lagi |
+| `password_reset_otp` | Kode OTP reset password self-service (hash, expiry, attempt count) -- RLS deny-all, hanya diakses service role |
 
 ## 4. Fungsi & RPC Database (schema `public`, ~65 fungsi)
 
@@ -142,7 +143,7 @@ aktif di tabel baru)
 | `app/api/generus` | CRUD biodata Generus, cek scope tujuan saat pindah sambung (anti-IDOR) |
 | `app/api/resolve-login` | Terjemahkan nama panggilan/lengkap → email asli untuk login |
 | `app/api/session/claim` | Klaim token sesi aktif (single-session enforcement) |
-| `app/api/reset-password-requests` | Antrian permintaan reset password |
+| `app/api/password-reset/request`, `.../confirm` | Reset password self-service via OTP email (tanpa approval admin) |
 | `app/api/backup` | Backup data |
 | `app/api/maintenance`, `.../activate-scheduled` | Mode perawatan sistem |
 
@@ -178,8 +179,9 @@ Test otomatis untuk semua fungsi ini ada di [lib/roles.test.ts](lib/roles.test.t
 `dashboard`, `absensi`/`presensi`, `anggota`, `generus`/`data-generus`/`data-pembina`,
 `kegiatan`, `keuangan`, `pengumuman`, `dokumen`, `catatan-pembinaan`, `notifikasi`,
 `organisasi`, `ppg`, `users`, `profil`, `audit-log`, `email-log`,
-`reset-password-requests`, `backup-data`, `monitoring`, `admin-sistem`,
-`pengaturan-fitur` (toggle fitur per menu × jenjang).
+`backup-data`, `monitoring`, `admin-sistem`,
+`pengaturan-fitur` (toggle fitur per menu × jenjang). Reset password kini `app/lupa-password`
+(publik, self-service OTP) -- tidak lagi menu Super Admin.
 
 ## 8. Restore Data (Darurat)
 

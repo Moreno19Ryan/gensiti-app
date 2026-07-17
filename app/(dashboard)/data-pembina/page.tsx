@@ -422,7 +422,10 @@ export default function DataPembinaPage() {
               </thead>
               <tbody>
                 {filtered.map(g => {
-                  const lengkap = !!(g.tempat_lahir && g.tanggal_lahir && g.jenis_kelamin && g.alamat)
+                  // Ikutkan nama_panggilan & no_hp -- keduanya SAMA-SAMA wajib diisi di handleSave
+                  // (lihat validasi "wajib diisi" di atas), jadi badge ini harus mencerminkan semua
+                  // field yang benar-benar disyaratkan, bukan cuma sebagian.
+                  const lengkap = !!(g.nama_panggilan && g.tempat_lahir && g.tanggal_lahir && g.jenis_kelamin && g.alamat && g.users?.no_hp)
                   const sp = g.status_pengguna || 'lajang'
                   return (
                     <tr key={g.id} className="border-b border-slate-50 hover:bg-slate-50 transition">

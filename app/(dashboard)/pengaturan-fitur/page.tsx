@@ -35,10 +35,10 @@ interface MenuGroup {
 // layout.tsx navItems) supaya Super Admin mudah mencocokkan dengan apa yang dia lihat di
 // sidebarnya sendiri sehari-hari.
 const MENU_GROUPS: MenuGroup[] = [
-  { menu_key: 'generus', menu_label: 'Pengguna', roleColumns: ['daerah', 'desa', 'kelompok'] },
-  // 'data-generus' sekarang menggerbangi tab "Biodata" + tombol export di dalam menu Pengguna
-  // (bukan menu/rute terpisah lagi) -- lihat app/(dashboard)/generus/page.tsx.
-  { menu_key: 'data-generus', menu_label: 'Data Generus (tab Biodata di Pengguna)', roleColumns: ['daerah', 'desa', 'kelompok'] },
+  { menu_key: 'generus', menu_label: 'Data Generus (Akun)', roleColumns: ['daerah', 'desa', 'kelompok'] },
+  // 'data-generus' sekarang menggerbangi tab "Biodata" + tombol export di dalam menu Data
+  // Generus (bukan menu/rute terpisah lagi) -- lihat app/(dashboard)/generus/page.tsx.
+  { menu_key: 'data-generus', menu_label: 'Data Generus (Biodata)', roleColumns: ['daerah', 'desa', 'kelompok'] },
   { menu_key: 'data-pembina', menu_label: 'Data Pembina', roleColumns: ['daerah', 'desa', 'kelompok', 'ppg'] },
   { menu_key: 'kegiatan', menu_label: 'Kegiatan', roleColumns: ['daerah', 'desa', 'kelompok', 'ppg'] },
   { menu_key: 'absensi', menu_label: 'Absensi', roleColumns: ['daerah', 'desa', 'kelompok'] },

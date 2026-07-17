@@ -16,10 +16,6 @@ interface Stats {
   pengeluaran: number
 }
 
-interface AdminAlert {
-  resetPasswordPending: number
-}
-
 interface EmailHealthAlert {
   emailErrorRate: number
   emailFailedCount: number
@@ -109,7 +105,6 @@ export default function DashboardPage() {
   const { user, onlineCount, onlineCountScoped } = useUser()
   const [stats, setStats] = useState<Stats>({ generus: 0, kegiatan_aktif: 0, pemasukan: 0, pengeluaran: 0 })
   const [loading, setLoading] = useState(true)
-  const [adminAlert, setAdminAlert] = useState<AdminAlert | null>(null)
   const [emailHealthAlert, setEmailHealthAlert] = useState<EmailHealthAlert | null>(null)
   const [bendaharaAlert, setBendaharaAlert] = useState<BendaharaAlert | null>(null)
   const [kontenAlert, setKontenAlert] = useState<KontenAlert | null>(null)
@@ -172,19 +167,9 @@ export default function DashboardPage() {
         pengeluaran,
       })
 
-      if (isSuper) {
-        const { count: pendingCount } = await supabase.from('reset_password_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending')
-        setAdminAlert({ resetPasswordPending: pendingCount || 0 })
-      } else {
-        setAdminAlert(null)
-      }
-
       // Error rate email relevan utk Super Admin MAUPUN Team IT (isTeamIT) -- lihat catatan
       // isTeamIT di lib/roles.ts: RLS email_log sudah lama mengizinkan tingkatan 'daerah'
       // (termasuk Team IT Daerah) melihat data lintas wilayah, jadi query ini aman utk mereka.
-      // Reset password TETAP Super Admin-only di atas krn RLS reset_password_requests hanya
-      // mengizinkan super_admin (query utk Team IT toh akan kosong kena RLS, jadi tidak
-      // ditampilkan sama sekali drpd menampilkan "0 permintaan" yg menyesatkan).
       if (isSuper || isTeamITUser) {
         const ninetyDaysAgo = new Date()
         ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
@@ -503,7 +488,7 @@ export default function DashboardPage() {
       ]
     : isSuper
     ? [
-        { href: '/generus', label: 'Pengguna', icon: '👥', color: 'hover:bg-blue-50 hover:border-blue-200' },
+        { href: '/generus', label: 'Data Generus', icon: '👥', color: 'hover:bg-blue-50 hover:border-blue-200' },
         { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200' },
         { href: '/organisasi', label: 'Organisasi', icon: '🏛️', color: 'hover:bg-violet-50 hover:border-violet-200' },
         { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200' },
@@ -523,7 +508,7 @@ export default function DashboardPage() {
         { href: '/profil', label: 'Profil Saya', icon: '👤', color: 'hover:bg-blue-50 hover:border-blue-200' },
       ]
     : [
-        { href: '/generus', label: 'Pengguna', icon: '👥', color: 'hover:bg-blue-50 hover:border-blue-200' },
+        { href: '/generus', label: 'Data Generus', icon: '👥', color: 'hover:bg-blue-50 hover:border-blue-200' },
         { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200' },
         { href: '/keuangan', label: 'Keuangan', icon: '💰', color: 'hover:bg-emerald-50 hover:border-emerald-200' },
         { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200' },
@@ -620,27 +605,8 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {(isSuper || isTeamITUser) && (adminAlert || emailHealthAlert) && (
+      {(isSuper || isTeamITUser) && emailHealthAlert && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-          {isSuper && adminAlert && (
-            <a
-              href="/reset-password-requests"
-              className={`rounded-2xl p-4 sm:p-5 border transition-colors flex items-center gap-4 ${
-                adminAlert.resetPasswordPending > 0
-                  ? 'bg-amber-50 border-amber-200 hover:bg-amber-100'
-                  : 'bg-white border-slate-100 hover:bg-slate-50'
-              }`}
-            >
-              <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 ${adminAlert.resetPasswordPending > 0 ? 'bg-amber-500' : 'bg-slate-300'}`}>
-                🔑
-              </div>
-              <div className="min-w-0">
-                <div className="text-lg font-bold text-slate-800">{adminAlert.resetPasswordPending} permintaan</div>
-                <div className="text-slate-600 text-sm font-medium">Reset Password Menunggu</div>
-                <div className="text-slate-400 text-xs">{adminAlert.resetPasswordPending > 0 ? 'Klik untuk proses' : 'Tidak ada yang menunggu'}</div>
-              </div>
-            </a>
-          )}
           {emailHealthAlert && (
             <a
               href="/monitoring?tab=email"

@@ -212,8 +212,9 @@ export interface Notifikasi {
 }
 
 // Selaras CHECK constraint email_log_tipe_check di database. 'reset_password' dipakai alur
-// reset password (app/api/reset-password-requests/route.ts), 'maintenance' dipakai trigger
-// trg_notify_email_maintenance saat Mode Perawatan Sistem diaktifkan/dinonaktifkan.
+// reset password self-service (app/api/password-reset/request & .../confirm, kode OTP +
+// konfirmasi perubahan), 'maintenance' dipakai trigger trg_notify_email_maintenance saat
+// Mode Perawatan Sistem diaktifkan/dinonaktifkan.
 export type EmailTipe = 'pengumuman' | 'kegiatan' | 'reminder' | 'approval_ppg' | 'reset_password' | 'maintenance' | 'maintenance_scheduled'
 export type EmailStatus = 'pending' | 'sent' | 'failed'
 
@@ -254,22 +255,6 @@ export interface AuditLog {
   created_at: string
   desa_id: string | null
   kelompok_id: string | null
-}
-
-export type ResetPasswordStatus = 'pending' | 'processed' | 'ditolak'
-
-// Permintaan reset password diajukan oleh siapapun (bahkan yang belum login, lewat halaman
-// publik /lupa-password) dan hanya boleh dilihat/diproses oleh Super Admin -- lihat RLS
-// reset_request_insert (public) & reset_request_superadmin (ALL, hanya super_admin).
-export interface ResetPasswordRequest {
-  id: number
-  email: string
-  nama: string
-  status: ResetPasswordStatus
-  created_at: string
-  processed_at: string | null
-  processed_by: string | null
-  notes: string | null
 }
 
 // Baris tunggal konfigurasi teknis sistem (id selalu `true`) -- dipakai fitur Mode Perawatan

@@ -37,35 +37,43 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: '🏠', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
+  // Blok "Pembina" (PPG -- Penggerak Pembina Generus) SENGAJA dikelompokkan berurutan di sini,
+  // tepat setelah Dashboard -- sebelumnya 3 menu ini (Dashboard PPG, Catatan Pembinaan, Data
+  // Pembina) tercecer jauh dari satu sama lain di sidebar (posisi #2, #4, #9), padahal untuk
+  // PPG ini adalah workspace utamanya, dan untuk Pengurus (Daerah/Desa/Kelompok) ini adalah
+  // konteks pengawasan/pembinaan yang berkaitan. Dikonfirmasi lewat audit menu pembina
+  // 2026-07-17. Icon Data Pembina diganti dari 🛡️ (duplikat dgn Dashboard PPG) jadi 🪪 supaya
+  // beda secara visual meski keduanya tampil berdekatan utk user PPG.
   { href: '/ppg', label: 'Dashboard PPG', icon: '🛡️', roles: ['ppg'] },
-  // "Pengguna" -- akun & biodata Generus digabung jadi satu menu dengan tab "Akun"/"Biodata"
-  // di modal edit (lihat app/(dashboard)/generus/page.tsx). Dulu biodata (menu "Data Generus")
-  // dipisah rute sendiri supaya data sensitif tidak otomatis terlihat setiap kali mengelola
-  // akun -- sekarang cukup dipisah TAB, gate akses tetap sama (canManageMembers/
-  // canViewGenerusData), dan toggle fitur 'data-generus' tetap independen (lihat useFeatureAccess
-  // 'data-generus' di dalam halaman) supaya Super Admin masih bisa mematikan tab Biodata per
-  // jenjang tanpa mematikan menu Pengguna itu sendiri.
-  { href: '/generus', label: 'Pengguna', icon: '👥', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, menuKey: 'generus' },
+  // Super Admin SENGAJA TIDAK termasuk -- Catatan Pembinaan murni komunikasi satu arah
+  // PPG ke Pengurus organisasi, bukan urusan Super Admin sama sekali (sejak audit peran;
+  // RLS 'catatan_pembinaan_all_superadmin' juga sudah dicabut total di database).
+  { href: '/catatan-pembinaan', label: 'Catatan Pembinaan', icon: '📝', roles: ['daerah', 'desa', 'kelompok', 'ppg'], hideForGenerus: true, menuKey: 'catatan-pembinaan' },
   // Data Pembina -- biodata PPG (Penggerak Pembina Generus), dipisah dari Data Generus
   // karena PPG adalah pembina, bukan Generus (lihat catatan lengkap di
   // app/(dashboard)/data-pembina/page.tsx). Visibilitas sidebar sama dengan Data Generus,
   // PLUS 'ppg' sendiri supaya PPG bisa melihat/mengedit biodatanya sendiri di sini.
-  { href: '/data-pembina', label: 'Data Pembina', icon: '🛡️', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], hideForGenerus: true, menuKey: 'data-pembina' },
+  { href: '/data-pembina', label: 'Data Pembina', icon: '🪪', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], hideForGenerus: true, menuKey: 'data-pembina' },
+  // "Data Generus" -- akun & biodata Generus se-Bekasi Timur digabung jadi satu menu dengan
+  // tab "Akun"/"Biodata" di modal edit (lihat app/(dashboard)/generus/page.tsx). Sempat dilabeli
+  // "Pengguna" saat baru digabung, direname krn isinya memang database Generus (bukan cuma akun
+  // login) -- URL /generus dipertahankan apa adanya, sudah cocok dgn nama barunya. Dulu biodata
+  // dipisah rute sendiri ("Data Generus" versi lama) supaya data sensitif tidak otomatis
+  // terlihat setiap kali mengelola akun -- sekarang cukup dipisah TAB, gate akses tetap sama
+  // (canManageMembers/canViewGenerusData), dan toggle fitur 'data-generus' tetap independen
+  // (lihat useFeatureAccess 'data-generus' di dalam halaman) supaya Super Admin masih bisa
+  // mematikan tab Biodata per jenjang tanpa mematikan menu ini sepenuhnya.
+  { href: '/generus', label: 'Data Generus', icon: '👥', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, menuKey: 'generus' },
   { href: '/kegiatan', label: 'Kegiatan', icon: '📅', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], menuKey: 'kegiatan' },
   { href: '/absensi', label: 'Absensi', icon: '✅', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, requiresPresensiAccess: true, menuKey: 'absensi' },
   { href: '/keuangan', label: 'Keuangan', icon: '💰', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, menuKey: 'keuangan' },
   { href: '/pengumuman', label: 'Pengumuman', icon: '📢', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], menuKey: 'pengumuman' },
   { href: '/dokumen', label: 'Dokumen', icon: '📁', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], menuKey: 'dokumen' },
-  // Super Admin SENGAJA TIDAK termasuk -- Catatan Pembinaan murni komunikasi satu arah
-  // PPG ke Pengurus organisasi, bukan urusan Super Admin sama sekali (sejak audit peran;
-  // RLS 'catatan_pembinaan_all_superadmin' juga sudah dicabut total di database).
-  { href: '/catatan-pembinaan', label: 'Catatan Pembinaan', icon: '📝', roles: ['daerah', 'desa', 'kelompok', 'ppg'], hideForGenerus: true, menuKey: 'catatan-pembinaan' },
   { href: '/notifikasi', label: 'Notifikasi', icon: '🔔', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
   // "Organisasi & Role" -- gabungan Desa/Kelompok (dulu /organisasi) + Role (dulu tab di
   // menu "Administrasi Sistem" yang sudah dihapus) supaya semua master data struktural ada
   // di satu menu. Tetap eksklusif Super Admin.
   { href: '/organisasi', label: 'Organisasi & Role', icon: '🏛️', roles: ['super_admin'] },
-  { href: '/reset-password-requests', label: 'Reset Password', icon: '🔑', roles: ['super_admin'] },
   { href: '/backup-data', label: 'Backup Data', icon: '💾', roles: ['super_admin'] },
   // "Monitoring & Log" -- gabungan Kesehatan Sistem + Sesi Aktif (dulu di menu "Administrasi
   // Sistem") + Audit Log + Email Log, jadi satu menu observability. Visibilitas TIAP TAB di
