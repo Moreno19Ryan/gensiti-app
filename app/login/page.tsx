@@ -218,7 +218,7 @@ export default function LoginPage() {
           Design) supaya tidak ada risiko hydration mismatch SSR/CSR di Next.js. */}
       <div
         className="hidden lg:flex flex-1 min-w-0 flex-col justify-between p-14 text-white relative overflow-hidden"
-        style={{ background: 'linear-gradient(155deg,#1259C3 0%,#0D47A8 60%,#0A3A8C 100%)' }}
+        style={{ background: 'linear-gradient(155deg,#0381FE 0%,#0753A8 60%,#0A3E7D 100%)' }}
       >
         <div className="absolute w-[520px] h-[520px] rounded-full bg-white/[0.06] -top-40 -right-40" />
         <div className="absolute w-80 h-80 rounded-full bg-white/5 -bottom-24 -left-16" />
@@ -270,7 +270,7 @@ export default function LoginPage() {
           <div className="flex lg:hidden items-center gap-2.5 mb-8">
             <img src={PPG_LOGO_LOGIN_BASE64} alt="PPG" className="h-10 w-auto object-contain" />
             <div className="w-px h-7 bg-slate-200" />
-            <div className="w-8 h-8 rounded-lg bg-[#1259C3] flex items-center justify-center p-1.5 shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-[#0381FE] flex items-center justify-center p-1.5 shrink-0">
               <img src="/icons/icon-512.png" alt="GENSITI" className="w-full h-full object-contain" />
             </div>
             <span className="font-bold text-[17px] text-slate-800">GENSITI</span>
@@ -321,7 +321,7 @@ export default function LoginPage() {
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-[13px] font-semibold text-slate-700">Password</label>
-                <Link href="/lupa-password" className="text-xs text-[#1259C3] hover:underline font-semibold">
+                <Link href="/lupa-password" className="text-xs text-[#0381FE] hover:underline font-semibold">
                   Lupa password?
                 </Link>
               </div>
@@ -345,7 +345,7 @@ export default function LoginPage() {
                 type="checkbox"
                 checked={ingatSaya}
                 onChange={(e) => setIngatSaya(e.target.checked)}
-                className="w-4 h-4 accent-[#1259C3]"
+                className="w-4 h-4 accent-[#0381FE]"
               />
               Ingat saya di perangkat ini
             </label>
@@ -354,7 +354,7 @@ export default function LoginPage() {
               type="submit"
               disabled={loading}
               className="w-full py-3.5 px-4 rounded-[14px] text-white font-bold transition-colors flex items-center justify-center gap-2 mt-2 disabled:opacity-60"
-              style={{ background: '#1259C3', boxShadow: '0 8px 20px rgba(18,89,195,0.28)' }}
+              style={{ background: '#0381FE', boxShadow: '0 8px 20px rgba(3,129,254,0.28)' }}
             >
               {loading ? (
                 <>

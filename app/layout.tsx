@@ -21,7 +21,7 @@ export const metadata: Metadata = {
 // theme-color dipisah ke Viewport export (bukan Metadata) sesuai konvensi Next.js 14+ --
 // Next akan warning/gagal build kalau theme-color masih ditaruh di Metadata.
 export const viewport: Viewport = {
-  themeColor: '#2563eb',
+  themeColor: '#0381FE',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

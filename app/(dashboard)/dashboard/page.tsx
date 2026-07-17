@@ -625,7 +625,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      <div className="rounded-[22px] p-5 sm:p-6 text-white" style={{ background: 'linear-gradient(120deg,#1259C3,#2E6FE0)' }}>
+      <div className="rounded-[22px] p-5 sm:p-6 text-white" style={{ background: 'linear-gradient(120deg,#0381FE,#1A8CFF)' }}>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="text-white/80 text-sm font-medium">Assalamualaikum,</p>
@@ -779,7 +779,7 @@ export default function DashboardPage() {
                 <XAxis dataKey="bulan" tick={{ fontSize: 12, fill: '#94a3b8' }} />
                 <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
                 <Tooltip formatter={(v) => `${v}%`} contentStyle={{ borderRadius: 12, fontSize: 12 }} />
-                <Line type="monotone" dataKey="persentase" name="Kehadiran" stroke="#2563eb" strokeWidth={2.5} dot={{ r: 4 }} />
+                <Line type="monotone" dataKey="persentase" name="Kehadiran" stroke="#0381FE" strokeWidth={2.5} dot={{ r: 4 }} />
               </LineChart>
             </ResponsiveContainer>
           )}

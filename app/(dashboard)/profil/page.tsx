@@ -316,7 +316,7 @@ export default function ProfilPage() {
           <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={handlePhotoChange} />
         </div>
         <h2 className="font-extrabold text-[19px] text-slate-900 dark:text-white tracking-tight">{user.nama_lengkap}</h2>
-        <div className="inline-flex items-center gap-1.5 bg-[#EAF1FC] dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-3 py-1 rounded-full text-xs font-bold mt-2">
+        <div className="inline-flex items-center gap-1.5 bg-[#EAF4FF] dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-3 py-1 rounded-full text-xs font-bold mt-2">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 2 4 5v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V5l-8-3Z" />
           </svg>
@@ -334,21 +334,21 @@ export default function ProfilPage() {
         <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-[18px] divide-y divide-slate-100 dark:divide-slate-700 overflow-hidden">
           <ListItem
             href="/profil/edit"
-            iconBg="bg-[#EAF1FC] dark:bg-blue-900/30" iconColor="text-blue-600 dark:text-blue-400"
+            iconBg="bg-[#EAF4FF] dark:bg-blue-900/30" iconColor="text-blue-600 dark:text-blue-400"
             icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg>}
             label="Edit Profil"
           />
           {!isSuperAdmin && (
             <ListItem
               href="/profil/data-diri"
-              iconBg="bg-[#EAF1FC] dark:bg-blue-900/30" iconColor="text-blue-600 dark:text-blue-400"
+              iconBg="bg-[#EAF4FF] dark:bg-blue-900/30" iconColor="text-blue-600 dark:text-blue-400"
               icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5" /><path d="M7 9h6M7 13h10M7 17h10" /></svg>}
               label="Data Diri"
             />
           )}
           <ListItem
             href="/profil/password"
-            iconBg="bg-[#EAF1FC] dark:bg-blue-900/30" iconColor="text-blue-600 dark:text-blue-400"
+            iconBg="bg-[#EAF4FF] dark:bg-blue-900/30" iconColor="text-blue-600 dark:text-blue-400"
             icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="10" width="16" height="10" rx="2.2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>}
             label="Ganti Password"
           />

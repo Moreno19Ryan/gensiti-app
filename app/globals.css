@@ -2,6 +2,26 @@
 /* Dark mode support untuk Tailwind v4 */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Aksen biru "One UI" -- ganti skala blue-* bawaan Tailwind supaya SEMUA pemakaian
+   bg-blue-*/text-blue-*/border-blue-* yang sudah ada di seluruh app (sidebar, tombol,
+   badge, dsb, termasuk halaman yang belum diporting dari mockup) otomatis ikut satu
+   warna aksen baru ini -- tanpa perlu ubah tiap file satu-satu. Base 600 (#0381FE)
+   dipilih Reno dari 3 opsi (biru lama, biru logo Samsung, biru interaktif One UI).
+   Lihat DESIGN_BRIEF_GENSITI.md bagian "Warna Aksen Final". */
+@theme {
+  --color-blue-50: #EAF4FF;
+  --color-blue-100: #D2E9FF;
+  --color-blue-200: #A6D3FF;
+  --color-blue-300: #70B8FF;
+  --color-blue-400: #3D9EFF;
+  --color-blue-500: #1A8CFF;
+  --color-blue-600: #0381FE;
+  --color-blue-700: #0468D1;
+  --color-blue-800: #0753A8;
+  --color-blue-900: #0A3E7D;
+  --color-blue-950: #072951;
+}
+
 /* Dark mode base overrides */
 .dark body {
   background: #0f172a;
