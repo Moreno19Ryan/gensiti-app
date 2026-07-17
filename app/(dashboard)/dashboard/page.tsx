@@ -579,14 +579,58 @@ export default function DashboardPage() {
         },
   ]
 
+  // Konsolidasi SEMUA alert per-role (email health, PPG, Bendahara, konten manager) jadi
+  // satu daftar baris utk kartu "Perlu Perhatian" ala mockup Claude Design -- sebelumnya
+  // masing2 tampil sbg banner section terpisah bertumpuk. Kondisi kapan tiap alert relevan
+  // utk role mana SAMA PERSIS dgn sebelumnya (tidak ada logic baru), cuma disatukan tampilannya.
+  interface AttentionItem { href: string; icon: string; iconBg: string; title: string; sub: string }
+  const attentionItems: AttentionItem[] = []
+  if ((isSuper || isTeamITUser) && emailHealthAlert) {
+    attentionItems.push({
+      href: '/monitoring?tab=email',
+      icon: '✉️',
+      iconBg: emailHealthAlert.emailErrorRate > 10 ? 'bg-red-500' : emailHealthAlert.emailErrorRate > 0 ? 'bg-amber-500' : 'bg-slate-300',
+      title: `${emailHealthAlert.emailErrorRate}% gagal -- Error Rate Email`,
+      sub: `${emailHealthAlert.emailFailedCount} gagal dari ${emailHealthAlert.emailTotal} email (90 hari)`,
+    })
+  }
+  if (isPPGUser && ppgAlert?.kegiatanMenunggu) {
+    attentionItems.push({ href: '/ppg', icon: '📅', iconBg: 'bg-amber-500', title: `${ppgAlert.kegiatanMenunggu} kegiatan Daerah menunggu approval`, sub: 'Klik untuk proses di Dashboard PPG' })
+  }
+  if (isPPGUser && ppgAlert?.pengumumanMenunggu) {
+    attentionItems.push({ href: '/ppg', icon: '📢', iconBg: 'bg-amber-500', title: `${ppgAlert.pengumumanMenunggu} pengumuman Daerah menunggu approval`, sub: 'Klik untuk proses di Dashboard PPG' })
+  }
+  if (isBendaharaUser && bendaharaAlert) {
+    attentionItems.push({
+      href: '/keuangan',
+      icon: '🧾',
+      iconBg: bendaharaAlert.reimbursementPending > 0 ? 'bg-amber-500' : 'bg-slate-300',
+      title: `${bendaharaAlert.reimbursementPending} pengajuan reimbursement`,
+      sub: bendaharaAlert.reimbursementPending > 0 ? 'Klik untuk ACC/Tolak' : 'Tidak ada yang menunggu',
+    })
+    attentionItems.push({
+      href: '/keuangan',
+      icon: '💵',
+      iconBg: bendaharaAlert.saldoBulanIni >= 0 ? 'bg-emerald-500' : 'bg-red-500',
+      title: `${formatRupiah(bendaharaAlert.saldoBulanIni)} -- Saldo Bulan Ini`,
+      sub: 'Pemasukan dikurangi pengeluaran',
+    })
+  }
+  if (isKontenManager && kontenAlert?.kegiatanMenunggu) {
+    attentionItems.push({ href: '/kegiatan', icon: '📅', iconBg: 'bg-amber-500', title: `${kontenAlert.kegiatanMenunggu} kegiatan menunggu approval PPG`, sub: 'Klik untuk lihat status' })
+  }
+  if (isKontenManager && kontenAlert?.pengumumanMenunggu) {
+    attentionItems.push({ href: '/pengumuman', icon: '📢', iconBg: 'bg-amber-500', title: `${kontenAlert.pengumumanMenunggu} pengumuman menunggu approval PPG`, sub: 'Klik untuk lihat status' })
+  }
+
   return (
     <div className="space-y-4 sm:space-y-6">
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-5 sm:p-6 text-white">
+      <div className="rounded-[22px] p-5 sm:p-6 text-white" style={{ background: 'linear-gradient(120deg,#1259C3,#2E6FE0)' }}>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-blue-100 text-sm font-medium">Assalamualaikum,</p>
-            <h2 className="text-xl sm:text-2xl font-bold mt-0.5 truncate">{user?.nama_lengkap}</h2>
-            <p className="text-blue-200 text-sm mt-1">{user?.role?.nama_role}</p>
+            <p className="text-white/80 text-sm font-medium">Assalamualaikum,</p>
+            <h2 className="text-xl sm:text-2xl font-extrabold mt-0.5 truncate">{user?.nama_lengkap}</h2>
+            <p className="text-white/80 text-sm mt-1">{user?.role?.nama_role} &middot; Sistem GENSITI</p>
           </div>
           <LiveClock />
         </div>
@@ -594,7 +638,7 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
         {statCards.map((card) => (
-          <div key={card.label} className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100">
+          <div key={card.label} className="bg-white rounded-[18px] p-4 sm:p-5 shadow-sm border border-slate-100">
             <div className={`w-10 h-10 ${card.color} rounded-xl flex items-center justify-center text-xl mb-3`}>
               {card.icon}
             </div>
@@ -605,117 +649,27 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {(isSuper || isTeamITUser) && emailHealthAlert && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-          {emailHealthAlert && (
-            <a
-              href="/monitoring?tab=email"
-              className={`rounded-2xl p-4 sm:p-5 border transition-colors flex items-center gap-4 ${
-                emailHealthAlert.emailErrorRate > 10
-                  ? 'bg-red-50 border-red-200 hover:bg-red-100'
-                  : emailHealthAlert.emailErrorRate > 0
-                  ? 'bg-amber-50 border-amber-200 hover:bg-amber-100'
-                  : 'bg-white border-slate-100 hover:bg-slate-50'
-              }`}
-            >
-              <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 ${
-                emailHealthAlert.emailErrorRate > 10 ? 'bg-red-500' : emailHealthAlert.emailErrorRate > 0 ? 'bg-amber-500' : 'bg-slate-300'
-              }`}>
-                ✉️
-              </div>
-              <div className="min-w-0">
-                <div className="text-lg font-bold text-slate-800">{emailHealthAlert.emailErrorRate}% gagal</div>
-                <div className="text-slate-600 text-sm font-medium">Error Rate Email (90 hari)</div>
-                <div className="text-slate-400 text-xs">{emailHealthAlert.emailFailedCount} gagal dari {emailHealthAlert.emailTotal} email</div>
-              </div>
-            </a>
-          )}
-        </div>
-      )}
-
-      {isPPGUser && ppgAlert && (ppgAlert.kegiatanMenunggu > 0 || ppgAlert.pengumumanMenunggu > 0) && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-          {ppgAlert.kegiatanMenunggu > 0 && (
-            <a href="/ppg" className="rounded-2xl p-4 sm:p-5 border bg-amber-50 border-amber-200 hover:bg-amber-100 transition-colors flex items-center gap-4">
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 bg-amber-500">📅</div>
-              <div className="min-w-0">
-                <div className="text-lg font-bold text-slate-800">{ppgAlert.kegiatanMenunggu} kegiatan</div>
-                <div className="text-slate-600 text-sm font-medium">Kegiatan Daerah Menunggu Approval</div>
-                <div className="text-slate-400 text-xs">Klik untuk proses di Dashboard PPG</div>
-              </div>
-            </a>
-          )}
-          {ppgAlert.pengumumanMenunggu > 0 && (
-            <a href="/ppg" className="rounded-2xl p-4 sm:p-5 border bg-amber-50 border-amber-200 hover:bg-amber-100 transition-colors flex items-center gap-4">
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 bg-amber-500">📢</div>
-              <div className="min-w-0">
-                <div className="text-lg font-bold text-slate-800">{ppgAlert.pengumumanMenunggu} pengumuman</div>
-                <div className="text-slate-600 text-sm font-medium">Pengumuman Daerah Menunggu Approval</div>
-                <div className="text-slate-400 text-xs">Klik untuk proses di Dashboard PPG</div>
-              </div>
-            </a>
-          )}
-        </div>
-      )}
-
-      {isBendaharaUser && bendaharaAlert && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-          <a
-            href="/keuangan"
-            className={`rounded-2xl p-4 sm:p-5 border transition-colors flex items-center gap-4 ${
-              bendaharaAlert.reimbursementPending > 0
-                ? 'bg-amber-50 border-amber-200 hover:bg-amber-100'
-                : 'bg-white border-slate-100 hover:bg-slate-50'
-            }`}
-          >
-            <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 ${bendaharaAlert.reimbursementPending > 0 ? 'bg-amber-500' : 'bg-slate-300'}`}>
-              🧾
-            </div>
-            <div className="min-w-0">
-              <div className="text-lg font-bold text-slate-800">{bendaharaAlert.reimbursementPending} pengajuan</div>
-              <div className="text-slate-600 text-sm font-medium">Reimbursement Menunggu</div>
-              <div className="text-slate-400 text-xs">{bendaharaAlert.reimbursementPending > 0 ? 'Klik untuk ACC/Tolak' : 'Tidak ada yang menunggu'}</div>
-            </div>
-          </a>
-          <div className="rounded-2xl p-4 sm:p-5 border bg-white border-slate-100 flex items-center gap-4">
-            <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 ${bendaharaAlert.saldoBulanIni >= 0 ? 'bg-emerald-500' : 'bg-red-500'}`}>
-              💵
-            </div>
-            <div className="min-w-0">
-              <div className="text-lg font-bold text-slate-800">{formatRupiah(bendaharaAlert.saldoBulanIni)}</div>
-              <div className="text-slate-600 text-sm font-medium">Saldo Bulan Ini</div>
-              <div className="text-slate-400 text-xs">Pemasukan dikurangi pengeluaran</div>
-            </div>
+      {attentionItems.length > 0 && (
+        <div className="bg-white rounded-[18px] p-4 sm:p-5 shadow-sm border border-slate-100">
+          <h3 className="font-semibold text-slate-700">Perlu Perhatian</h3>
+          <p className="text-slate-400 text-xs mb-3.5">Tindakan yang menunggu keputusan Anda</p>
+          <div className="flex flex-col gap-2">
+            {attentionItems.map((item, i) => (
+              <a key={i} href={item.href} className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 hover:bg-slate-100 transition-colors">
+                <div className={`w-9 h-9 rounded-[10px] flex items-center justify-center text-base shrink-0 ${item.iconBg} text-white`}>
+                  {item.icon}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[13.5px] font-bold text-slate-800 truncate">{item.title}</div>
+                  <div className="text-[11.5px] text-slate-400">{item.sub}</div>
+                </div>
+              </a>
+            ))}
           </div>
         </div>
       )}
 
-      {isKontenManager && kontenAlert && (kontenAlert.kegiatanMenunggu > 0 || kontenAlert.pengumumanMenunggu > 0) && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-          {kontenAlert.kegiatanMenunggu > 0 && (
-            <a href="/kegiatan" className="rounded-2xl p-4 sm:p-5 border bg-amber-50 border-amber-200 hover:bg-amber-100 transition-colors flex items-center gap-4">
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 bg-amber-500">📅</div>
-              <div className="min-w-0">
-                <div className="text-lg font-bold text-slate-800">{kontenAlert.kegiatanMenunggu} kegiatan</div>
-                <div className="text-slate-600 text-sm font-medium">Menunggu Approval PPG</div>
-                <div className="text-slate-400 text-xs">Klik untuk lihat status</div>
-              </div>
-            </a>
-          )}
-          {kontenAlert.pengumumanMenunggu > 0 && (
-            <a href="/pengumuman" className="rounded-2xl p-4 sm:p-5 border bg-amber-50 border-amber-200 hover:bg-amber-100 transition-colors flex items-center gap-4">
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 bg-amber-500">📢</div>
-              <div className="min-w-0">
-                <div className="text-lg font-bold text-slate-800">{kontenAlert.pengumumanMenunggu} pengumuman</div>
-                <div className="text-slate-600 text-sm font-medium">Menunggu Approval PPG</div>
-                <div className="text-slate-400 text-xs">Klik untuk lihat status</div>
-              </div>
-            </a>
-          )}
-        </div>
-      )}
-
-      <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100">
+      <div className="bg-white rounded-[18px] p-4 sm:p-5 shadow-sm border border-slate-100">
         <h3 className="font-semibold text-slate-700 mb-4">Akses Cepat</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {quickActions.map((item) => (
@@ -733,7 +687,7 @@ export default function DashboardPage() {
 
       {isGenerusBiasaUser && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100">
+          <div className="bg-white rounded-[18px] p-4 sm:p-5 shadow-sm border border-slate-100">
             <h3 className="font-semibold text-slate-700 mb-1">Kegiatan Mendatang</h3>
             <p className="text-slate-400 text-xs mb-4">Kegiatan terdekat di kelompok/desa Anda</p>
             {loadingInsight ? (
@@ -757,7 +711,7 @@ export default function DashboardPage() {
             )}
           </div>
 
-          <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100">
+          <div className="bg-white rounded-[18px] p-4 sm:p-5 shadow-sm border border-slate-100">
             <h3 className="font-semibold text-slate-700 mb-1">Pengumuman Terbaru</h3>
             <p className="text-slate-400 text-xs mb-4">Info terkini untuk Anda</p>
             {loadingInsight ? (
@@ -782,7 +736,7 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {showHealthScore && (
-          <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100">
+          <div className="bg-white rounded-[18px] p-4 sm:p-5 shadow-sm border border-slate-100">
             <h3 className="font-semibold text-slate-700 mb-1">Arus Kas 6 Bulan Terakhir</h3>
             <p className="text-slate-400 text-xs mb-4">Pemasukan vs pengeluaran per bulan</p>
             {loadingChart ? (
@@ -805,7 +759,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100">
+        <div className="bg-white rounded-[18px] p-4 sm:p-5 shadow-sm border border-slate-100">
           <h3 className="font-semibold text-slate-700 mb-1">
             {isGenerusBiasaUser ? 'Tren Kehadiran Kelompok/Desa Anda' : 'Tren Kehadiran 6 Bulan Terakhir'}
           </h3>
@@ -832,7 +786,7 @@ export default function DashboardPage() {
         </div>
 
         {!isGenerusBiasaUser && (
-          <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100 xl:col-span-2">
+          <div className="bg-white rounded-[18px] p-4 sm:p-5 shadow-sm border border-slate-100 xl:col-span-2">
             <h3 className="font-semibold text-slate-700 mb-1">Pertumbuhan Generus 6 Bulan Terakhir</h3>
             <p className="text-slate-400 text-xs mb-4">Jumlah Generus baru bergabung per bulan</p>
             {loadingChart ? (
