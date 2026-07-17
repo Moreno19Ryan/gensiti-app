@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { signIn, authFetch } from '@/lib/auth'
+import { signIn, authFetch, getUserProfile } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { PPG_LOGO_LOGIN_BASE64 } from '@/lib/logo'
 import PasswordInput from '@/components/PasswordInput'
@@ -20,11 +20,69 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
+  const [googleLoading, setGoogleLoading] = useState(false)
 
-  // Jika user tiba di halaman login tapi masih punya session aktif
-  // (artinya menekan back button dari dalam app), auto-logout
+  // Jika user tiba di halaman login tapi masih punya session aktif (artinya menekan back
+  // button dari dalam app), auto-logout -- KECUALI kalau kedatangannya karena baru saja
+  // selesai proses "Masuk dengan Google" (marker ?google=1 dari handleGoogleLogin di bawah),
+  // yang punya sesi aktif SECARA SENGAJA dan harus ditangani beda sama sekali.
   useEffect(() => {
-    const checkAndLogout = async () => {
+    const checkSessionOnArrival = async () => {
+      const params = new URLSearchParams(window.location.search)
+      const isGoogleReturn = params.get('google') === '1'
+      const oauthError = params.get('error')
+      const oauthErrorDesc = params.get('error_description')
+
+      if (isGoogleReturn || oauthError) {
+        // Bersihkan marker dari URL SEGERA -- HANYA key yg kita kenal sendiri, bukan
+        // pathname polos (jaga-jaga kalau ada query param lain yg belum sempat diproses).
+        params.delete('google')
+        params.delete('error')
+        params.delete('error_description')
+        const qs = params.toString()
+        window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : ''))
+
+        if (oauthError) {
+          setError('Gagal masuk lewat Google (' + (oauthErrorDesc || oauthError) + '). Silakan coba lagi atau masuk dengan nama pengguna & password.')
+          return
+        }
+
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.user) {
+          setError('Gagal masuk lewat Google. Silakan coba lagi.')
+          return
+        }
+
+        // Guard krusial: signInWithOAuth Supabase akan membuat akun BARU otomatis kalau
+        // email Google ini belum pernah terhubung ke akun manapun -- GENSITI TIDAK
+        // mengizinkan self-signup, semua akun wajib dibuat admin lewat /api/users. Kalau
+        // tidak ada profil users yg cocok, ATAU akunnya nonaktif (konsisten dgn syarat
+        // is_active=true di /api/resolve-login utk login nama+password), tolak & paksa
+        // logout SEKARANG -- pesan generik sengaja (sama filosofi anti-enumerasi seperti
+        // resolve-login), tidak membedakan "belum pernah link" vs "nonaktif".
+        const profile = await getUserProfile(session.user.id)
+        if (!profile || profile.is_active !== true) {
+          await supabase.auth.signOut()
+          setError('Akun ini tidak dapat masuk lewat Google. Masuk dengan nama pengguna & password, atau hubungkan akun Google Anda dulu lewat halaman Profil.')
+          return
+        }
+
+        // Profil valid & aktif -- lanjutkan persis seperti login nama+password berhasil
+        // (klaim sesi tunggal, non-fatal kalau gagal, lihat komentar sama di handleLogin).
+        try {
+          const claimRes = await authFetch('/api/session/claim', { method: 'POST' })
+          const claimJson = await claimRes.json()
+          if (claimJson.sessionToken) {
+            localStorage.setItem('gensiti_session_token', claimJson.sessionToken)
+          }
+        } catch {
+          // non-fatal
+        }
+        window.location.href = '/dashboard'
+        return
+      }
+
+      // --- Perilaku lama, TIDAK diubah ---
       // Prioritaskan pesan "sesi digantikan" (single-session login) kalau ada -- ditandai
       // oleh lib/user-context.tsx SAAT mendeteksi token lokal tidak cocok lagi dgn token di
       // database (artinya akun ini baru saja login di browser/perangkat lain). Konsumsi flag
@@ -42,8 +100,25 @@ export default function LoginPage() {
         setInfo('Anda telah keluar dari aplikasi.')
       }
     }
-    checkAndLogout()
+    checkSessionOnArrival()
   }, [])
+
+  const handleGoogleLogin = async () => {
+    setGoogleLoading(true)
+    setError('')
+    setInfo('')
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin + '/login?google=1' },
+    })
+    if (error) {
+      setError(error.message)
+      setGoogleLoading(false)
+    }
+    // Kalau sukses, browser langsung redirect ke Google -- setGoogleLoading(false) tidak
+    // akan sempat kepanggil krn halaman sudah navigasi keluar (sama pola dgn
+    // handleLinkGoogle di app/(dashboard)/profil/page.tsx).
+  }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -201,6 +276,35 @@ export default function LoginPage() {
               )}
             </button>
           </form>
+
+          <div className="flex items-center gap-3 my-5">
+            <div className="flex-1 h-px bg-slate-200" />
+            <span className="text-xs text-slate-400">atau</span>
+            <div className="flex-1 h-px bg-slate-200" />
+          </div>
+
+          <button
+            type="button"
+            onClick={handleGoogleLogin}
+            disabled={googleLoading}
+            className="w-full py-3 px-4 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-60 text-slate-700 font-semibold rounded-xl transition-colors flex items-center justify-center gap-2.5"
+          >
+            {googleLoading ? (
+              <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M23.52 12.27c0-.85-.08-1.66-.22-2.45H12v4.64h6.48a5.54 5.54 0 0 1-2.4 3.63v3h3.88c2.27-2.09 3.57-5.17 3.57-8.82Z" />
+                <path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.95-2.91l-3.88-3a7.14 7.14 0 0 1-10.6-3.76H1.5v3.09A12 12 0 0 0 12 24Z" />
+                <path fill="#FBBC05" d="M5.47 14.33a7.2 7.2 0 0 1 0-4.66V6.58H1.5a12 12 0 0 0 0 10.84l3.97-3.09Z" />
+                <path fill="#EA4335" d="M12 4.75c1.76 0 3.35.6 4.6 1.8l3.45-3.45C17.95 1.19 15.24 0 12 0A12 12 0 0 0 1.5 6.58l3.97 3.09A7.15 7.15 0 0 1 12 4.75Z" />
+              </svg>
+            )}
+            {googleLoading ? 'Mengarahkan...' : 'Masuk dengan Google'}
+          </button>
+
+          <p className="text-center text-slate-400 text-xs mt-4">
+            Hanya untuk akun yang sudah menghubungkan Google lewat halaman Profil.
+          </p>
         </div>
 
         <p className="text-center text-blue-300 text-xs mt-6">
