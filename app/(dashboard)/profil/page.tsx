@@ -7,6 +7,8 @@ import { authFetch } from '@/lib/auth'
 import { Absensi, EmailPreferensi } from '@/lib/types'
 import { getPushPermission, getExistingPushSubscription, subscribeToPush, unsubscribeFromPush } from '@/lib/push'
 import PasswordInput from '@/components/PasswordInput'
+import Modal from '@/components/Modal'
+import type { UserIdentity } from '@supabase/supabase-js'
 
 interface GenerusRecord {
   id: string
@@ -57,6 +59,16 @@ export default function ProfilPage() {
   const [pushLoading, setPushLoading] = useState(false)
   const [pushMsg, setPushMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
 
+  // Status akun Google yang terhubung lewat Supabase Auth Identity Linking -- terpisah
+  // total dari alur login nama+password (resolve-login/session-claim) yang sudah ada.
+  // null = belum dihubungkan (belum dicek ATAU memang belum ada), bukan dua state berbeda
+  // krn UI-nya sama-sama menampilkan tombol "Hubungkan" untuk keduanya.
+  const [googleIdentity, setGoogleIdentity] = useState<UserIdentity | null>(null)
+  const [googleLoading, setGoogleLoading] = useState(false)
+  const [googleMsg, setGoogleMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+  const [unlinkConfirm, setUnlinkConfirm] = useState(false)
+  const [unlinking, setUnlinking] = useState(false)
+
   const loadGenerus = async (userId: string) => {
     const res = await authFetch(`/api/generus?userId=${userId}`)
     const json = await res.json()
@@ -97,6 +109,14 @@ export default function ProfilPage() {
     // saat user pertama kali menyimpan preferensi (lihat saveNotifPref).
   }, [])
 
+  // Dipanggil utk semua role TERMASUK Super Admin (beda dari loadGenerus/loadRiwayatPresensi/
+  // loadNotifPref di atas yang murni konten organisasi) -- hubungkan akun Google itu urusan
+  // personal tiap pengguna, bukan soal jenjang organisasi, sama seperti tab Password.
+  const loadGoogleIdentity = useCallback(async () => {
+    const { data } = await supabase.auth.getUserIdentities()
+    setGoogleIdentity(data?.identities.find(i => i.provider === 'google') || null)
+  }, [])
+
   const loadRiwayatPresensi = useCallback(async (userId: string) => {
     setLoadingRiwayat(true)
     const { data: generus } = await supabase.from('generus').select('id').eq('user_id', userId).maybeSingle()
@@ -128,7 +148,37 @@ export default function ProfilPage() {
       // lihat komentar di const tabs), jadi tidak perlu di-load untuknya sama sekali.
       loadNotifPref(user.id)
     }
+    loadGoogleIdentity()
   }, [user])
+
+  // Baca hasil redirect setelah proses linkIdentity('google') selesai (sukses/gagal/dibatalkan)
+  // -- Supabase mengarahkan balik ke redirectTo yg kita tentukan (lihat handleLinkGoogle),
+  // dgn query string TAMBAHAN 'linked=google' (kita yg pasang) atau 'error'/'error_description'
+  // (Supabase yg pasang, mis. user membatalkan consent Google). HANYA hapus key yg kita kenal
+  // sendiri dari URL (bukan pathname polos) -- kalau masih ada 'code' PKCE yg belum sempat
+  // diproses detectSessionInUrl bawaan supabase-js, itu TIDAK boleh ikut kehapus di sini.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const linked = params.get('linked')
+    const err = params.get('error')
+    const errDesc = params.get('error_description')
+    if (!linked && !err) return
+
+    if (err) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setGoogleMsg({ type: 'err', text: errDesc || 'Gagal menghubungkan akun Google.' })
+    } else if (linked === 'google') {
+      setGoogleMsg({ type: 'ok', text: 'Akun Google berhasil dihubungkan!' })
+      loadGoogleIdentity()
+    }
+
+    params.delete('linked')
+    params.delete('error')
+    params.delete('error_description')
+    const qs = params.toString()
+    window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : ''))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Cek status izin & subscription push HP/desktop saat halaman dibuka -- supaya toggle
   // di tab Notifikasi langsung mencerminkan kondisi device ini (bukan device lain milik
@@ -185,6 +235,42 @@ export default function ProfilPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  // Beroperasi di atas SESI YANG SUDAH LOGIN (user sudah masuk lewat nama+password) --
+  // sama sekali tidak menyentuh /api/resolve-login atau /api/session/claim, jadi tidak
+  // mengganggu alur login existing. Kalau sukses, browser langsung redirect ke Google
+  // (setGoogleLoading(false) di baris try tidak akan sempat kepanggil krn halaman sudah
+  // navigasi keluar) -- hanya perlu di-reset kalau linkIdentity gagal SEBELUM redirect
+  // (mis. provider belum di-enable di Supabase Dashboard).
+  const handleLinkGoogle = async () => {
+    setGoogleLoading(true)
+    setGoogleMsg(null)
+    const { error } = await supabase.auth.linkIdentity({
+      provider: 'google',
+      options: { redirectTo: window.location.origin + '/profil?linked=google' },
+    })
+    if (error) {
+      setGoogleMsg({ type: 'err', text: error.message })
+      setGoogleLoading(false)
+    }
+  }
+
+  // Supabase mensyaratkan user punya >=2 identity utk bisa unlink (ditolak server kalau
+  // cuma 1) -- jadi ini aman dipanggil kapan saja, identity email (login nama+password)
+  // dijamin tetap ada sebagai fallback, user tidak akan pernah terkunci dari akunnya.
+  const handleUnlinkGoogle = async () => {
+    if (!googleIdentity) return
+    setUnlinking(true)
+    const { error } = await supabase.auth.unlinkIdentity(googleIdentity)
+    if (error) {
+      setGoogleMsg({ type: 'err', text: error.message })
+    } else {
+      setGoogleIdentity(null)
+      setGoogleMsg({ type: 'ok', text: 'Akun Google berhasil diputuskan. Anda tetap bisa masuk pakai nama pengguna + password.' })
+    }
+    setUnlinking(false)
+    setUnlinkConfirm(false)
   }
 
   const saveDataDiri = async () => {
@@ -543,6 +629,47 @@ export default function ProfilPage() {
                 className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition flex items-center justify-center gap-2">
                 {saving ? 'Menyimpan...' : 'Simpan Perubahan'}
               </button>
+
+              {/* Hubungkan Akun Google -- tampil utk semua role termasuk Super Admin,
+                  karena ini keputusan personal (spt tab Password), bukan soal jenjang
+                  organisasi. */}
+              <div className="border-t border-slate-100 pt-4">
+                <p className="text-xs font-medium text-slate-500 mb-2">Metode Login Tambahan</p>
+                <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 space-y-2">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="min-w-0 flex items-center gap-3">
+                      <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M23.52 12.27c0-.85-.08-1.66-.22-2.45H12v4.64h6.48a5.54 5.54 0 0 1-2.4 3.63v3h3.88c2.27-2.09 3.57-5.17 3.57-8.82Z" />
+                        <path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.95-2.91l-3.88-3a7.14 7.14 0 0 1-10.6-3.76H1.5v3.09A12 12 0 0 0 12 24Z" />
+                        <path fill="#FBBC05" d="M5.47 14.33a7.2 7.2 0 0 1 0-4.66V6.58H1.5a12 12 0 0 0 0 10.84l3.97-3.09Z" />
+                        <path fill="#EA4335" d="M12 4.75c1.76 0 3.35.6 4.6 1.8l3.45-3.45C17.95 1.19 15.24 0 12 0A12 12 0 0 0 1.5 6.58l3.97 3.09A7.15 7.15 0 0 1 12 4.75Z" />
+                      </svg>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-700">Akun Google</p>
+                        <p className="text-xs text-slate-400 mt-0.5 truncate">
+                          {googleIdentity
+                            ? `Terhubung -- ${googleIdentity.identity_data?.email || 'akun Google Anda'}`
+                            : 'Hubungkan supaya bisa masuk pakai akun Google, selain nama pengguna + password.'}
+                        </p>
+                      </div>
+                    </div>
+                    {googleIdentity ? (
+                      <button type="button" onClick={() => setUnlinkConfirm(true)}
+                        className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium text-red-500 hover:bg-red-50 transition">
+                        Putuskan
+                      </button>
+                    ) : (
+                      <button type="button" onClick={handleLinkGoogle} disabled={googleLoading}
+                        className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-300 transition">
+                        {googleLoading ? 'Mengarahkan...' : 'Hubungkan'}
+                      </button>
+                    )}
+                  </div>
+                  {googleMsg && (
+                    <p className={`text-xs ${googleMsg.type === 'ok' ? 'text-emerald-600' : 'text-red-500'}`}>{googleMsg.text}</p>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
@@ -762,6 +889,21 @@ export default function ProfilPage() {
           )}
         </div>
       </div>
+
+      <Modal open={unlinkConfirm} onClose={() => setUnlinkConfirm(false)} title="Putuskan Akun Google?" size="sm">
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            Yakin ingin memutuskan akun Google <strong>{googleIdentity?.identity_data?.email || ''}</strong>? Anda tetap bisa masuk pakai nama pengguna + password seperti biasa.
+          </p>
+          <div className="flex gap-3 pt-2 border-t border-slate-100">
+            <button onClick={() => setUnlinkConfirm(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">Batal</button>
+            <button onClick={handleUnlinkGoogle} disabled={unlinking}
+              className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:bg-red-300 transition flex items-center justify-center gap-2">
+              {unlinking ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'Ya, Putuskan'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
