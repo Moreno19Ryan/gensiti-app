@@ -344,7 +344,17 @@ export async function PATCH(req: NextRequest) {
       .eq('id', id)
       .single()
     const targetRole = targetUserRole?.roles as { tingkatan?: string } | { tingkatan?: string }[] | null
-    const isTargetSuperAdmin = (Array.isArray(targetRole) ? targetRole[0]?.tingkatan : targetRole?.tingkatan) === 'super_admin'
+    const targetTingkatan = Array.isArray(targetRole) ? targetRole[0]?.tingkatan : targetRole?.tingkatan
+    const isTargetSuperAdmin = targetTingkatan === 'super_admin'
+    // PPG berada di ATAS jenjang Daerah (pengawas, bukan bawahan) -- lihat isPPG di lib/roles.ts.
+    // canActOnScope() meloloskan caller tingkatan 'daerah' tanpa syarat tambahan untuk SEMUA
+    // target (termasuk PPG), yang secara organisasi terbalik: Ketua/Sekretaris Daerah bisa
+    // menonaktifkan/mengarsipkan/menurunkan role akun pengawasnya sendiri. Aksi administratif
+    // berdampak (nonaktifkan/arsipkan/pulihkan/ubah role) pada akun PPG sekarang dibatasi
+    // Super Admin saja -- biodata/kontak (nama_lengkap, no_hp, password) TETAP boleh diedit
+    // Daerah lewat menu Data Pembina (itulah tujuan menu itu ada), hanya field administratif
+    // berdampak yang dikunci di sini.
+    const isTargetPPG = targetTingkatan === 'ppg'
 
     const isSelf = id === caller.id
     const currentDesaId = targetUserRole?.desa_id ?? null
@@ -397,6 +407,13 @@ export async function PATCH(req: NextRequest) {
     const hasAdminFields = role_id !== undefined || is_active !== undefined || archive !== undefined || restore !== undefined
     if (hasAdminFields && !canManageMembers(caller)) {
       return NextResponse.json({ error: 'Anda tidak berwenang mengubah role atau status akun.' }, { status: 403 })
+    }
+
+    // Lihat catatan isTargetPPG di atas -- field administratif berdampak pada akun PPG
+    // (nonaktifkan/arsipkan/pulihkan/ubah role) hanya boleh dilakukan Super Admin, siapapun
+    // lain yang lolos canManageMembers() (termasuk Ketua/Sekretaris Daerah) tetap ditolak.
+    if (hasAdminFields && isTargetPPG && caller.tingkatan !== 'super_admin') {
+      return NextResponse.json({ error: 'Status/role akun PPG hanya dapat diubah oleh Super Admin.' }, { status: 403 })
     }
 
     // Super Admin adalah akun tunggal mutlak — role_id siapapun tidak boleh diarahkan

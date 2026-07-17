@@ -10,6 +10,7 @@ import { useFeatureAccess } from '@/lib/feature-toggles'
 import { formatAge } from '@/lib/date'
 import Modal from '@/components/Modal'
 import PasswordInput from '@/components/PasswordInput'
+import { exportToPDF, exportToExcel } from '@/lib/export'
 
 interface Member {
   id: string
@@ -27,11 +28,7 @@ interface Member {
   desa: { id: string; nama_desa: string } | null
   kelompok: { id: string; nama_kelompok: string } | null
   // PENTING: generus.user_id punya UNIQUE constraint (relasi 1-ke-1 dgn users), jadi
-  // PostgREST mengembalikan embed ini sbg OBJEK TUNGGAL, bukan array -- beda dari relasi
-  // 1-ke-banyak biasa. Sebelumnya interface ini salah ditulis sbg array (`{...}[] | null`)
-  // dan diakses dgn `.generus?.[0]` di 8 tempat, yang SELALU mengembalikan undefined
-  // (mengakses index [0] pada objek, bukan array) -- inilah sebab No. Generus & field
-  // Generus lain selalu tampil kosong di menu Pengguna meski datanya lengkap di database.
+  // PostgREST mengembalikan embed ini sbg OBJEK TUNGGAL, bukan array.
   generus: {
     id: string
     nomor_generus: string
@@ -61,11 +58,23 @@ interface RoleOpt { id: string; nama_role: string; tingkatan: string }
 interface DesaOpt { id: string; nama_desa: string }
 interface KelompokOpt { id: string; nama_kelompok: string; desa_id: string }
 
-// Field biodata (alamat, tinggi/berat badan, kelas ngaji, nama ortu/wali, anak ke-,
-// jumlah saudara) SENGAJA TIDAK ADA di sini lagi -- modal ini murni akun, biodata
-// dikelola di menu "Data Generus" terpisah. tempat_lahir/tanggal_lahir/jenis_kelamin
-// tetap ada karena masih wajib diisi saat membuat pengguna BARU (dipakai server men-
-// generate login_username & password awal), lihat generusFieldsCreateOnly di doActualSave.
+// Menu "Pengguna" (akun) dan "Data Generus" (biodata) DIGABUNG jadi satu halaman dgn 2 tab
+// di modal Edit -- "Akun" & "Biodata". Alasan: audiens kedua menu ini sudah identik persis
+// (roles + hideForGenerus sama, lihat app/(dashboard)/layout.tsx), dan query di bawah sudah
+// menarik data biodata lengkap dalam satu request yang sama sejak awal, jadi menggabungkan
+// UI-nya menyederhanakan navigasi tanpa mengubah model data. DUA endpoint tulis TETAP terpisah
+// (/api/users utk akun, /api/generus utk biodata) -- pemisahan itu sengaja dipertahankan utk
+// menghindari race condition penimpaan data basi (lihat catatan di doActualSave). Toggle fitur
+// per-jenjang (Pengaturan Fitur) juga TETAP 2 key terpisah ('generus' & 'data-generus'), sekarang
+// menggerbangi tab Biodata + tombol export, bukan lagi route terpisah -- lihat useBiodataAccess.
+//
+// PPG SENGAJA TIDAK dapat tab Biodata di sini -- PPG bukan Generus (tidak ada kelas ngaji/data
+// ortu/anak asuh), biodatanya tetap dikelola terpisah lewat menu "Data Pembina". Field
+// administratif (Status Akun/Status Pengguna) pada akun PPG juga dikunci utk Super Admin saja
+// (lihat isPPGAdminLocked) -- PPG berada DI ATAS jenjang Daerah (pengawas, bukan bawahan), jadi
+// Ketua/Sekretaris Daerah tidak boleh menonaktifkan/mengarsipkan/menurunkan role akun PPG,
+// konsisten dgn proteksi yang sama persis sudah ditegakkan di app/api/users/route.ts &
+// app/api/generus/route.ts (server adalah enforcement sesungguhnya, ini cuma cerminan UI).
 const emptyForm = {
   email: '',
   password: '',
@@ -79,6 +88,16 @@ const emptyForm = {
   tempat_lahir: '',
   tanggal_lahir: '',
   jenis_kelamin: '',
+  alamat: '',
+  tinggi_badan: '',
+  berat_badan: '',
+  kelas_ngaji: '',
+  nama_ayah: '',
+  nama_ibu: '',
+  nama_wali: '',
+  no_hp_orangtua_wali: '',
+  anak_ke: '',
+  jumlah_saudara: '',
   status_anggota: 'aktif',
   status_pengguna: 'lajang',
   pindah_jenis: 'bekasi_timur',
@@ -86,8 +105,12 @@ const emptyForm = {
   pindah_kelompok_id: '',
 }
 
-// kelasNgajiLabel dipindah ke app/(dashboard)/data-generus/page.tsx -- satu-satunya
-// tempat field Kelas Ngaji masih ditampilkan/diedit sejak menu ini jadi murni akun.
+const kelasNgajiLabel: Record<string, string> = {
+  pra_remaja: 'Pra Remaja (SMP)',
+  remaja_muda: 'Remaja Muda (SMA)',
+  remaja_dewasa: 'Remaja Dewasa (Lulus SMA - Usia Mandiri)',
+}
+
 const statusPenggunaBadge: Record<string, string> = {
   lajang: 'bg-blue-100 text-blue-700',
   menikah: 'bg-emerald-100 text-emerald-700',
@@ -107,6 +130,7 @@ const tingkatanColor: Record<string, string> = {
   daerah: 'bg-purple-100 text-purple-700',
   desa: 'bg-blue-100 text-blue-700',
   kelompok: 'bg-green-100 text-green-700',
+  ppg: 'bg-indigo-100 text-indigo-700',
 }
 
 const toUpperWords = (str: string) => str.toUpperCase()
@@ -131,14 +155,31 @@ const confirmMessages: Record<ConfirmType, { title: string; step1: string; step2
   },
 }
 
+const exportColumns = [
+  { header: 'No. Generus', key: 'no', width: 14 },
+  { header: 'Nama Lengkap', key: 'nama', width: 26 },
+  { header: 'Nama Panggilan', key: 'panggilan', width: 18 },
+  { header: 'Jenis Kelamin', key: 'jk', width: 14 },
+  { header: 'Tempat, Tgl Lahir', key: 'ttl', width: 24 },
+  { header: 'Kelas Ngaji', key: 'kelas_ngaji', width: 24 },
+  { header: 'Alamat', key: 'alamat', width: 30 },
+  { header: 'Nama Ayah', key: 'nama_ayah', width: 22 },
+  { header: 'Nama Ibu', key: 'nama_ibu', width: 22 },
+  { header: 'No. HP Ortu/Wali', key: 'hp_ortu', width: 18 },
+  { header: 'Desa', key: 'desa', width: 18 },
+  { header: 'Kelompok', key: 'kelompok', width: 18 },
+]
+
 export default function PenggunaPage() {
   const { user } = useUser()
   const [data, setData] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filterRole, setFilterRole] = useState('')
+  const [filterStatus, setFilterStatus] = useState<'' | 'aktif' | 'nonaktif' | 'diarsipkan'>('')
   const [sortBy, setSortBy] = useState<'nama_asc' | 'nama_desc' | 'terbaru'>('nama_asc')
   const [modalOpen, setModalOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<'akun' | 'biodata'>('akun')
   const [detailModal, setDetailModal] = useState<Member | null>(null)
   const [editTarget, setEditTarget] = useState<Member | null>(null)
   const [form, setForm] = useState(emptyForm)
@@ -147,19 +188,20 @@ export default function PenggunaPage() {
   const [roleList, setRoleList] = useState<RoleOpt[]>([])
   const [desaList, setDesaList] = useState<DesaOpt[]>([])
   const [kelompokList, setKelompokList] = useState<KelompokOpt[]>([])
-  // Confirmation dialog state
+  const [exporting, setExporting] = useState(false)
+  // Confirmation dialog state (arsip 2-langkah)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [confirmStep, setConfirmStep] = useState<1 | 2>(1)
   const [confirmType, setConfirmType] = useState<ConfirmType | null>(null)
-  // Ditampilkan sekali setelah berhasil membuat pengguna baru -- berisi Nama Pengguna
-  // (login_username) & password default (tanggal lahir) hasil generate server, supaya
-  // admin bisa langsung mencatat/menyampaikan ke pengguna baru. Tidak disimpan di
-  // state lain manapun setelah modal ini ditutup (sesuai sifat password sekali-lihat).
+  // Konfirmasi Pulihkan akun -- Modal custom menggantikan window.confirm() bawaan browser
+  // supaya konsisten secara visual dgn pola konfirmasi lain di halaman ini.
+  const [restoreTarget, setRestoreTarget] = useState<Member | null>(null)
+  // Notice satu-tombol umum -- menggantikan window.alert() bawaan browser (dipakai utk pesan
+  // blokir Super Admin/PPG & error non-fatal dari aksi cepat di tabel).
+  const [notice, setNotice] = useState<string | null>(null)
+  // Ditampilkan sekali setelah berhasil membuat pengguna baru
   const [newCredentials, setNewCredentials] = useState<{ nama: string; username: string; password: string; biodataWarning?: string } | null>(null)
-  // Diisi kalau /api/generus PATCH mengembalikan newLoginUsername (nama_panggilan berubah,
-  // login_username ikut disinkronkan otomatis -- lihat komentar di app/api/generus/route.ts).
-  // User yang mengedit WAJIB diberi tahu, kalau tidak mereka akan bingung kenapa nama login
-  // lama tiba-tiba tidak bisa dipakai lagi.
+  // Diisi kalau /api/generus PATCH mengembalikan newLoginUsername
   const [usernameChangedNotice, setUsernameChangedNotice] = useState<{ nama: string; username: string } | null>(null)
 
   const loadData = useCallback(async () => {
@@ -181,24 +223,18 @@ export default function PenggunaPage() {
       else if (user?.desa_id) query = query.eq('desa_id', user.desa_id)
     }
 
-    // CATATAN: filter super_admin SENGAJA TIDAK dilakukan di query PostgREST
-    // (`.not('roles.tingkatan', 'eq', 'super_admin')`) -- filter negasi pada embedded
-    // resource/relasi nested seperti ini terbukti (ditemukan saat uji production)
-    // mengecualikan SEMUA baris, bukan cuma yang match, karena PostgREST menerapkannya
-    // sebagai INNER JOIN + NOT filter yang gagal untuk baris dengan relasi null/tidak match
-    // secara konsisten. Filter Super Admin dilakukan MURNI di client (di bawah), yang mana
-    // sudah cukup karena hasil query tetap dibatasi scope (kelompok_id/desa_id) di atas.
+    // CATATAN: filter super_admin SENGAJA TIDAK dilakukan di query PostgREST (filter negasi
+    // pada embedded resource/relasi nested terbukti mengecualikan SEMUA baris di production).
+    // Dilakukan murni di client, yang cukup krn hasil query tetap dibatasi scope di atas.
     const { data: rows, error: err } = await query
     if (err) console.error('Pengguna load error:', err)
-    const filtered = (rows as unknown as Member[])?.filter(
+    const filteredRows = (rows as unknown as Member[])?.filter(
       m => m.roles?.tingkatan !== 'super_admin'
     ) || []
-    setData(filtered)
+    setData(filteredRows)
     setLoading(false)
   }, [user])
 
-  // Data-fetching on mount/dependency-change (bukan derived state) -- lihat catatan serupa
-  // di dashboard/page.tsx. Disable per-baris supaya perilaku persis sama.
   useEffect(() => {
     if (!user) return
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -217,6 +253,7 @@ export default function PenggunaPage() {
   const openAdd = () => {
     setEditTarget(null)
     setError('')
+    setActiveTab('akun')
     setForm({ ...emptyForm, desa_id: user?.desa_id || '', kelompok_id: user?.kelompok_id || '' })
     setModalOpen(true)
   }
@@ -224,6 +261,7 @@ export default function PenggunaPage() {
   const openEdit = (m: Member) => {
     setEditTarget(m)
     setError('')
+    setActiveTab('akun')
     const a = m.generus
     setForm({
       email: m.email,
@@ -238,6 +276,16 @@ export default function PenggunaPage() {
       tempat_lahir: a?.tempat_lahir || '',
       tanggal_lahir: a?.tanggal_lahir || '',
       jenis_kelamin: a?.jenis_kelamin || '',
+      alamat: a?.alamat || '',
+      tinggi_badan: a?.tinggi_badan?.toString() || '',
+      berat_badan: a?.berat_badan?.toString() || '',
+      kelas_ngaji: a?.kelas_ngaji || '',
+      nama_ayah: a?.nama_ayah || '',
+      nama_ibu: a?.nama_ibu || '',
+      nama_wali: a?.nama_wali || '',
+      no_hp_orangtua_wali: a?.no_hp_orangtua_wali || '',
+      anak_ke: a?.anak_ke?.toString() || '',
+      jumlah_saudara: a?.jumlah_saudara?.toString() || '',
       status_anggota: a?.status || 'aktif',
       status_pengguna: a?.status_pengguna || 'lajang',
       pindah_jenis: a?.pindah_ke_daerah_lain ? 'daerah_lain' : 'bekasi_timur',
@@ -250,29 +298,42 @@ export default function PenggunaPage() {
   const doActualSave = async () => {
     setSaving(true)
     try {
-      // PPG dikecualikan dari arsip otomatis saat status_pengguna = 'menikah' -- role PPG
-      // (Penggerak Pembina Generus) mayoritas sudah menikah, itu bukan indikasi ybs berhenti
-      // aktif/butuh diarsipkan seperti pada Generus biasa. Meninggal Dunia & Pindah Sambung ke
-      // Daerah Lain TETAP mengarsipkan meski PPG, karena dua kondisi itu memang berarti ybs
-      // sudah tidak bisa/tidak lagi menjalankan tugasnya di Bekasi Timur.
       const isTargetPPG = editTarget?.roles?.tingkatan === 'ppg'
-      const needsArchive = !!editTarget && (
+      // Field administratif (Status Akun/Status Pengguna/pindah sambung) pada akun PPG hanya
+      // boleh disentuh Super Admin -- cerminan client dari proteksi server di
+      // app/api/users/route.ts & app/api/generus/route.ts (lihat catatan isTargetPPG di sana).
+      // UI-nya sendiri sudah menyembunyikan kontrol ini utk kasus terkunci (lihat render di
+      // bawah), guard di sini murni jaring pengaman kedua.
+      const isPPGAdminLocked = isTargetPPG && !isSuperAdmin
+
+      // PPG dikecualikan dari arsip otomatis saat status_pengguna = 'menikah' -- mayoritas PPG
+      // sudah menikah, itu bukan indikasi berhenti aktif. Meninggal Dunia & Pindah Sambung ke
+      // Daerah Lain TETAP mengarsipkan meski PPG (kalau dilakukan Super Admin).
+      const needsArchive = !!editTarget && !isPPGAdminLocked && (
         (form.status_pengguna === 'menikah' && !isTargetPPG) ||
         form.status_pengguna === 'meninggal_dunia' ||
         (form.status_pengguna === 'pindah_sambung' && form.pindah_jenis === 'daerah_lain')
       )
 
-      // PENTING -- pemisahan ini mencegah bug sinkronisasi: modal ini murni akun, field
-      // biodata (alamat, ortu, tinggi/berat, kelas ngaji, dll) TIDAK PUNYA input UI di sini
-      // lagi (sudah dipindah ke menu "Data Generus" terpisah). Sebelumnya field-field itu
-      // masih ikut dikirim di setiap PATCH (dibawa balik dari state form hasil pre-fill
-      // openEdit()) -- meskipun tidak sampai menimpa dengan string kosong (karena di-pre-fill
-      // dulu), ini tetap berisiko race condition: kalau Sekretaris sedang edit biodata di
-      // Data Generus BERSAMAAN Ketua edit akun di Pengguna, siapa yang menyimpan belakangan
-      // akan menimpa balik dengan data biodata versi STALE yang dibawa form Pengguna diam-diam.
-      // Sekarang: field biodata HANYA dikirim saat CREATE user baru (wajib utk generate
-      // login_username & password awal dari tanggal_lahir), TIDAK PERNAH dikirim lagi saat
-      // EDIT/PATCH akun yang sudah ada -- mengedit biodata sesudahnya harus lewat Data Generus.
+      // Target desa/kelompok dihitung SEKALI di sini, dipakai baik oleh payload akun
+      // (/api/users, scope login) MAUPUN payload biodata (/api/generus, "tempat sambung
+      // generus saat ini") -- FIX sinkronisasi: sebelumnya generus.desa_id/kelompok_id hanya
+      // ikut diperbarui saat alur status "Pindah Sambung" resmi, sehingga mengedit field
+      // "Alamat Sambung" secara normal (tanpa mengubah status_pengguna) meninggalkan
+      // generus.desa_id/kelompok_id basi dibanding users.desa_id/kelompok_id yang sudah
+      // berpindah. Sekarang keduanya SELALU dikirim bersamaan dengan nilai target yang identik.
+      const targetDesaId = (form.status_pengguna === 'pindah_sambung' && form.pindah_jenis === 'bekasi_timur' && form.pindah_desa_id)
+        ? form.pindah_desa_id
+        : form.desa_id
+      const targetKelompokId = (form.status_pengguna === 'pindah_sambung' && form.pindah_jenis === 'bekasi_timur' && form.pindah_kelompok_id)
+        ? form.pindah_kelompok_id
+        : form.kelompok_id
+
+      // Field pembuatan awal -- wajib dikirim saat CREATE (dipakai generate login_username &
+      // password), TIDAK PERNAH lagi dikirim lewat blok ini saat EDIT (biodata existing user
+      // dikirim lewat biodataFields di bawah, yang sudah dipre-fill dari data terbaru saat
+      // openEdit() -- bukan dibawa mentah dari state form lama, jadi tidak berisiko menimpa
+      // dengan data basi).
       const generusFieldsCreateOnly = !editTarget ? {
         nama_panggilan: form.nama_panggilan || null,
         tempat_lahir: form.tempat_lahir || null,
@@ -280,14 +341,10 @@ export default function PenggunaPage() {
         jenis_kelamin: form.jenis_kelamin,
       } : {}
 
-      // Field yang MEMANG murni urusan akun/status keanggotaan (bukan biodata pribadi) --
-      // status_anggota (Status Akun Generus: aktif/non-aktif), status_pengguna & pindah_sambung
-      // sengaja tetap di sini (lihat keputusan: menu Pengguna tetap pegang status yang
-      // langsung berdampak ke akses/arsip akun) -- SEMUA field ini masih punya input UI aktif
-      // di modal ini (lihat dropdown "Status Akun" & "Status Pengguna" di bawah), jadi wajib
-      // tetap ikut dikirim, beda dari field biodata murni (alamat, ortu, dll) yang inputnya
-      // sudah tidak ada sama sekali di modal ini.
-      const akunStatusFields = editTarget ? {
+      // Status keanggotaan (Status Akun, Status Pengguna, pindah sambung) -- murni urusan
+      // akun/status, tetap di tab "Akun". Dikosongkan total kalau isPPGAdminLocked (server
+      // akan menolaknya juga, tapi client tidak perlu mengirim field yang toh pasti ditolak).
+      const akunStatusFields = (editTarget && !isPPGAdminLocked) ? {
         status_anggota: form.status_anggota,
         status_pengguna: form.status_pengguna,
         pindah_desa_id: (form.status_pengguna === 'pindah_sambung' && form.pindah_jenis === 'bekasi_timur') ? form.pindah_desa_id || null : null,
@@ -295,14 +352,36 @@ export default function PenggunaPage() {
         pindah_ke_daerah_lain: form.status_pengguna === 'pindah_sambung' && form.pindah_jenis === 'daerah_lain',
       } : {}
 
-      const generusFields = { ...generusFieldsCreateOnly, ...akunStatusFields }
+      // Biodata lengkap (tab "Biodata") -- hanya utk Generus/pengurus, TIDAK utk PPG (biodata
+      // PPG dikelola terpisah lewat menu Data Pembina, lihat catatan di atas modul ini).
+      const biodataFields = (editTarget && !isTargetPPG) ? {
+        nama_panggilan: form.nama_panggilan || null,
+        tempat_lahir: form.tempat_lahir || null,
+        tanggal_lahir: form.tanggal_lahir || null,
+        jenis_kelamin: form.jenis_kelamin || null,
+        alamat: form.alamat || null,
+        tinggi_badan: form.tinggi_badan ? parseFloat(form.tinggi_badan) : null,
+        berat_badan: form.berat_badan ? parseFloat(form.berat_badan) : null,
+        kelas_ngaji: form.kelas_ngaji || null,
+        nama_ayah: form.nama_ayah || null,
+        nama_ibu: form.nama_ibu || null,
+        nama_wali: form.nama_wali || null,
+        no_hp_orangtua_wali: form.no_hp_orangtua_wali || null,
+        anak_ke: form.anak_ke ? parseInt(form.anak_ke) : null,
+        jumlah_saudara: form.jumlah_saudara ? parseInt(form.jumlah_saudara) : null,
+      } : {}
+
+      // Sinkronisasi tempat sambung generus (lihat catatan targetDesaId/targetKelompokId di
+      // atas) -- dikirim setiap kali edit user existing, terlepas dari tab mana yang sedang
+      // dibuka, supaya generus.desa_id/kelompok_id tidak pernah tertinggal dari users.desa_id/
+      // kelompok_id.
+      const desaSyncFields = editTarget ? { desa_id: targetDesaId || null, kelompok_id: targetKelompokId || null } : {}
+
+      const generusFields = { ...generusFieldsCreateOnly, ...akunStatusFields, ...biodataFields, ...desaSyncFields }
 
       let userId = editTarget?.id
 
       if (!editTarget) {
-        // password TIDAK dikirim -- server men-generate otomatis dari tanggal_lahir
-        // (lihat app/api/users/route.ts, passwordFromTanggalLahir). login_username juga
-        // di-generate server-side dari nama_panggilan (fallback nama_lengkap).
         const res = await authFetch('/api/users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -317,16 +396,8 @@ export default function PenggunaPage() {
           }),
         })
         const json = await res.json()
-        // Status 207 = akun BERHASIL dibuat tapi biodata Generus gagal tersimpan (lihat
-        // app/api/users/route.ts POST) -- beda dari kegagalan total (mis. email sudah
-        // dipakai), di sini kredensial akun TETAP harus ditampilkan karena akunnya nyata
-        // dan bisa login. Peringatannya disimpan sbg biodataWarning (bukan setError yg
-        // hanya tampil DI DALAM modal ini, yang sudah tertutup begitu newCredentials diisi)
-        // supaya benar-benar terlihat admin di modal kredensial berikutnya.
         if (json.error && res.status !== 207) { setError(json.error); return }
         userId = json.userId
-        // Tampilkan kredensial default sekali ke admin -- tidak ada cara lain untuk
-        // melihat password ini lagi setelah modal ditutup (sesuai desain, bukan disimpan).
         setNewCredentials({
           nama: form.nama_lengkap,
           username: json.loginUsername,
@@ -335,14 +406,6 @@ export default function PenggunaPage() {
         })
       } else {
         const existingGenerus = editTarget.generus
-
-        // Pindah sambung Bekasi Timur: update desa/kelompok ke tujuan baru
-        const targetDesaId = (form.status_pengguna === 'pindah_sambung' && form.pindah_jenis === 'bekasi_timur' && form.pindah_desa_id)
-          ? form.pindah_desa_id
-          : form.desa_id
-        const targetKelompokId = (form.status_pengguna === 'pindah_sambung' && form.pindah_jenis === 'bekasi_timur' && form.pindah_kelompok_id)
-          ? form.pindah_kelompok_id
-          : form.kelompok_id
 
         // AKUN (email/no_hp/role/scope/status aktif/password) -- lewat /api/users.
         const body: Record<string, unknown> = {
@@ -373,9 +436,7 @@ export default function PenggunaPage() {
         const json = await res.json()
         if (json.error) { setError(json.error); return }
 
-        // BIODATA & status keanggotaan (status_anggota/status_pengguna/pindah sambung) --
-        // lewat /api/generus. Dipisah dari body akun di atas krn sekarang dua endpoint
-        // berbeda -- lihat app/api/generus/route.ts.
+        // BIODATA & status keanggotaan -- lewat /api/generus.
         if (Object.keys(generusFields).length > 0) {
           const resGenerus = await authFetch('/api/generus', {
             method: 'PATCH',
@@ -415,10 +476,6 @@ export default function PenggunaPage() {
 
   const handleSave = async () => {
     setError('')
-    // Modal ini sekarang murni akun -- biodata lengkap (alamat, ortu, tinggi/berat, kelas
-    // ngaji, dll) dikelola di menu "Data Generus" terpisah. Untuk pengguna BARU, nama
-    // lengkap/panggilan/tanggal lahir/jenis kelamin tetap wajib di sini karena dipakai
-    // server men-generate nama pengguna (login_username) & password awal akun.
     if (!form.role_id) { setError('Role wajib dipilih'); return }
     if (!form.email) { setError('Email wajib diisi (dipakai untuk notifikasi sistem)'); return }
     if (!form.desa_id) { setError('Alamat sambung: desa wajib dipilih'); return }
@@ -430,16 +487,16 @@ export default function PenggunaPage() {
       if (!form.jenis_kelamin) { setError('Jenis kelamin wajib diisi'); return }
     }
 
+    const isTargetPPGForSave = editTarget?.roles?.tingkatan === 'ppg'
+    const isPPGAdminLockedForSave = isTargetPPGForSave && !isSuperAdmin
+
     // Validasi pindah sambung Bekasi Timur
-    if (editTarget && form.status_pengguna === 'pindah_sambung' && form.pindah_jenis === 'bekasi_timur') {
+    if (editTarget && !isPPGAdminLockedForSave && form.status_pengguna === 'pindah_sambung' && form.pindah_jenis === 'bekasi_timur') {
       if (!form.pindah_desa_id) { setError('Pilih desa tujuan pindah sambung'); return }
       if (!form.pindah_kelompok_id) { setError('Pilih kelompok tujuan pindah sambung'); return }
     }
 
-    // Cek apakah perlu arsip → tampilkan konfirmasi. PPG dikecualikan dari arsip otomatis
-    // saat status_pengguna = 'menikah' -- lihat catatan lengkap di doActualSave.
-    const isTargetPPGForSave = editTarget?.roles?.tingkatan === 'ppg'
-    const needsArchive = !!editTarget && (
+    const needsArchive = !!editTarget && !isPPGAdminLockedForSave && (
       (form.status_pengguna === 'menikah' && !isTargetPPGForSave) ||
       form.status_pengguna === 'meninggal_dunia' ||
       (form.status_pengguna === 'pindah_sambung' && form.pindah_jenis === 'daerah_lain')
@@ -461,7 +518,11 @@ export default function PenggunaPage() {
 
   const toggleActive = async (m: Member) => {
     if (m.roles?.tingkatan === 'super_admin') {
-      alert('Akun Super Admin tidak dapat dinonaktifkan.')
+      setNotice('Akun Super Admin tidak dapat dinonaktifkan.')
+      return
+    }
+    if (m.roles?.tingkatan === 'ppg' && !isSuperAdmin) {
+      setNotice('Status akun PPG hanya dapat diubah oleh Super Admin.')
       return
     }
     await authFetch('/api/users', {
@@ -475,24 +536,19 @@ export default function PenggunaPage() {
     loadData()
   }
 
-  // Memulihkan akun yang sebelumnya diarsipkan (menikah/meninggal dunia/pindah sambung ke
-  // daerah lain) -- kebalikan dari alur arsip otomatis di doActualSave. Dua panggilan API
-  // terpisah (users lalu generus) mengikuti pemisahan tanggung jawab yang sama seperti alur
-  // simpan biasa: /api/users murni field akun (is_active/is_archived/alasan_arsip/tanggal_arsip),
-  // /api/generus murni biodata (status_pengguna & field pindah sambung). status_pengguna
-  // SELALU direset ke 'lajang' apapun alasan arsip sebelumnya -- setelah dipulihkan, pengurus
-  // yang memulihkan diasumsikan akan mengedit ulang biodata kalau status sebenarnya berbeda
-  // (mis. tetap menikah tapi akun perlu aktif lagi karena alasan lain), bukan tugas restore
-  // untuk menebak status mana yang "benar".
-  const restoreAccount = async (m: Member) => {
-    if (!confirm(`Pulihkan akun "${m.nama_lengkap}"? Akun akan diaktifkan kembali dengan status "Lajang".`)) return
+  // Memulihkan akun yang sebelumnya diarsipkan -- dipanggil setelah konfirmasi lewat Modal
+  // restoreTarget di bawah (menggantikan window.confirm() bawaan browser).
+  const confirmRestore = async () => {
+    const m = restoreTarget
+    if (!m) return
+    setRestoreTarget(null)
     const res = await authFetch('/api/users', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: m.id, nama_lengkap: m.nama_lengkap, restore: true }),
     })
     const json = await res.json()
-    if (json.error) { alert(json.error); return }
+    if (json.error) { setNotice(json.error); return }
 
     if (m.generus?.id) {
       const resGenerus = await authFetch('/api/generus', {
@@ -508,7 +564,7 @@ export default function PenggunaPage() {
         }),
       })
       const jsonGenerus = await resGenerus.json()
-      if (jsonGenerus.error) { alert(jsonGenerus.error); return }
+      if (jsonGenerus.error) { setNotice(jsonGenerus.error); return }
     }
 
     if (user) {
@@ -530,7 +586,11 @@ export default function PenggunaPage() {
         m.desa?.nama_desa?.toLowerCase().includes(q) ||
         m.kelompok?.nama_kelompok?.toLowerCase().includes(q)
       const matchRole = !filterRole || m.roles?.tingkatan === filterRole
-      return matchSearch && matchRole
+      const matchStatus = !filterStatus ||
+        (filterStatus === 'diarsipkan' && m.is_archived) ||
+        (filterStatus === 'aktif' && !m.is_archived && m.is_active) ||
+        (filterStatus === 'nonaktif' && !m.is_archived && !m.is_active)
+      return matchSearch && matchRole && matchStatus
     })
     .sort((a, b) => {
       if (sortBy === 'nama_asc') return (a.nama_lengkap || '').localeCompare(b.nama_lengkap || '')
@@ -542,15 +602,9 @@ export default function PenggunaPage() {
   const isSuperAdmin = user?.role?.tingkatan === 'super_admin'
 
   // Hanya Ketua/Wakil Ketua/Sekretaris (semua scope) dan Super Admin yang bisa mengelola
-  // Generus -- lihat canManageMembers di lib/roles.ts untuk definisi lengkapnya (sumber
-  // kebenaran tunggal, jangan duplikasi logika "includes ketua/sekretaris" di sini).
-  // Role pengurus lain (Bendahara, Kemandirian, Keputrian, dll) dan Generus biasa hanya
-  // bisa melihat daftar.
+  // Generus -- lihat canManageMembers di lib/roles.ts.
   const canManageMembers = checkCanManageMembers(user)
 
-  // Cek apakah user bisa edit/tambah member tertentu (termasuk mengubah status
-  // aktif/nonaktif saat status berubah jadi menikah/meninggal dunia/pindah sambung) --
-  // gabungan hak akses role (canManageMembers) DAN scope (desa/kelompok yang sama).
   const canActOn = (m: Member): boolean => {
     if (!canManageMembers) return false
     if (isSuperAdmin || user?.role?.tingkatan === 'daerah') return true
@@ -559,16 +613,85 @@ export default function PenggunaPage() {
     return false
   }
 
-  // Tombol Tambah Pengguna: hanya Ketua/Wakil Ketua/Sekretaris/Super Admin
   const canManage = canManageMembers
-
-  // Fitur export PDF/Excel dipindah ke menu "Data Generus" -- di sana biodata
-  // lengkap (TTL, kelas ngaji, dll) tersedia dan bisa dijamin terisi benar, sedangkan
-  // menu ini sekarang murni akun.
 
   // Lapisan kedua setelah sidebar -- kalau Super Admin mematikan menu "Pengguna" utk jenjang
   // role user ini lewat Pengaturan Fitur, akses langsung via URL juga diblok di sini.
   const { enabled: featureEnabled, checking: featureChecking } = useFeatureAccess(user, 'generus')
+  // Toggle terpisah utk tab "Biodata" + tombol export -- dulu menggerbangi seluruh halaman
+  // "Data Generus", sekarang menggerbangi bagian biodata di dalam halaman gabungan ini saja,
+  // supaya Super Admin tetap bisa mematikan visibilitas biodata utk jenjang tertentu tanpa
+  // ikut mematikan menu akun.
+  const { enabled: biodataEnabled } = useFeatureAccess(user, 'data-generus')
+
+  const buildExportData = () => filtered
+    .filter(m => m.roles?.tingkatan !== 'ppg')
+    .map(m => {
+      const g = m.generus
+      const ttl = g?.tempat_lahir && g?.tanggal_lahir
+        ? `${g.tempat_lahir}, ${new Date(g.tanggal_lahir).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`
+        : (g?.tempat_lahir || '-')
+      return {
+        no: g?.nomor_generus || '-',
+        nama: m.nama_lengkap || '-',
+        panggilan: g?.nama_panggilan || '-',
+        jk: g?.jenis_kelamin?.toUpperCase() || '-',
+        ttl,
+        kelas_ngaji: g?.kelas_ngaji ? (kelasNgajiLabel[g.kelas_ngaji] || g.kelas_ngaji) : '-',
+        alamat: g?.alamat || '-',
+        nama_ayah: g?.nama_ayah || '-',
+        nama_ibu: g?.nama_ibu || '-',
+        hp_ortu: g?.no_hp_orangtua_wali || '-',
+        desa: m.desa?.nama_desa || '-',
+        kelompok: m.kelompok?.nama_kelompok || '-',
+      }
+    })
+
+  const exportSubtitle = () => {
+    const t = user?.role?.tingkatan
+    const scope = t === 'kelompok' ? user?.kelompok_id && data[0]?.kelompok?.nama_kelompok
+      : t === 'desa' ? user?.desa_id && data[0]?.desa?.nama_desa
+      : 'Se-Bekasi Timur'
+    const rows = buildExportData()
+    return `${scope || 'Se-Bekasi Timur'} -- ${rows.length} Generus`
+  }
+
+  const handleExportPDF = async () => {
+    const rows = buildExportData()
+    if (rows.length === 0) { setNotice('Tidak ada data untuk diexport.'); return }
+    setExporting(true)
+    try {
+      exportToPDF({
+        title: 'Data Generus (Biodata)',
+        subtitle: exportSubtitle(),
+        columns: exportColumns,
+        rows,
+        fileName: `Data-Generus-${new Date().toISOString().slice(0, 10)}`,
+      })
+      if (user) await logAudit(user, 'EXPORT', 'Data Generus', `PDF -- ${rows.length} generus`)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleExportExcel = async () => {
+    const rows = buildExportData()
+    if (rows.length === 0) { setNotice('Tidak ada data untuk diexport.'); return }
+    setExporting(true)
+    try {
+      await exportToExcel({
+        title: 'Data Generus (Biodata)',
+        subtitle: exportSubtitle(),
+        columns: exportColumns,
+        rows,
+        fileName: `Data-Generus-${new Date().toISOString().slice(0, 10)}`,
+      })
+      if (user) await logAudit(user, 'EXPORT', 'Data Generus', `Excel -- ${rows.length} generus`)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   if (!featureChecking && !featureEnabled) {
     return (
       <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
@@ -579,14 +702,34 @@ export default function PenggunaPage() {
     )
   }
 
+  const editIsPPG = editTarget?.roles?.tingkatan === 'ppg'
+  const editPPGAdminLocked = editIsPPG && !isSuperAdmin
+  const showBiodataTab = !!editTarget && !editIsPPG && biodataEnabled
+  const biodataLengkap = (m: Member) => {
+    const g = m.generus
+    return !!(g?.tempat_lahir && g?.tanggal_lahir && g?.jenis_kelamin && g?.alamat && g?.nama_ayah && g?.nama_ibu)
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="font-bold text-slate-800">Pengguna</h2>
-          <p className="text-slate-400 text-sm">{data.length} pengguna terdaftar</p>
+          <p className="text-slate-400 text-sm">{data.length} pengguna terdaftar -- akun & biodata dalam satu tempat</p>
         </div>
         <div className="flex items-center gap-2">
+          {canManage && biodataEnabled && (
+            <>
+              <button onClick={handleExportPDF} disabled={exporting}
+                className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
+                📄 PDF
+              </button>
+              <button onClick={handleExportExcel} disabled={exporting}
+                className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
+                📊 Excel
+              </button>
+            </>
+          )}
           {canManage && (
             <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
               + Tambah Pengguna
@@ -602,11 +745,18 @@ export default function PenggunaPage() {
           className="flex-1 min-w-[200px] px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm" />
         <select value={filterRole} onChange={e => setFilterRole(e.target.value)}
           className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
-          <option value="">Semua Role</option>
-
+          <option value="">Semua Jenjang</option>
           <option value="daerah">Daerah</option>
           <option value="desa">Desa</option>
           <option value="kelompok">Kelompok</option>
+          <option value="ppg">PPG</option>
+        </select>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as typeof filterStatus)}
+          className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
+          <option value="">Semua Status</option>
+          <option value="aktif">Aktif</option>
+          <option value="nonaktif">Non-aktif</option>
+          <option value="diarsipkan">Diarsipkan</option>
         </select>
         <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)}
           className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
@@ -644,9 +794,11 @@ export default function PenggunaPage() {
                 {filtered.map(m => {
                   const a = m.generus
                   const sp = a?.status_pengguna || 'lajang'
+                  const rowIsPPG = m.roles?.tingkatan === 'ppg'
+                  const ppgLocked = rowIsPPG && !isSuperAdmin
                   return (
-                    <tr key={m.id} className={`border-b border-slate-50 hover:bg-slate-50 transition ${canActOn(m) ? 'cursor-pointer' : ''}`}
-                      onClick={() => canActOn(m) && setDetailModal(m)}>
+                    <tr key={m.id} className="border-b border-slate-50 hover:bg-slate-50 transition cursor-pointer"
+                      onClick={() => setDetailModal(m)}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm shrink-0">
@@ -678,26 +830,28 @@ export default function PenggunaPage() {
                           </span>
                         </div>
                       </td>
-                      {canActOn(m) && (
-                        <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                        {canActOn(m) ? (
                           <div className="flex gap-3">
                             <button onClick={() => openEdit(m)} className="text-blue-600 hover:text-blue-800 font-medium text-xs">Edit</button>
-                            {isSuperAdmin && m.roles?.tingkatan !== 'super_admin' && !m.is_archived && (
+                            {!m.is_archived && (!ppgLocked) && (
                               <button onClick={() => toggleActive(m)} className={`text-xs font-medium ${m.is_active ? 'text-slate-400 hover:text-slate-600' : 'text-green-600 hover:text-green-800'}`}>
                                 {m.is_active ? 'Nonaktifkan' : 'Aktifkan'}
                               </button>
                             )}
-                            {m.roles?.tingkatan === 'super_admin' && (
-                              <span className="text-xs text-slate-300 italic">Permanen</span>
+                            {ppgLocked && !m.is_archived && (
+                              <span className="text-xs text-slate-300 italic" title="Status akun PPG hanya dapat diubah Super Admin">Terkunci</span>
                             )}
-                            {m.is_archived && (
-                              <button onClick={() => restoreAccount(m)} className="text-orange-500 hover:text-orange-700 font-medium text-xs">
+                            {m.is_archived && !ppgLocked && (
+                              <button onClick={() => setRestoreTarget(m)} className="text-orange-500 hover:text-orange-700 font-medium text-xs">
                                 Pulihkan
                               </button>
                             )}
                           </div>
-                        </td>
-                      )}
+                        ) : (
+                          <span className="text-xs text-slate-300 italic">Hanya lihat</span>
+                        )}
+                      </td>
                     </tr>
                   )
                 })}
@@ -707,7 +861,8 @@ export default function PenggunaPage() {
         </div>
       )}
 
-      {/* Detail Modal */}
+      {/* Detail Modal -- terbuka utk siapapun yang bisa melihat halaman ini (view-only bagi
+          yang bukan Ketua/Wakil/Sekretaris/Super Admin, sebelumnya hanya bisa dibuka manager). */}
       {detailModal && (
         <Modal open={!!detailModal} onClose={() => setDetailModal(null)} title="Detail Pengguna" size="lg">
           <div className="space-y-4">
@@ -730,6 +885,11 @@ export default function PenggunaPage() {
                       </span>
                     )
                   })()}
+                  {detailModal.roles?.tingkatan !== 'ppg' && (
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${biodataLengkap(detailModal) ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                      Biodata {biodataLengkap(detailModal) ? 'Lengkap' : 'Belum Lengkap'}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -743,14 +903,14 @@ export default function PenggunaPage() {
             <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-100">
               {[
                 { label: 'No. Generus', val: detailModal.generus?.nomor_generus },
+                { label: 'No. HP', val: detailModal.no_hp },
                 { label: 'Bergabung Sejak', val: new Date(detailModal.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) },
                 { label: 'Status Akun', val: detailModal.is_archived ? 'Diarsipkan' : detailModal.is_active ? 'Aktif' : 'Non-aktif' },
                 { label: 'Status Generus', val: detailModal.generus?.status?.toUpperCase() },
                 { label: 'Jenis Kelamin', val: detailModal.generus?.jenis_kelamin?.toUpperCase() },
-                // Usia dihitung otomatis dari generus.tanggal_lahir, bukan kolom database --
-                // lihat lib/date.ts. formatAge mengembalikan '-' kalau tanggal_lahir kosong,
-                // jadi baris ini otomatis tersembunyi (val falsy) utk data lama yg belum lengkap.
                 { label: 'Usia', val: detailModal.generus?.tanggal_lahir ? formatAge(detailModal.generus.tanggal_lahir) : null },
+                { label: 'Kelas Ngaji', val: detailModal.generus?.kelas_ngaji ? (kelasNgajiLabel[detailModal.generus.kelas_ngaji] || detailModal.generus.kelas_ngaji) : null },
+                { label: 'Alamat', val: detailModal.generus?.alamat },
               ].map(({ label, val }) => val ? (
                 <div key={label}>
                   <p className="text-xs text-slate-400">{label}</p>
@@ -780,239 +940,376 @@ export default function PenggunaPage() {
         <div className="space-y-4">
           {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
 
-          {/* Modal ini murni untuk data AKUN (login & hak akses). Biodata lengkap Generus
-              (tempat/tanggal lahir selain saat pembuatan awal, alamat, data orang tua, tinggi/
-              berat badan, kelas ngaji, dll) dikelola terpisah di menu "Data Generus" -- supaya
-              yang mengurus akun tidak otomatis melihat data pribadi yang sensitif kalau tidak
-              berwenang, sekaligus menegaskan pemisahan konsep akun vs biodata Generus. */}
-          <div className="space-y-4">
-            {!editTarget && (
-              <>
-                <div className="p-2 bg-blue-50 rounded-xl border border-blue-100">
-                  <span className="text-xs text-blue-500">
-                    Nama & tanggal lahir dipakai sistem untuk membuat Nama Pengguna dan password awal akun. Biodata lengkap (alamat, data orang tua, dll) dilengkapi nanti di menu &quot;Data Generus&quot;.
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Nama Lengkap * (huruf kapital)</label>
-                    <input value={form.nama_lengkap}
-                      onChange={e => setUpper('nama_lengkap', e.target.value)}
-                      placeholder="NAMA LENGKAP"
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Nama Panggilan * (huruf kapital)</label>
-                    <input value={form.nama_panggilan}
-                      onChange={e => setUpper('nama_panggilan', e.target.value)}
-                      placeholder="NAMA PANGGILAN"
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1">
-                      Tanggal Lahir *
-                      {/* Usia dihitung otomatis dari tanggal_lahir yang diinput -- TIDAK
-                          disimpan sbg kolom database, jadi selalu akurat & bertambah sendiri
-                          tiap tahun. Lihat lib/date.ts (calculateAge/formatAge). */}
-                      {form.tanggal_lahir && (
-                        <span className="px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-semibold normal-case">
-                          {formatAge(form.tanggal_lahir)}
-                        </span>
-                      )}
-                    </label>
-                    <input type="date" value={form.tanggal_lahir} onChange={e => set('tanggal_lahir', e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                    <p className="text-[11px] text-blue-500 mt-1">Dipakai juga sebagai password awal akun (format DDMMYYYY)</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Jenis Kelamin *</label>
-                    <select value={form.jenis_kelamin} onChange={e => set('jenis_kelamin', e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                      <option value="">-- Pilih --</option>
-                      {/* value HARUS lowercase -- kolom generus.jenis_kelamin dibatasi CHECK
-                          constraint anggota_jenis_kelamin_check (hanya 'laki-laki'/'perempuan').
-                          Value uppercase sebelumnya membuat insert generus GAGAL DIAM-DIAM saat
-                          membuat pengguna baru dengan jenis kelamin terisi. */}
-                      <option value="laki-laki">LAKI-LAKI</option>
-                      <option value="perempuan">PEREMPUAN</option>
-                    </select>
-                  </div>
-                </div>
-              </>
-            )}
-
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Role / Hak Akses *</label>
-              <select value={form.role_id} onChange={e => set('role_id', e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">-- Pilih Role --</option>
-                {/* Hanya tampilkan role yang boleh DITETAPKAN oleh user ini, sesuai hierarki jenjang
-                    (lihat getAllowedTargetTingkatan di lib/roles.ts) -- mis. Sekretaris Kelompok
-                    hanya melihat role Generus, tidak melihat "Ketua Daerah" atau PPG sama sekali.
-                    Server (app/api/users/route.ts) tetap menegakkan ulang aturan yang sama persis;
-                    filter di sini murni supaya dropdown tidak menampilkan pilihan yang toh ditolak. */}
-                {roleList
-                  .filter(r => getAllowedTargetTingkatan(user).includes(r.tingkatan))
-                  .map(r => <option key={r.id} value={r.id}>{r.nama_role}</option>)}
-              </select>
+          {showBiodataTab && (
+            <div className="flex gap-1 p-1 bg-slate-100 rounded-xl w-fit">
+              <button type="button" onClick={() => setActiveTab('akun')}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${activeTab === 'akun' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                Akun
+              </button>
+              <button type="button" onClick={() => setActiveTab('biodata')}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${activeTab === 'biodata' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                Biodata
+                {editTarget && (
+                  <span className={`w-1.5 h-1.5 rounded-full ${biodataLengkap(editTarget) ? 'bg-green-500' : 'bg-amber-500'}`} />
+                )}
+              </button>
             </div>
+          )}
 
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Email * (untuk notifikasi sistem)</label>
-              <input type="email" value={form.email} onChange={e => set('email', e.target.value)}
-                placeholder="email@domain.com"
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              <p className="text-[11px] text-slate-400 mt-1">
-                Login sehari-hari memakai Nama Pengguna, bukan email ini — email hanya dipakai sistem untuk mengirim notifikasi (pengumuman, kegiatan, dsb).
-              </p>
-            </div>
+          {(!showBiodataTab || activeTab === 'akun') && (
+            <div className="space-y-4">
+              {!editTarget && (
+                <>
+                  <div className="p-2 bg-blue-50 rounded-xl border border-blue-100">
+                    <span className="text-xs text-blue-500">
+                      Nama & tanggal lahir dipakai sistem untuk membuat Nama Pengguna dan password awal akun. Biodata lengkap (alamat, data orang tua, dll) dilengkapi nanti di tab &quot;Biodata&quot; setelah akun dibuat.
+                    </span>
+                  </div>
 
-            <div>
-              <p className="text-xs font-semibold text-slate-500 mb-2">Alamat Sambung</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Nama Lengkap * (huruf kapital)</label>
+                      <input value={form.nama_lengkap}
+                        onChange={e => setUpper('nama_lengkap', e.target.value)}
+                        placeholder="NAMA LENGKAP"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Nama Panggilan * (huruf kapital)</label>
+                      <input value={form.nama_panggilan}
+                        onChange={e => setUpper('nama_panggilan', e.target.value)}
+                        placeholder="NAMA PANGGILAN"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1">
+                        Tanggal Lahir *
+                        {form.tanggal_lahir && (
+                          <span className="px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-semibold normal-case">
+                            {formatAge(form.tanggal_lahir)}
+                          </span>
+                        )}
+                      </label>
+                      <input type="date" value={form.tanggal_lahir} onChange={e => set('tanggal_lahir', e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      <p className="text-[11px] text-blue-500 mt-1">Dipakai juga sebagai password awal akun (format DDMMYYYY)</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Jenis Kelamin *</label>
+                      <select value={form.jenis_kelamin} onChange={e => set('jenis_kelamin', e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">-- Pilih --</option>
+                        <option value="laki-laki">LAKI-LAKI</option>
+                        <option value="perempuan">PEREMPUAN</option>
+                      </select>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Role / Hak Akses *</label>
+                <select value={form.role_id} onChange={e => set('role_id', e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="">-- Pilih Role --</option>
+                  {roleList
+                    .filter(r => getAllowedTargetTingkatan(user).includes(r.tingkatan))
+                    .map(r => <option key={r.id} value={r.id}>{r.nama_role}</option>)}
+                </select>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Desa *</label>
-                  <select value={form.desa_id} onChange={e => { set('desa_id', e.target.value); set('kelompok_id', '') }}
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Email * (untuk notifikasi sistem)</label>
+                  <input type="email" value={form.email} onChange={e => set('email', e.target.value)}
+                    placeholder="email@domain.com"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">No. HP</label>
+                  <input value={form.no_hp} onChange={e => set('no_hp', e.target.value)} placeholder="08xx-xxxx-xxxx"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-400 -mt-2">
+                Login sehari-hari memakai Nama Pengguna, bukan email ini — email hanya dipakai sistem untuk mengirim notifikasi (pengumuman, kegiatan, dsb).
+              </p>
+
+              <div>
+                <p className="text-xs font-semibold text-slate-500 mb-2">Alamat Sambung</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Desa *</label>
+                    <select value={form.desa_id} onChange={e => { set('desa_id', e.target.value); set('kelompok_id', '') }}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <option value="">-- Pilih Desa --</option>
+                      {desaList.map(d => <option key={d.id} value={d.id}>{d.nama_desa}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Kelompok *</label>
+                    <select value={form.kelompok_id} onChange={e => set('kelompok_id', e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <option value="">-- Pilih Kelompok --</option>
+                      {kelompokList.filter(k => !form.desa_id || k.desa_id === form.desa_id).map(k => (
+                        <option key={k.id} value={k.id}>{k.nama_kelompok}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {editTarget && (
+                <div className="pt-2 border-t border-slate-100 space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Ganti Password (opsional)</label>
+                    <PasswordInput value={form.password} onChange={v => set('password', v)}
+                      placeholder="Kosongkan jika tidak diubah" autoComplete="new-password"
+                      className="w-full pl-3 pr-10 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={form.is_active} onChange={e => set('is_active', e.target.checked)}
+                      className="w-4 h-4 rounded accent-blue-600" />
+                    <span className="text-sm text-slate-600">Akun aktif (bisa login)</span>
+                  </label>
+                  {editTarget.created_at && (
+                    <p className="text-xs text-slate-400">
+                      Bergabung sejak {new Date(editTarget.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {editTarget && editPPGAdminLocked && (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-600 text-xs leading-relaxed">
+                  Status keanggotaan (Status Akun/Status Pengguna) akun PPG hanya dapat diubah oleh Super Admin -- PPG adalah pengawas di atas jenjang Daerah, bukan bawahan yang dikelola Ketua/Sekretaris Daerah. Biodata PPG dikelola lewat menu &quot;Data Pembina&quot;.
+                </div>
+              )}
+
+              {editTarget && !editPPGAdminLocked && (
+                <div className="pt-2 border-t border-slate-100 space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Status Akun</label>
+                      <select value={form.status_anggota} onChange={e => set('status_anggota', e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="aktif">Aktif</option>
+                        <option value="non-aktif">Non-aktif</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Status Pengguna</label>
+                      <select value={form.status_pengguna}
+                        onChange={e => setForm(f => ({
+                          ...f,
+                          status_pengguna: e.target.value,
+                          pindah_jenis: 'bekasi_timur',
+                          pindah_desa_id: '',
+                          pindah_kelompok_id: '',
+                        }))}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="lajang">Lajang</option>
+                        <option value="menikah">Menikah</option>
+                        <option value="pindah_sambung">Pindah Sambung</option>
+                        <option value="meninggal_dunia">Meninggal Dunia</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {form.status_pengguna === 'pindah_sambung' && (
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3">
+                      <p className="text-xs font-semibold text-amber-800">Tujuan Pindah Sambung</p>
+                      <div className="flex gap-6">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="radio" name="pindah_jenis" value="bekasi_timur"
+                            checked={form.pindah_jenis === 'bekasi_timur'}
+                            onChange={() => setForm(f => ({ ...f, pindah_jenis: 'bekasi_timur', pindah_desa_id: '', pindah_kelompok_id: '' }))}
+                            className="accent-amber-600" />
+                          <span className="text-sm text-amber-800 font-medium">Masih di Bekasi Timur</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="radio" name="pindah_jenis" value="daerah_lain"
+                            checked={form.pindah_jenis === 'daerah_lain'}
+                            onChange={() => setForm(f => ({ ...f, pindah_jenis: 'daerah_lain', pindah_desa_id: '', pindah_kelompok_id: '' }))}
+                            className="accent-amber-600" />
+                          <span className="text-sm text-amber-800 font-medium">Ke Daerah Lain</span>
+                        </label>
+                      </div>
+
+                      {form.pindah_jenis === 'bekasi_timur' && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-amber-800 mb-1">Desa Tujuan *</label>
+                            <select value={form.pindah_desa_id}
+                              onChange={e => setForm(f => ({ ...f, pindah_desa_id: e.target.value, pindah_kelompok_id: '' }))}
+                              className="w-full px-3 py-2 rounded-xl border border-amber-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+                              <option value="">-- Pilih Desa --</option>
+                              {desaList.map(d => <option key={d.id} value={d.id}>{d.nama_desa}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-amber-800 mb-1">Kelompok Tujuan *</label>
+                            <select value={form.pindah_kelompok_id}
+                              onChange={e => set('pindah_kelompok_id', e.target.value)}
+                              className="w-full px-3 py-2 rounded-xl border border-amber-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+                              <option value="">-- Pilih Kelompok --</option>
+                              {kelompokList.filter(k => !form.pindah_desa_id || k.desa_id === form.pindah_desa_id).map(k => (
+                                <option key={k.id} value={k.id}>{k.nama_kelompok}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      )}
+
+                      {form.pindah_jenis === 'daerah_lain' && (
+                        <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs leading-relaxed">
+                          Akun akan diarsipkan. Untuk mengaktifkan kembali, pengguna harus mengajukan permohonan kepada Ketua Muda-Mudi Daerah terlebih dahulu.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {form.status_pengguna === 'menikah' && editTarget?.roles?.tingkatan === 'ppg' && (
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 text-xs leading-relaxed">
+                      Akun PPG tidak diarsipkan otomatis saat berstatus &quot;Menikah&quot; -- status hanya dicatat sebagai info biodata, akun tetap aktif seperti biasa.
+                    </div>
+                  )}
+
+                  {((form.status_pengguna === 'menikah' && editTarget?.roles?.tingkatan !== 'ppg') || form.status_pengguna === 'meninggal_dunia') && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs leading-relaxed">
+                      Menyimpan dengan status ini akan mengarsipkan dan menonaktifkan akun pengguna. Diperlukan 2x konfirmasi sebelum perubahan diterapkan.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {showBiodataTab && activeTab === 'biodata' && editTarget && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-xs text-slate-400">No. Generus</span>
+                <span className="font-mono text-sm font-semibold text-slate-600">{editTarget.generus?.nomor_generus || '—'}</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Tempat Lahir (huruf kapital)</label>
+                  <input value={form.tempat_lahir}
+                    onChange={e => setUpper('tempat_lahir', e.target.value)}
+                    placeholder="KOTA/KABUPATEN"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
+                </div>
+                <div>
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1">
+                    Tanggal Lahir
+                    {form.tanggal_lahir && (
+                      <span className="px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-semibold normal-case">
+                        {formatAge(form.tanggal_lahir)}
+                      </span>
+                    )}
+                  </label>
+                  <input type="date" value={form.tanggal_lahir} onChange={e => set('tanggal_lahir', e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Jenis Kelamin</label>
+                  <select value={form.jenis_kelamin} onChange={e => set('jenis_kelamin', e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="">-- Pilih Desa --</option>
-                    {desaList.map(d => <option key={d.id} value={d.id}>{d.nama_desa}</option>)}
+                    <option value="">-- Pilih --</option>
+                    <option value="laki-laki">LAKI-LAKI</option>
+                    <option value="perempuan">PEREMPUAN</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Kelompok *</label>
-                  <select value={form.kelompok_id} onChange={e => set('kelompok_id', e.target.value)}
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Kelas Ngaji</label>
+                  <select value={form.kelas_ngaji} onChange={e => set('kelas_ngaji', e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="">-- Pilih Kelompok --</option>
-                    {kelompokList.filter(k => !form.desa_id || k.desa_id === form.desa_id).map(k => (
-                      <option key={k.id} value={k.id}>{k.nama_kelompok}</option>
-                    ))}
+                    <option value="">-- Pilih --</option>
+                    <option value="pra_remaja">{kelasNgajiLabel.pra_remaja}</option>
+                    <option value="remaja_muda">{kelasNgajiLabel.remaja_muda}</option>
+                    <option value="remaja_dewasa">{kelasNgajiLabel.remaja_dewasa}</option>
                   </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Tinggi Badan (cm)</label>
+                  <input type="number" min="0" step="0.1" value={form.tinggi_badan} onChange={e => set('tinggi_badan', e.target.value)}
+                    placeholder="opsional"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Berat Badan (kg)</label>
+                  <input type="number" min="0" step="0.1" value={form.berat_badan} onChange={e => set('berat_badan', e.target.value)}
+                    placeholder="opsional"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Alamat (huruf kapital)</label>
+                <textarea value={form.alamat} onChange={e => setUpper('alamat', e.target.value)}
+                  rows={2} placeholder="ALAMAT LENGKAP"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none uppercase" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Anak Ke-</label>
+                  <input type="number" min="1" max="20" value={form.anak_ke} onChange={e => set('anak_ke', e.target.value)}
+                    placeholder="1"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Dari ... Bersaudara</label>
+                  <input type="number" min="1" max="20" value={form.jumlah_saudara} onChange={e => set('jumlah_saudara', e.target.value)}
+                    placeholder="3"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-xs font-semibold text-slate-500 mb-3">Data Orang Tua / Wali</p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Nama Ayah Kandung (huruf kapital)</label>
+                    <input value={form.nama_ayah}
+                      onChange={e => setUpper('nama_ayah', e.target.value)}
+                      placeholder="NAMA AYAH"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Nama Ibu Kandung (huruf kapital)</label>
+                    <input value={form.nama_ibu}
+                      onChange={e => setUpper('nama_ibu', e.target.value)}
+                      placeholder="NAMA IBU"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Nama Wali (jika ada, huruf kapital)</label>
+                    <input value={form.nama_wali}
+                      onChange={e => setUpper('nama_wali', e.target.value)}
+                      placeholder="NAMA WALI (opsional)"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">No. HP Orang Tua</label>
+                    <input value={form.no_hp_orangtua_wali} onChange={e => set('no_hp_orangtua_wali', e.target.value)}
+                      placeholder="08xx-xxxx-xxxx"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
                 </div>
               </div>
             </div>
-
-            {editTarget && (
-              <div className="pt-2 border-t border-slate-100 space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Ganti Password (opsional)</label>
-                  <PasswordInput value={form.password} onChange={v => set('password', v)}
-                    placeholder="Kosongkan jika tidak diubah" autoComplete="new-password"
-                    className="w-full pl-3 pr-10 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={form.is_active} onChange={e => set('is_active', e.target.checked)}
-                    className="w-4 h-4 rounded accent-blue-600" />
-                  <span className="text-sm text-slate-600">Akun aktif (bisa login)</span>
-                </label>
-                {editTarget.created_at && (
-                  <p className="text-xs text-slate-400">
-                    Bergabung sejak {new Date(editTarget.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {editTarget && (
-              <div className="pt-2 border-t border-slate-100 space-y-3">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Status Akun</label>
-                    <select value={form.status_anggota} onChange={e => set('status_anggota', e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                      <option value="aktif">Aktif</option>
-                      <option value="non-aktif">Non-aktif</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Status Pengguna</label>
-                    <select value={form.status_pengguna}
-                      onChange={e => setForm(f => ({
-                        ...f,
-                        status_pengguna: e.target.value,
-                        pindah_jenis: 'bekasi_timur',
-                        pindah_desa_id: '',
-                        pindah_kelompok_id: '',
-                      }))}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                      <option value="lajang">Lajang</option>
-                      <option value="menikah">Menikah</option>
-                      <option value="pindah_sambung">Pindah Sambung</option>
-                      <option value="meninggal_dunia">Meninggal Dunia</option>
-                    </select>
-                  </div>
-                </div>
-
-                {form.status_pengguna === 'pindah_sambung' && (
-                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3">
-                    <p className="text-xs font-semibold text-amber-800">Tujuan Pindah Sambung</p>
-                    <div className="flex gap-6">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="radio" name="pindah_jenis" value="bekasi_timur"
-                          checked={form.pindah_jenis === 'bekasi_timur'}
-                          onChange={() => setForm(f => ({ ...f, pindah_jenis: 'bekasi_timur', pindah_desa_id: '', pindah_kelompok_id: '' }))}
-                          className="accent-amber-600" />
-                        <span className="text-sm text-amber-800 font-medium">Masih di Bekasi Timur</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="radio" name="pindah_jenis" value="daerah_lain"
-                          checked={form.pindah_jenis === 'daerah_lain'}
-                          onChange={() => setForm(f => ({ ...f, pindah_jenis: 'daerah_lain', pindah_desa_id: '', pindah_kelompok_id: '' }))}
-                          className="accent-amber-600" />
-                        <span className="text-sm text-amber-800 font-medium">Ke Daerah Lain</span>
-                      </label>
-                    </div>
-
-                    {form.pindah_jenis === 'bekasi_timur' && (
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-amber-800 mb-1">Desa Tujuan *</label>
-                          <select value={form.pindah_desa_id}
-                            onChange={e => setForm(f => ({ ...f, pindah_desa_id: e.target.value, pindah_kelompok_id: '' }))}
-                            className="w-full px-3 py-2 rounded-xl border border-amber-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
-                            <option value="">-- Pilih Desa --</option>
-                            {desaList.map(d => <option key={d.id} value={d.id}>{d.nama_desa}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-amber-800 mb-1">Kelompok Tujuan *</label>
-                          <select value={form.pindah_kelompok_id}
-                            onChange={e => set('pindah_kelompok_id', e.target.value)}
-                            className="w-full px-3 py-2 rounded-xl border border-amber-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
-                            <option value="">-- Pilih Kelompok --</option>
-                            {kelompokList.filter(k => !form.pindah_desa_id || k.desa_id === form.pindah_desa_id).map(k => (
-                              <option key={k.id} value={k.id}>{k.nama_kelompok}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    )}
-
-                    {form.pindah_jenis === 'daerah_lain' && (
-                      <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs leading-relaxed">
-                        Akun akan diarsipkan. Untuk mengaktifkan kembali, pengguna harus mengajukan permohonan kepada Ketua Muda-Mudi Daerah terlebih dahulu.
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {form.status_pengguna === 'menikah' && editTarget?.roles?.tingkatan === 'ppg' && (
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 text-xs leading-relaxed">
-                    Akun PPG tidak diarsipkan otomatis saat berstatus &quot;Menikah&quot; -- status hanya dicatat sebagai info biodata, akun tetap aktif seperti biasa.
-                  </div>
-                )}
-
-                {((form.status_pengguna === 'menikah' && editTarget?.roles?.tingkatan !== 'ppg') || form.status_pengguna === 'meninggal_dunia') && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs leading-relaxed">
-                    Menyimpan dengan status ini akan mengarsipkan dan menonaktifkan akun pengguna. Diperlukan 2x konfirmasi sebelum perubahan diterapkan.
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          )}
 
           <div className="flex gap-3 pt-2 border-t border-slate-100">
             <button onClick={() => setModalOpen(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
@@ -1026,7 +1323,7 @@ export default function PenggunaPage() {
         </div>
       </Modal>
 
-      {/* Confirmation Modal */}
+      {/* Confirmation Modal (arsip 2-langkah) */}
       {confirmOpen && confirmType && (
         <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title={confirmMessages[confirmType].title} size="sm">
           <div className="space-y-4">
@@ -1056,9 +1353,41 @@ export default function PenggunaPage() {
         </Modal>
       )}
 
-      {/* Modal kredensial akun baru -- ditampilkan SEKALI setelah berhasil membuat pengguna,
-          tidak disimpan di manapun setelah ditutup. Admin wajib mencatat/menyampaikan info
-          ini secara manual ke pengguna baru (mis. lewat WhatsApp/lisan). */}
+      {/* Konfirmasi Pulihkan akun */}
+      {restoreTarget && (
+        <Modal open={!!restoreTarget} onClose={() => setRestoreTarget(null)} title="Pulihkan Akun" size="sm">
+          <div className="space-y-4">
+            <p className="text-slate-700 text-sm leading-relaxed">
+              Pulihkan akun <strong>{restoreTarget.nama_lengkap}</strong>? Akun akan diaktifkan kembali dengan status &quot;Lajang&quot;.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setRestoreTarget(null)}
+                className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
+                Batal
+              </button>
+              <button onClick={confirmRestore}
+                className="flex-1 py-2.5 bg-orange-500 text-white rounded-xl text-sm font-medium hover:bg-orange-600 transition">
+                Ya, Pulihkan
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Notice satu-tombol (pengganti window.alert()) */}
+      {notice && (
+        <Modal open={!!notice} onClose={() => setNotice(null)} title="Informasi" size="sm">
+          <div className="space-y-4">
+            <p className="text-slate-700 text-sm leading-relaxed">{notice}</p>
+            <button onClick={() => setNotice(null)}
+              className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition">
+              Mengerti
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal kredensial akun baru */}
       {newCredentials && (
         <Modal open={!!newCredentials} onClose={() => setNewCredentials(null)} title="Pengguna Berhasil Dibuat" size="sm">
           <div className="space-y-4">
@@ -1091,9 +1420,7 @@ export default function PenggunaPage() {
         </Modal>
       )}
 
-      {/* Modal pemberitahuan nama login berubah -- muncul setiap kali nama_panggilan diedit
-          dan login_username disinkronkan ulang otomatis (lihat app/api/generus/route.ts).
-          Password TIDAK berubah, hanya nama yang dipakai untuk login. */}
+      {/* Modal pemberitahuan nama login berubah */}
       {usernameChangedNotice && (
         <Modal open={!!usernameChangedNotice} onClose={() => setUsernameChangedNotice(null)} title="Nama Login Diperbarui" size="sm">
           <div className="space-y-4">

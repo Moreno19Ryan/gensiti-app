@@ -192,12 +192,15 @@ export async function PATCH(req: NextRequest) {
     if (!user_id) return NextResponse.json({ error: 'user_id wajib diisi' }, { status: 400 })
 
     const isSelf = user_id === caller.id
+    // Dipakai juga untuk guard isTargetPPG di bawah -- diisi hanya kalau !isSelf (self-edit
+    // tidak pernah butuh cek target PPG, lihat catatan di guard hasAdminFields).
+    let isTargetPPG = false
     // Otorisasi: harus salah satu dari — mengubah biodata diri sendiri, atau berwenang
     // mengelola Generus lain dalam scope-nya. Sama seperti users/route.ts PATCH.
     if (!isSelf) {
       const { data: targetUserRole } = await supabaseAdmin
         .from('users')
-        .select('desa_id, kelompok_id')
+        .select('desa_id, kelompok_id, roles:role_id(tingkatan)')
         .eq('id', user_id)
         .single()
       const targetDesaId = targetUserRole?.desa_id ?? null
@@ -205,6 +208,8 @@ export async function PATCH(req: NextRequest) {
       if (!canActOnScope(caller, targetDesaId, targetKelompokId)) {
         return NextResponse.json({ error: 'Anda tidak berwenang mengubah biodata pengguna ini.' }, { status: 403 })
       }
+      const targetRole = targetUserRole?.roles as { tingkatan?: string } | { tingkatan?: string }[] | null
+      isTargetPPG = (Array.isArray(targetRole) ? targetRole[0]?.tingkatan : targetRole?.tingkatan) === 'ppg'
     }
 
     // Field administratif (status_anggota, status_pengguna, pindah sambung) hanya boleh
@@ -214,6 +219,15 @@ export async function PATCH(req: NextRequest) {
       || pindah_desa_id !== undefined || pindah_kelompok_id !== undefined || pindah_ke_daerah_lain !== undefined
     if (hasAdminFields && !canManageMembers(caller)) {
       return NextResponse.json({ error: 'Anda tidak berwenang mengubah status keanggotaan.' }, { status: 403 })
+    }
+
+    // Sama seperti app/api/users/route.ts PATCH (lihat catatan isTargetPPG di sana) -- PPG
+    // berada DI ATAS jenjang Daerah, jadi status_pengguna/pindah sambung (yang bisa memicu
+    // arsip/nonaktif otomatis) pada akun PPG hanya boleh diubah Super Admin. Biodata biasa
+    // (nama, alamat, TTL, dst -- dikelola lewat menu Data Pembina) TIDAK termasuk hasAdminFields
+    // sehingga tetap bisa diedit Daerah seperti biasa, hanya field administratif ini yang dikunci.
+    if (hasAdminFields && isTargetPPG && caller.tingkatan !== 'super_admin') {
+      return NextResponse.json({ error: 'Status keanggotaan akun PPG hanya dapat diubah oleh Super Admin.' }, { status: 403 })
     }
 
     // SECURITY FIX -- desa_id/kelompok_id di sini adalah TEMPAT SAMBUNG Generus (beda dari

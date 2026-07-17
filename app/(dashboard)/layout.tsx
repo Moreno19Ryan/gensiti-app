@@ -38,11 +38,14 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: '🏠', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
   { href: '/ppg', label: 'Dashboard PPG', icon: '🛡️', roles: ['ppg'] },
+  // "Pengguna" -- akun & biodata Generus digabung jadi satu menu dengan tab "Akun"/"Biodata"
+  // di modal edit (lihat app/(dashboard)/generus/page.tsx). Dulu biodata (menu "Data Generus")
+  // dipisah rute sendiri supaya data sensitif tidak otomatis terlihat setiap kali mengelola
+  // akun -- sekarang cukup dipisah TAB, gate akses tetap sama (canManageMembers/
+  // canViewGenerusData), dan toggle fitur 'data-generus' tetap independen (lihat useFeatureAccess
+  // 'data-generus' di dalam halaman) supaya Super Admin masih bisa mematikan tab Biodata per
+  // jenjang tanpa mematikan menu Pengguna itu sendiri.
   { href: '/generus', label: 'Pengguna', icon: '👥', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, menuKey: 'generus' },
-  // Data Generus -- biodata pribadi/sensitif (tempat/tanggal lahir, alamat, data orang tua,
-  // dll), sengaja dipisah dari menu "Pengguna" (akun/login) supaya data sensitif tidak
-  // otomatis terlihat setiap kali mengelola akun. Visibilitas sama persis dengan Pengguna.
-  { href: '/data-generus', label: 'Data Generus', icon: '🗂️', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, menuKey: 'data-generus' },
   // Data Pembina -- biodata PPG (Penggerak Pembina Generus), dipisah dari Data Generus
   // karena PPG adalah pembina, bukan Generus (lihat catatan lengkap di
   // app/(dashboard)/data-pembina/page.tsx). Visibilitas sidebar sama dengan Data Generus,
