@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
-import { isPengurus, isBendahara, canManageKontenOrganisasi } from '@/lib/roles'
+import { isPengurus, isBendahara, canManageKontenOrganisasi, isTeamIT } from '@/lib/roles'
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -18,6 +18,9 @@ interface Stats {
 
 interface AdminAlert {
   resetPasswordPending: number
+}
+
+interface EmailHealthAlert {
   emailErrorRate: number
   emailFailedCount: number
   emailTotal: number
@@ -31,6 +34,16 @@ interface BendaharaAlert {
 interface KontenAlert {
   kegiatanMenunggu: number
   pengumumanMenunggu: number
+}
+
+interface PpgAlert {
+  kegiatanMenunggu: number
+  pengumumanMenunggu: number
+}
+
+interface StrukturCount {
+  desa: number
+  kelompok: number
 }
 
 interface KegiatanMendatang {
@@ -69,14 +82,39 @@ function get6BulanTerakhir(): { key: string; label: string }[] {
   return out
 }
 
+// Jam realtime diisolasi jadi component sendiri -- update tiap detik hanya me-re-render
+// dirinya sendiri, bukan seluruh dashboard (stat card + 3 chart Recharts yang berat).
+function LiveClock() {
+  const [now, setNow] = useState(new Date())
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const formatTime = (d: Date) =>
+    d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  const formatDate = (d: Date) =>
+    d.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+
+  return (
+    <div className="text-right shrink-0">
+      <div className="text-lg sm:text-2xl font-mono font-bold tabular-nums">{formatTime(now)}</div>
+      <div className="text-blue-200 text-xs sm:text-sm mt-0.5 hidden sm:block">{formatDate(now)}</div>
+    </div>
+  )
+}
+
 export default function DashboardPage() {
-  const { user, onlineCount } = useUser()
+  const { user, onlineCount, onlineCountScoped } = useUser()
   const [stats, setStats] = useState<Stats>({ generus: 0, kegiatan_aktif: 0, pemasukan: 0, pengeluaran: 0 })
   const [loading, setLoading] = useState(true)
-  const [now, setNow] = useState(new Date())
   const [adminAlert, setAdminAlert] = useState<AdminAlert | null>(null)
+  const [emailHealthAlert, setEmailHealthAlert] = useState<EmailHealthAlert | null>(null)
   const [bendaharaAlert, setBendaharaAlert] = useState<BendaharaAlert | null>(null)
   const [kontenAlert, setKontenAlert] = useState<KontenAlert | null>(null)
+  const [ppgAlert, setPpgAlert] = useState<PpgAlert | null>(null)
+  const [strukturCount, setStrukturCount] = useState<StrukturCount | null>(null)
   const [generusInsight, setGenerusInsight] = useState<GenerusInsight | null>(null)
   const [loadingInsight, setLoadingInsight] = useState(false)
 
@@ -85,11 +123,6 @@ export default function DashboardPage() {
   const [pertumbuhan, setPertumbuhan] = useState<PertumbuhanBulan[]>([])
   const [loadingChart, setLoadingChart] = useState(true)
 
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000)
-    return () => clearInterval(timer)
-  }, [])
-
   const loadStats = useCallback(async () => {
     if (!user) return
     setLoading(true)
@@ -97,7 +130,14 @@ export default function DashboardPage() {
       const isSuper = user?.role?.tingkatan === 'super_admin'
       const isDaerah = user?.role?.tingkatan === 'daerah'
       const isPPGUser = user?.role?.tingkatan === 'ppg'
-      const isGenerusBiasaUser = !isPengurus(user) && !isPPGUser
+      const isTeamITUser = isTeamIT(user)
+      // Hanya Ketua/Wakil Ketua/Sekretaris (canManageKontenOrganisasi) dan Bendahara yang
+      // benar-benar berkepentingan dgn data finansial organisasi -- role pengurus lain (mis.
+      // Penerobos, Team PDD, Team IT, Seksi Kegiatan Rutin) tidak mengelola maupun mengawasi
+      // keuangan secara langsung, jadi tidak perlu RPC get_ringkasan_keuangan sama sekali
+      // (sebelumnya ikut terpanggil percuma utk Super Admin & PPG juga -- hasilnya tidak
+      // pernah ditampilkan di statCard mana pun untuk kedua role itu).
+      const isPengurusOperasional = canManageKontenOrganisasi(user) || isBendahara(user)
 
       let kegiatanQuery = supabase.from('kegiatan').select('id', { count: 'exact', head: true }).in('status', ['upcoming', 'ongoing'])
       let scopeDesaId: string | null = null
@@ -117,7 +157,7 @@ export default function DashboardPage() {
       const [{ data: generusCount }, { count: kegiatanCount }, { data: ringkasanKeuangan }] = await Promise.all([
         supabase.rpc('get_jumlah_generus_aktif', { p_desa_id: scopeDesaId, p_kelompok_id: scopeKelompokId }),
         kegiatanQuery,
-        isGenerusBiasaUser
+        !isPengurusOperasional
           ? Promise.resolve({ data: null })
           : supabase.rpc('get_ringkasan_keuangan', { p_desa_id: scopeDesaId, p_kelompok_id: scopeKelompokId }),
       ])
@@ -133,24 +173,29 @@ export default function DashboardPage() {
       })
 
       if (isSuper) {
+        const { count: pendingCount } = await supabase.from('reset_password_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending')
+        setAdminAlert({ resetPasswordPending: pendingCount || 0 })
+      } else {
+        setAdminAlert(null)
+      }
+
+      // Error rate email relevan utk Super Admin MAUPUN Team IT (isTeamIT) -- lihat catatan
+      // isTeamIT di lib/roles.ts: RLS email_log sudah lama mengizinkan tingkatan 'daerah'
+      // (termasuk Team IT Daerah) melihat data lintas wilayah, jadi query ini aman utk mereka.
+      // Reset password TETAP Super Admin-only di atas krn RLS reset_password_requests hanya
+      // mengizinkan super_admin (query utk Team IT toh akan kosong kena RLS, jadi tidak
+      // ditampilkan sama sekali drpd menampilkan "0 permintaan" yg menyesatkan).
+      if (isSuper || isTeamITUser) {
         const ninetyDaysAgo = new Date()
         ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
-        const [{ count: pendingCount }, { data: emailRows }] = await Promise.all([
-          supabase.from('reset_password_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-          supabase.from('email_log').select('status').gte('created_at', ninetyDaysAgo.toISOString()),
-        ])
+        const { data: emailRows } = await supabase.from('email_log').select('status').gte('created_at', ninetyDaysAgo.toISOString())
         const rows = emailRows || []
         const emailTotal = rows.length
         const emailFailedCount = rows.filter(r => r.status === 'failed').length
         const emailErrorRate = emailTotal > 0 ? Math.round((emailFailedCount / emailTotal) * 100) : 0
-        setAdminAlert({
-          resetPasswordPending: pendingCount || 0,
-          emailErrorRate,
-          emailFailedCount,
-          emailTotal,
-        })
+        setEmailHealthAlert({ emailErrorRate, emailFailedCount, emailTotal })
       } else {
-        setAdminAlert(null)
+        setEmailHealthAlert(null)
       }
 
       if (isBendahara(user)) {
@@ -185,6 +230,36 @@ export default function DashboardPage() {
         })
       } else {
         setKontenAlert(null)
+      }
+
+      // PPG mendarat di /dashboard ini stlh login (bukan langsung ke /ppg) -- tanpa alert ini
+      // PPG tidak tahu ada kegiatan/pengumuman tingkat Daerah yg menunggu approval-nya sampai
+      // ia klik quick action "Dashboard PPG" sendiri. Query dibatasi tingkatan='daerah' krn
+      // approval Daerah memang wewenang PPG (sama seperti query di app/(dashboard)/ppg/page.tsx).
+      if (isPPGUser) {
+        const [{ count: kegiatanMenungguDaerah }, { count: pengumumanMenungguDaerah }] = await Promise.all([
+          supabase.from('kegiatan').select('id', { count: 'exact', head: true }).eq('tingkatan', 'daerah').eq('status_approval', 'menunggu_ppg'),
+          supabase.from('pengumuman').select('id', { count: 'exact', head: true }).eq('tingkatan', 'daerah').eq('status_approval', 'menunggu_ppg'),
+        ])
+        setPpgAlert({
+          kegiatanMenunggu: kegiatanMenungguDaerah || 0,
+          pengumumanMenunggu: pengumumanMenungguDaerah || 0,
+        })
+      } else {
+        setPpgAlert(null)
+      }
+
+      // Struktur organisasi (jumlah Desa/Kelompok aktif) -- dulu stat card ke-4 Super Admin
+      // cuma tombol "Organisasi -> Lihat" tanpa angka asli (padahal link yg sama juga sudah
+      // ada sbg quick action di bawah, jadi mubazir). Sekarang diganti angka struktur asli.
+      if (isSuper) {
+        const [{ count: desaCount }, { count: kelompokCount }] = await Promise.all([
+          supabase.from('desa').select('id', { count: 'exact', head: true }).eq('is_active', true),
+          supabase.from('kelompok').select('id', { count: 'exact', head: true }).eq('is_active', true),
+        ])
+        setStrukturCount({ desa: desaCount || 0, kelompok: kelompokCount || 0 })
+      } else {
+        setStrukturCount(null)
       }
     } catch (err) {
       console.error(err)
@@ -285,7 +360,9 @@ export default function DashboardPage() {
         return q
       }
 
-      const canSeeKeuangan = isPengurus(user) && user?.role?.tingkatan !== 'super_admin'
+      // Sama seperti gate RPC keuangan di loadStats -- hanya Ketua/Wakil Ketua/Sekretaris
+      // dan Bendahara yang lihat Arus Kas, bukan semua "isPengurus" generik.
+      const canSeeKeuangan = canManageKontenOrganisasi(user) || isBendahara(user)
       if (canSeeKeuangan) {
         let kq = supabase.from('keuangan').select('jenis, jumlah, tanggal').gte('tanggal', rangeStart).limit(2000)
         kq = applyScope(kq)
@@ -373,32 +450,49 @@ export default function DashboardPage() {
   const formatRupiah = (n: number) =>
     new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
 
-  const formatDate = (d: Date) =>
-    d.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-
-  const formatTime = (d: Date) =>
-    d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-
   const formatTanggalSingkat = (iso: string) =>
     new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-
-  const healthScore = (() => {
-    if (stats.pemasukan === 0 && stats.pengeluaran === 0) return 100
-    if (stats.pemasukan === 0) return 0
-    const score = Math.max(0, Math.round(((stats.pemasukan - stats.pengeluaran) / stats.pemasukan) * 100))
-    return Math.min(score, 100)
-  })()
-
-  const healthBg = healthScore >= 70 ? 'bg-emerald-500' : healthScore >= 40 ? 'bg-yellow-500' : 'bg-red-500'
-  const healthLabel = healthScore >= 70 ? 'Sehat' : healthScore >= 40 ? 'Perlu Perhatian' : 'Kritis'
 
   const isSuper = user?.role?.tingkatan === 'super_admin'
   const isPPGUser = user?.role?.tingkatan === 'ppg'
   const isBendaharaUser = isBendahara(user)
   const isKontenManager = canManageKontenOrganisasi(user)
   const isGenerusBiasaUser = !isPengurus(user) && !isPPGUser
+  const isTeamITUser = isTeamIT(user)
+  const isPengurusOperasional = isKontenManager || isBendaharaUser
+  // "Pengurus generik" -- role pengurus yang BUKAN Ketua/Wakil Ketua/Sekretaris/Bendahara
+  // (mis. Penerobos, Team PDD, Team IT, Seksi Kegiatan Rutin -- semuanya role aktif
+  // sungguhan di organisasi ini). Sebelumnya disamaratakan dengan Ketua/Sekretaris/Bendahara
+  // dan dapat Health Score + Arus Kas + quick action "Keuangan" yang tidak relevan dengan
+  // wewenang mereka (mereka hanya bisa lihat & ajukan reimbursement, tidak kelola langsung).
+  const isGenericPengurus = isPengurus(user) && !isSuper && !isPengurusOperasional
 
-  const showHealthScore = isPengurus(user) && !isSuper && !isGenerusBiasaUser
+  const showHealthScore = isPengurusOperasional
+
+  const hasKeuanganData = stats.pemasukan > 0 || stats.pengeluaran > 0
+  const healthScore = (() => {
+    if (!hasKeuanganData) return null
+    if (stats.pemasukan === 0) return 0
+    const score = Math.max(0, Math.round(((stats.pemasukan - stats.pengeluaran) / stats.pemasukan) * 100))
+    return Math.min(score, 100)
+  })()
+
+  const healthBg = healthScore === null ? 'bg-slate-400' : healthScore >= 70 ? 'bg-emerald-500' : healthScore >= 40 ? 'bg-yellow-500' : 'bg-red-500'
+  const healthLabel = healthScore === null ? 'Belum Ada Data' : healthScore >= 70 ? 'Sehat' : healthScore >= 40 ? 'Perlu Perhatian' : 'Kritis'
+
+  // "Pengguna Online" dulu selalu org-wide (onlineCount), padahal Ketua Kelompok/Desa tidak
+  // bisa menyimpulkan apa-apa dari angka se-organisasi. Untuk jenjang Kelompok/Desa, pakai
+  // hitungan yang sudah di-scope (onlineCountScoped, lihat lib/user-context.tsx); jenjang
+  // Daerah/PPG/Super Admin tetap pakai angka global karena mereka memang tidak terikat
+  // desa/kelompok tertentu.
+  const tingkatanUser = user?.role?.tingkatan
+  const useScopedOnline = tingkatanUser === 'kelompok' || tingkatanUser === 'desa'
+  const displayedOnlineCount = useScopedOnline ? onlineCountScoped : onlineCount
+  const onlineSub = useScopedOnline
+    ? tingkatanUser === 'kelompok'
+      ? `Di ${user?.kelompok?.nama_kelompok || 'kelompok'} Anda`
+      : `Di Desa ${user?.desa?.nama_desa || ''}`
+    : 'Se-organisasi, tab browser terbuka'
 
   const quickActions = isPPGUser
     ? [
@@ -409,7 +503,7 @@ export default function DashboardPage() {
       ]
     : isSuper
     ? [
-        { href: '/generus', label: 'Data Pengguna', icon: '👥', color: 'hover:bg-blue-50 hover:border-blue-200' },
+        { href: '/generus', label: 'Pengguna', icon: '👥', color: 'hover:bg-blue-50 hover:border-blue-200' },
         { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200' },
         { href: '/organisasi', label: 'Organisasi', icon: '🏛️', color: 'hover:bg-violet-50 hover:border-violet-200' },
         { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200' },
@@ -421,8 +515,15 @@ export default function DashboardPage() {
         { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200' },
         { href: '/profil', label: 'Profil Saya', icon: '👤', color: 'hover:bg-blue-50 hover:border-blue-200' },
       ]
+    : isGenericPengurus
+    ? [
+        { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200' },
+        { href: '/keuangan', label: 'Ajukan Reimbursement', icon: '🧾', color: 'hover:bg-emerald-50 hover:border-emerald-200' },
+        { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200' },
+        { href: '/profil', label: 'Profil Saya', icon: '👤', color: 'hover:bg-blue-50 hover:border-blue-200' },
+      ]
     : [
-        { href: '/generus', label: 'Data Pengguna', icon: '👥', color: 'hover:bg-blue-50 hover:border-blue-200' },
+        { href: '/generus', label: 'Pengguna', icon: '👥', color: 'hover:bg-blue-50 hover:border-blue-200' },
         { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200' },
         { href: '/keuangan', label: 'Keuangan', icon: '💰', color: 'hover:bg-emerald-50 hover:border-emerald-200' },
         { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200' },
@@ -431,8 +532,8 @@ export default function DashboardPage() {
   const statCards = [
     {
       label: 'Pengguna Online',
-      value: loading ? '...' : onlineCount.toString(),
-      sub: 'Tab browser terbuka sekarang',
+      value: loading ? '...' : displayedOnlineCount.toString(),
+      sub: onlineSub,
       icon: '🟢',
       color: 'bg-blue-500',
     },
@@ -443,19 +544,31 @@ export default function DashboardPage() {
       icon: '📅',
       color: 'bg-indigo-500',
     },
-    (isPPGUser || isSuper || isGenerusBiasaUser)
+    (isPPGUser || isSuper || isGenerusBiasaUser || isGenericPengurus)
       ? { label: 'Generus Aktif', value: loading ? '...' : stats.generus.toLocaleString('id-ID'), sub: isPPGUser ? 'Se-Bekasi Timur' : 'Terdaftar & aktif', icon: '👥', color: 'bg-violet-500' }
       : {
-          label: showHealthScore ? 'Health Score' : 'Total Pemasukan',
-          value: loading ? '...' : showHealthScore ? `${healthScore}%` : formatRupiah(stats.pemasukan),
-          sub: showHealthScore ? healthLabel : 'Total masuk',
-          icon: showHealthScore ? '❤️' : '💰',
-          color: showHealthScore ? healthBg : 'bg-emerald-500',
+          label: 'Health Score',
+          value: loading ? '...' : healthScore === null ? '-' : `${healthScore}%`,
+          sub: healthLabel,
+          icon: '❤️',
+          color: healthBg,
         },
     isPPGUser
-      ? { label: 'Dashboard PPG', value: 'Lihat', sub: 'Persetujuan & pengawasan', icon: '🛡️', color: 'bg-purple-500' }
+      ? {
+          label: 'Menunggu Approval',
+          value: loading ? '...' : String((ppgAlert?.kegiatanMenunggu || 0) + (ppgAlert?.pengumumanMenunggu || 0)),
+          sub: 'Kegiatan & pengumuman Daerah',
+          icon: '🛡️',
+          color: ppgAlert && ppgAlert.kegiatanMenunggu + ppgAlert.pengumumanMenunggu > 0 ? 'bg-amber-500' : 'bg-purple-500',
+        }
       : isSuper
-      ? { label: 'Organisasi', value: 'Lihat', sub: 'Struktur Desa & Kelompok', icon: '🏛️', color: 'bg-slate-500' }
+      ? {
+          label: 'Struktur Organisasi',
+          value: loading ? '...' : `${strukturCount?.desa ?? 0} Desa`,
+          sub: `${strukturCount?.kelompok ?? 0} Kelompok`,
+          icon: '🏛️',
+          color: 'bg-slate-500',
+        }
       : isGenerusBiasaUser
       ? {
           label: 'Kehadiran Saya',
@@ -464,12 +577,20 @@ export default function DashboardPage() {
           icon: '✅',
           color: 'bg-teal-500',
         }
+      : isGenericPengurus
+      ? {
+          label: 'Kehadiran Bulan Ini',
+          value: loadingChart ? '...' : `${kehadiran[kehadiran.length - 1]?.persentase ?? 0}%`,
+          sub: 'Kelompok/Desa Anda',
+          icon: '✅',
+          color: 'bg-teal-500',
+        }
       : {
-          label: showHealthScore ? 'Generus Aktif' : 'Total Pengeluaran',
-          value: loading ? '...' : showHealthScore ? stats.generus.toLocaleString('id-ID') : formatRupiah(stats.pengeluaran),
-          sub: showHealthScore ? 'Terdaftar & aktif' : 'Total keluar',
-          icon: showHealthScore ? '👥' : '💸',
-          color: showHealthScore ? 'bg-violet-500' : 'bg-red-500',
+          label: 'Generus Aktif',
+          value: loading ? '...' : stats.generus.toLocaleString('id-ID'),
+          sub: 'Terdaftar & aktif',
+          icon: '👥',
+          color: 'bg-violet-500',
         },
   ]
 
@@ -482,10 +603,7 @@ export default function DashboardPage() {
             <h2 className="text-xl sm:text-2xl font-bold mt-0.5 truncate">{user?.nama_lengkap}</h2>
             <p className="text-blue-200 text-sm mt-1">{user?.role?.nama_role}</p>
           </div>
-          <div className="text-right shrink-0">
-            <div className="text-lg sm:text-2xl font-mono font-bold tabular-nums">{formatTime(now)}</div>
-            <div className="text-blue-200 text-xs sm:text-sm mt-0.5 hidden sm:block">{formatDate(now)}</div>
-          </div>
+          <LiveClock />
         </div>
       </div>
 
@@ -502,46 +620,75 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {isSuper && adminAlert && (
+      {(isSuper || isTeamITUser) && (adminAlert || emailHealthAlert) && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-          <a
-            href="/reset-password-requests"
-            className={`rounded-2xl p-4 sm:p-5 border transition-colors flex items-center gap-4 ${
-              adminAlert.resetPasswordPending > 0
-                ? 'bg-amber-50 border-amber-200 hover:bg-amber-100'
-                : 'bg-white border-slate-100 hover:bg-slate-50'
-            }`}
-          >
-            <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 ${adminAlert.resetPasswordPending > 0 ? 'bg-amber-500' : 'bg-slate-300'}`}>
-              🔑
-            </div>
-            <div className="min-w-0">
-              <div className="text-lg font-bold text-slate-800">{adminAlert.resetPasswordPending} permintaan</div>
-              <div className="text-slate-600 text-sm font-medium">Reset Password Menunggu</div>
-              <div className="text-slate-400 text-xs">{adminAlert.resetPasswordPending > 0 ? 'Klik untuk proses' : 'Tidak ada yang menunggu'}</div>
-            </div>
-          </a>
-          <a
-            href="/monitoring?tab=email"
-            className={`rounded-2xl p-4 sm:p-5 border transition-colors flex items-center gap-4 ${
-              adminAlert.emailErrorRate > 10
-                ? 'bg-red-50 border-red-200 hover:bg-red-100'
-                : adminAlert.emailErrorRate > 0
-                ? 'bg-amber-50 border-amber-200 hover:bg-amber-100'
-                : 'bg-white border-slate-100 hover:bg-slate-50'
-            }`}
-          >
-            <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 ${
-              adminAlert.emailErrorRate > 10 ? 'bg-red-500' : adminAlert.emailErrorRate > 0 ? 'bg-amber-500' : 'bg-slate-300'
-            }`}>
-              ✉️
-            </div>
-            <div className="min-w-0">
-              <div className="text-lg font-bold text-slate-800">{adminAlert.emailErrorRate}% gagal</div>
-              <div className="text-slate-600 text-sm font-medium">Error Rate Email (90 hari)</div>
-              <div className="text-slate-400 text-xs">{adminAlert.emailFailedCount} gagal dari {adminAlert.emailTotal} email</div>
-            </div>
-          </a>
+          {isSuper && adminAlert && (
+            <a
+              href="/reset-password-requests"
+              className={`rounded-2xl p-4 sm:p-5 border transition-colors flex items-center gap-4 ${
+                adminAlert.resetPasswordPending > 0
+                  ? 'bg-amber-50 border-amber-200 hover:bg-amber-100'
+                  : 'bg-white border-slate-100 hover:bg-slate-50'
+              }`}
+            >
+              <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 ${adminAlert.resetPasswordPending > 0 ? 'bg-amber-500' : 'bg-slate-300'}`}>
+                🔑
+              </div>
+              <div className="min-w-0">
+                <div className="text-lg font-bold text-slate-800">{adminAlert.resetPasswordPending} permintaan</div>
+                <div className="text-slate-600 text-sm font-medium">Reset Password Menunggu</div>
+                <div className="text-slate-400 text-xs">{adminAlert.resetPasswordPending > 0 ? 'Klik untuk proses' : 'Tidak ada yang menunggu'}</div>
+              </div>
+            </a>
+          )}
+          {emailHealthAlert && (
+            <a
+              href="/monitoring?tab=email"
+              className={`rounded-2xl p-4 sm:p-5 border transition-colors flex items-center gap-4 ${
+                emailHealthAlert.emailErrorRate > 10
+                  ? 'bg-red-50 border-red-200 hover:bg-red-100'
+                  : emailHealthAlert.emailErrorRate > 0
+                  ? 'bg-amber-50 border-amber-200 hover:bg-amber-100'
+                  : 'bg-white border-slate-100 hover:bg-slate-50'
+              }`}
+            >
+              <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 ${
+                emailHealthAlert.emailErrorRate > 10 ? 'bg-red-500' : emailHealthAlert.emailErrorRate > 0 ? 'bg-amber-500' : 'bg-slate-300'
+              }`}>
+                ✉️
+              </div>
+              <div className="min-w-0">
+                <div className="text-lg font-bold text-slate-800">{emailHealthAlert.emailErrorRate}% gagal</div>
+                <div className="text-slate-600 text-sm font-medium">Error Rate Email (90 hari)</div>
+                <div className="text-slate-400 text-xs">{emailHealthAlert.emailFailedCount} gagal dari {emailHealthAlert.emailTotal} email</div>
+              </div>
+            </a>
+          )}
+        </div>
+      )}
+
+      {isPPGUser && ppgAlert && (ppgAlert.kegiatanMenunggu > 0 || ppgAlert.pengumumanMenunggu > 0) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+          {ppgAlert.kegiatanMenunggu > 0 && (
+            <a href="/ppg" className="rounded-2xl p-4 sm:p-5 border bg-amber-50 border-amber-200 hover:bg-amber-100 transition-colors flex items-center gap-4">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 bg-amber-500">📅</div>
+              <div className="min-w-0">
+                <div className="text-lg font-bold text-slate-800">{ppgAlert.kegiatanMenunggu} kegiatan</div>
+                <div className="text-slate-600 text-sm font-medium">Kegiatan Daerah Menunggu Approval</div>
+                <div className="text-slate-400 text-xs">Klik untuk proses di Dashboard PPG</div>
+              </div>
+            </a>
+          )}
+          {ppgAlert.pengumumanMenunggu > 0 && (
+            <a href="/ppg" className="rounded-2xl p-4 sm:p-5 border bg-amber-50 border-amber-200 hover:bg-amber-100 transition-colors flex items-center gap-4">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 bg-amber-500">📢</div>
+              <div className="min-w-0">
+                <div className="text-lg font-bold text-slate-800">{ppgAlert.pengumumanMenunggu} pengumuman</div>
+                <div className="text-slate-600 text-sm font-medium">Pengumuman Daerah Menunggu Approval</div>
+                <div className="text-slate-400 text-xs">Klik untuk proses di Dashboard PPG</div>
+              </div>
+            </a>
+          )}
         </div>
       )}
 
@@ -693,8 +840,14 @@ export default function DashboardPage() {
         )}
 
         <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100">
-          <h3 className="font-semibold text-slate-700 mb-1">Tren Kehadiran 6 Bulan Terakhir</h3>
-          <p className="text-slate-400 text-xs mb-4">Persentase kehadiran dari seluruh kegiatan per bulan</p>
+          <h3 className="font-semibold text-slate-700 mb-1">
+            {isGenerusBiasaUser ? 'Tren Kehadiran Kelompok/Desa Anda' : 'Tren Kehadiran 6 Bulan Terakhir'}
+          </h3>
+          <p className="text-slate-400 text-xs mb-4">
+            {isGenerusBiasaUser
+              ? 'Rata-rata seluruh kegiatan di scope Anda -- bukan kehadiran pribadi (lihat "Kehadiran Saya" di atas)'
+              : 'Persentase kehadiran dari seluruh kegiatan per bulan'}
+          </p>
           {loadingChart ? (
             <div className="h-64 flex items-center justify-center text-slate-400">
               <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
@@ -712,25 +865,27 @@ export default function DashboardPage() {
           )}
         </div>
 
-        <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100 xl:col-span-2">
-          <h3 className="font-semibold text-slate-700 mb-1">Pertumbuhan Generus 6 Bulan Terakhir</h3>
-          <p className="text-slate-400 text-xs mb-4">Jumlah Generus baru bergabung per bulan</p>
-          {loadingChart ? (
-            <div className="h-64 flex items-center justify-center text-slate-400">
-              <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={pertumbuhan}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="bulan" tick={{ fontSize: 12, fill: '#94a3b8' }} />
-                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} allowDecimals={false} />
-                <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12 }} />
-                <Bar dataKey="generus_baru" name="Generus Baru" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
+        {!isGenerusBiasaUser && (
+          <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100 xl:col-span-2">
+            <h3 className="font-semibold text-slate-700 mb-1">Pertumbuhan Generus 6 Bulan Terakhir</h3>
+            <p className="text-slate-400 text-xs mb-4">Jumlah Generus baru bergabung per bulan</p>
+            {loadingChart ? (
+              <div className="h-64 flex items-center justify-center text-slate-400">
+                <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={pertumbuhan}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis dataKey="bulan" tick={{ fontSize: 12, fill: '#94a3b8' }} />
+                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} allowDecimals={false} />
+                  <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12 }} />
+                  <Bar dataKey="generus_baru" name="Generus Baru" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

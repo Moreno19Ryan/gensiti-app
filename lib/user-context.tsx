@@ -5,10 +5,25 @@ import { supabase } from './supabase'
 import { getUserProfile } from './auth'
 import { UserProfile } from './types'
 
+// Satu "kehadiran" presence per user -- dilacak lewat channel.track() di bawah, dipakai
+// utk menghitung onlineCount (global) sekaligus onlineCountScoped (lihat di bawah).
+interface PresenceMeta {
+  user_id: string
+  nama: string
+  online_at: string
+  desa_id: string | null
+  kelompok_id: string | null
+}
+
 interface UserContextType {
   user: UserProfile | null
   loading: boolean
   onlineCount: number
+  // Jumlah pengguna online yang di-scope ke desa/kelompok user saat ini -- sama dengan
+  // onlineCount kalau user di jenjang daerah/ppg/super_admin (tidak terikat desa/kelompok
+  // tertentu). Dipakai dashboard supaya Ketua Kelompok/Desa tidak melihat angka online
+  // se-organisasi yang tidak actionable buat scope-nya.
+  onlineCountScoped: number
   refresh: () => Promise<void>
 }
 
@@ -16,6 +31,7 @@ const UserContext = createContext<UserContextType>({
   user: null,
   loading: true,
   onlineCount: 0,
+  onlineCountScoped: 0,
   refresh: async () => {},
 })
 
@@ -23,6 +39,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [onlineCount, setOnlineCount] = useState(0)
+  const [onlineCountScoped, setOnlineCountScoped] = useState(0)
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
 
   // Single-session login: setiap login lewat form (bukan reload/tab baru di browser yang
@@ -122,6 +139,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
       }
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setOnlineCount(0)
+      setOnlineCountScoped(0)
       return
     }
 
@@ -135,7 +153,17 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
     channel.on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState()
-      setOnlineCount(Object.keys(state).length)
+      // Object.values(state) bisa berisi >1 meta per key kalau user yg sama buka >1 koneksi
+      // (mis. 2 tab) -- ambil meta pertama saja per key supaya tetap 1 hitungan per user,
+      // sama seperti Object.keys(state).length sebelumnya.
+      const users = Object.values(state).map((metas) => (metas as unknown as PresenceMeta[])[0])
+      setOnlineCount(users.length)
+      const scoped = user.kelompok_id
+        ? users.filter((u) => u.kelompok_id === user.kelompok_id).length
+        : user.desa_id
+        ? users.filter((u) => u.desa_id === user.desa_id).length
+        : users.length
+      setOnlineCountScoped(scoped)
     })
 
     channel.subscribe(async (status) => {
@@ -144,6 +172,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
           user_id: user.id,
           nama: user.nama_lengkap,
           online_at: new Date().toISOString(),
+          desa_id: user.desa_id,
+          kelompok_id: user.kelompok_id,
         })
       }
     })
@@ -157,7 +187,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }, [user?.id])
 
   return (
-    <UserContext.Provider value={{ user, loading, onlineCount, refresh: loadUser }}>
+    <UserContext.Provider value={{ user, loading, onlineCount, onlineCountScoped, refresh: loadUser }}>
       {children}
     </UserContext.Provider>
   )
