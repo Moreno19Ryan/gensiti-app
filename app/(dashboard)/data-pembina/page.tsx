@@ -85,8 +85,19 @@ export default function DataPembinaPage() {
   // Diisi kalau /api/generus PATCH mengembalikan newLoginUsername (nama_panggilan berubah,
   // login_username ikut disinkronkan otomatis -- lihat komentar di app/api/generus/route.ts).
   const [usernameChangedNotice, setUsernameChangedNotice] = useState<{ nama: string; username: string } | null>(null)
+  // Konfirmasi Pulihkan + notice satu-tombol -- menggantikan window.confirm()/window.alert()
+  // bawaan browser, konsisten dgn pola yang sama di app/(dashboard)/generus/page.tsx.
+  const [restoreTarget, setRestoreTarget] = useState<PembinaRow | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const canManage = checkCanManageMembers(user)
+  // PPG berada DI ATAS jenjang Daerah (pengawas, bukan bawahan) -- lihat isPPG di lib/roles.ts.
+  // Field administratif yang bisa berdampak arsip/nonaktif (Status Pengguna "Meninggal Dunia")
+  // maupun pemulihan akun dari arsip HANYA boleh dilakukan Super Admin, sama persis dgn proteksi
+  // yang sudah ditegakkan di server (app/api/users/route.ts & app/api/generus/route.ts, lihat
+  // catatan isTargetPPG di sana) -- Ketua/Sekretaris Daerah yang canManage TETAP bisa mengedit
+  // biodata PPG (nama, TTL, alamat, no HP) di sini, hanya dua aksi administratif itu yang dikunci.
+  const isSuperAdmin = user?.role?.tingkatan === 'super_admin'
   // Sama seperti Data Generus: Super Admin + semua Pengurus Muda-Mudi + PPG boleh melihat.
   // Generus biasa tidak boleh mengakses sama sekali.
   const hasAccess = canViewGenerusData(user)
@@ -145,20 +156,21 @@ export default function DataPembinaPage() {
   // -- PPG DIKECUALIKAN dari arsip otomatis saat 'menikah'). Pola & pembagian tanggung jawab
   // endpoint PERSIS sama dengan restoreAccount() di app/(dashboard)/generus/page.tsx (/api/users
   // murni field akun, /api/generus murni biodata, status_pengguna selalu direset ke 'lajang').
-  // Sebelum fix ini, akun PPG yang diarsipkan tidak punya jalur pemulihan sama sekali di UI --
-  // halaman ini bahkan tidak mengambil is_active/is_archived dari database, jadi status arsip
-  // PPG tidak pernah terlihat di sini walau datanya sudah diarsipkan lewat handleSave.
-  const restoreAccount = async (g: PembinaRow) => {
-    if (!g.users) return
+  // HANYA Super Admin -- lihat catatan isSuperAdmin di atas -- tombol Pulihkan juga sudah
+  // disembunyikan utk non-SA, guard di sini murni jaring pengaman kedua (server tetap menolak
+  // request ini via isTargetPPG kalau entah bagaimana terpanggil).
+  const confirmRestore = async () => {
+    const g = restoreTarget
+    if (!g?.users || !isSuperAdmin) return
+    setRestoreTarget(null)
     const nama = g.users.nama_lengkap
-    if (!confirm(`Pulihkan akun "${nama}"? Akun akan diaktifkan kembali dengan status "Lajang".`)) return
     const res = await authFetch('/api/users', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: g.users.id, nama_lengkap: nama, restore: true }),
     })
     const json = await res.json()
-    if (json.error) { alert(json.error); return }
+    if (json.error) { setNotice(json.error); return }
 
     const resGenerus = await authFetch('/api/generus', {
       method: 'PATCH',
@@ -170,7 +182,7 @@ export default function DataPembinaPage() {
       }),
     })
     const jsonGenerus = await resGenerus.json()
-    if (jsonGenerus.error) { alert(jsonGenerus.error); return }
+    if (jsonGenerus.error) { setNotice(jsonGenerus.error); return }
 
     if (user) {
       await logAudit(user, 'ACTIVATE', 'Pengguna', nama, { alasan: 'Dipulihkan dari arsip' }, g.users.id)
@@ -198,7 +210,8 @@ export default function DataPembinaPage() {
       // logika di generus/page.tsx doActualSave). Meninggal Dunia TETAP mengarsipkan --
       // kondisi itu memang berarti ybs sudah tidak bisa lagi menjalankan tugasnya. Halaman
       // ini tidak punya opsi "Pindah Sambung" (PPG tidak terikat scope desa/kelompok).
-      const needsArchive = form.status_pengguna === 'meninggal_dunia'
+      // HANYA Super Admin -- lihat catatan isSuperAdmin di atas.
+      const needsArchive = isSuperAdmin && form.status_pengguna === 'meninggal_dunia'
 
       // no_hp + status akun (archive kalau perlu) adalah field AKUN (tabel users) -- lewat
       // /api/users. Sisanya biodata murni -- lewat /api/generus. Sama seperti pola di
@@ -217,6 +230,11 @@ export default function DataPembinaPage() {
       const jsonAkun = await resAkun.json()
       if (jsonAkun.error) { setError(jsonAkun.error); return }
 
+      // status_pengguna TIDAK PERNAH dikirim kalau bukan Super Admin -- server menolak
+      // SELURUH request /api/generus PATCH (bukan cuma field ini) begitu status_pengguna
+      // ikut dikirim ke target PPG oleh caller non-Super Admin (lihat isTargetPPG di
+      // app/api/generus/route.ts), jadi field ini harus benar-benar tidak ada di body,
+      // bukan sekadar tidak bisa diubah dari UI.
       const res = await authFetch('/api/generus', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -230,7 +248,7 @@ export default function DataPembinaPage() {
           alamat: form.alamat,
           tinggi_badan: form.tinggi_badan ? parseFloat(form.tinggi_badan) : null,
           berat_badan: form.berat_badan ? parseFloat(form.berat_badan) : null,
-          status_pengguna: form.status_pengguna,
+          ...(isSuperAdmin ? { status_pengguna: form.status_pengguna } : {}),
         }),
       })
       const json = await res.json()
@@ -283,7 +301,7 @@ export default function DataPembinaPage() {
   const exportSubtitle = () => `Se-Bekasi Timur -- ${filtered.length} Pembina (PPG)`
 
   const handleExportPDF = async () => {
-    if (filtered.length === 0) { alert('Tidak ada data untuk diexport.'); return }
+    if (filtered.length === 0) { setNotice('Tidak ada data untuk diexport.'); return }
     setExporting(true)
     try {
       exportToPDF({
@@ -300,7 +318,7 @@ export default function DataPembinaPage() {
   }
 
   const handleExportExcel = async () => {
-    if (filtered.length === 0) { alert('Tidak ada data untuk diexport.'); return }
+    if (filtered.length === 0) { setNotice('Tidak ada data untuk diexport.'); return }
     setExporting(true)
     try {
       await exportToExcel({
@@ -449,10 +467,13 @@ export default function DataPembinaPage() {
                             <button onClick={() => openEdit(g)} className="text-blue-600 hover:text-blue-800 font-medium text-xs">
                               Lihat / Edit
                             </button>
-                            {g.users?.is_archived && (
-                              <button onClick={() => restoreAccount(g)} className="text-orange-500 hover:text-orange-700 font-medium text-xs">
+                            {g.users?.is_archived && isSuperAdmin && (
+                              <button onClick={() => setRestoreTarget(g)} className="text-orange-500 hover:text-orange-700 font-medium text-xs">
                                 Pulihkan
                               </button>
+                            )}
+                            {g.users?.is_archived && !isSuperAdmin && (
+                              <span className="text-xs text-slate-300 italic" title="Hanya Super Admin yang dapat memulihkan akun PPG">Terkunci</span>
                             )}
                           </div>
                         </td>
@@ -549,25 +570,31 @@ export default function DataPembinaPage() {
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none uppercase disabled:opacity-60" />
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Status Pengguna</label>
-                <select value={form.status_pengguna} onChange={e => set('status_pengguna', e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60">
-                  <option value="lajang">Lajang</option>
-                  <option value="menikah">Menikah</option>
-                  <option value="meninggal_dunia">Meninggal Dunia</option>
-                </select>
-                {form.status_pengguna === 'menikah' && (
-                  <p className="text-xs text-emerald-600 mt-1.5">
-                    ✓ Status &quot;Menikah&quot; tidak mengarsipkan akun PPG -- mayoritas pengurus PPG memang sudah menikah.
-                  </p>
-                )}
-                {form.status_pengguna === 'meninggal_dunia' && (
-                  <p className="text-xs text-red-600 mt-1.5">
-                    ⚠️ Akun akan otomatis diarsipkan (dinonaktifkan) saat disimpan.
-                  </p>
-                )}
-              </div>
+              {isSuperAdmin ? (
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Status Pengguna</label>
+                  <select value={form.status_pengguna} onChange={e => set('status_pengguna', e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60">
+                    <option value="lajang">Lajang</option>
+                    <option value="menikah">Menikah</option>
+                    <option value="meninggal_dunia">Meninggal Dunia</option>
+                  </select>
+                  {form.status_pengguna === 'menikah' && (
+                    <p className="text-xs text-emerald-600 mt-1.5">
+                      ✓ Status &quot;Menikah&quot; tidak mengarsipkan akun PPG -- mayoritas pengurus PPG memang sudah menikah.
+                    </p>
+                  )}
+                  {form.status_pengguna === 'meninggal_dunia' && (
+                    <p className="text-xs text-red-600 mt-1.5">
+                      ⚠️ Akun akan otomatis diarsipkan (dinonaktifkan) saat disimpan.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-500 text-xs leading-relaxed">
+                  Status Pengguna saat ini: <strong>{statusPenggunaLabel[form.status_pengguna] || form.status_pengguna}</strong>. Hanya Super Admin yang dapat mengubah status ini (PPG adalah pengawas di atas jenjang Daerah, bukan bawahan yang dikelola Ketua/Sekretaris Daerah).
+                </div>
+              )}
             </fieldset>
 
             <div className="flex gap-3 pt-2 border-t border-slate-100">
@@ -601,6 +628,40 @@ export default function DataPembinaPage() {
             <button onClick={() => setUsernameChangedNotice(null)}
               className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition">
               Sudah Dicatat
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Konfirmasi Pulihkan akun (pengganti window.confirm()) */}
+      {restoreTarget && (
+        <Modal open={!!restoreTarget} onClose={() => setRestoreTarget(null)} title="Pulihkan Akun" size="sm">
+          <div className="space-y-4">
+            <p className="text-slate-700 text-sm leading-relaxed">
+              Pulihkan akun <strong>{restoreTarget.users?.nama_lengkap}</strong>? Akun akan diaktifkan kembali dengan status &quot;Lajang&quot;.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setRestoreTarget(null)}
+                className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
+                Batal
+              </button>
+              <button onClick={confirmRestore}
+                className="flex-1 py-2.5 bg-orange-500 text-white rounded-xl text-sm font-medium hover:bg-orange-600 transition">
+                Ya, Pulihkan
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Notice satu-tombol (pengganti window.alert()) */}
+      {notice && (
+        <Modal open={!!notice} onClose={() => setNotice(null)} title="Informasi" size="sm">
+          <div className="space-y-4">
+            <p className="text-slate-700 text-sm leading-relaxed">{notice}</p>
+            <button onClick={() => setNotice(null)}
+              className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition">
+              Mengerti
             </button>
           </div>
         </Modal>

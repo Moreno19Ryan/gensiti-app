@@ -1195,6 +1195,15 @@ export default function PenggunaPage() {
                 <span className="font-mono text-sm font-semibold text-slate-600">{editTarget.generus?.nomor_generus || '—'}</span>
               </div>
 
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Nama Panggilan (huruf kapital)</label>
+                <input value={form.nama_panggilan}
+                  onChange={e => setUpper('nama_panggilan', e.target.value)}
+                  placeholder="NAMA PANGGILAN"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
+                <p className="text-[11px] text-amber-600 mt-1">Mengubah nama panggilan akan ikut mengubah Nama Pengguna (login) -- pengguna akan diberi tahu nama login barunya, password tidak berubah.</p>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Tempat Lahir (huruf kapital)</label>
