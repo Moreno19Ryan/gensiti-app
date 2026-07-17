@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth'
 import { Absensi, EmailPreferensi } from '@/lib/types'
 import { getPushPermission, getExistingPushSubscription, subscribeToPush, unsubscribeFromPush } from '@/lib/push'
+import { isPPG } from '@/lib/roles'
 import PasswordInput from '@/components/PasswordInput'
 import Modal from '@/components/Modal'
 import type { UserIdentity } from '@supabase/supabase-js'
@@ -29,6 +30,14 @@ interface GenerusRecord {
 export default function ProfilPage() {
   const { user, refresh } = useUser()
   const isSuperAdmin = user?.role?.tingkatan === 'super_admin'
+  // PPG (Penggerak Pembina Generus) sudah dewasa dan bukan anak asuh organisasi -- sama
+  // seperti pemisahan field di data-pembina/page.tsx, biodata Data Diri-nya tidak boleh
+  // menampilkan field anak-asuh (anak ke-/jumlah saudara/nama ortu-wali). PPG juga tidak
+  // pernah check-in kegiatan (dia pengawas, bukan peserta) sehingga tab Riwayat Absensi
+  // selalu kosong untuknya, dan tidak pernah bisa mengajukan kegiatan/pengumuman
+  // (canManageKontenOrganisasi mengecualikan PPG) sehingga toggle notifikasi "Approval PPG"
+  // (yang isinya notifikasi utk PENGAJU saat diputuskan PPG) tidak relevan utk akun PPG sendiri.
+  const isPPGUser = isPPG(user)
 
   const [tab, setTab] = useState<'akun' | 'datadiri' | 'presensi' | 'notifikasi' | 'password'>('akun')
   const [form, setForm] = useState({ nama_lengkap: '', no_hp: '' })
@@ -143,7 +152,10 @@ export default function ProfilPage() {
 
     if (!isSuperAdmin) {
       loadGenerus(user.id)
-      loadRiwayatPresensi(user.id)
+      // Riwayat presensi tidak di-load utk PPG -- dia tidak pernah check-in kegiatan
+      // sebagai peserta, tabnya sendiri disembunyikan (lihat const tabs), jadi query ini
+      // hanya percuma untuk akun PPG.
+      if (!isPPGUser) loadRiwayatPresensi(user.id)
       // Tab & preferensi notifikasi disembunyikan untuk Super Admin (tidak relevan --
       // lihat komentar di const tabs), jadi tidak perlu di-load untuknya sama sekali.
       loadNotifPref(user.id)
@@ -281,6 +293,10 @@ export default function ProfilPage() {
       // Dipindah ke /api/generus (biodata murni) -- lihat app/api/generus/route.ts.
       // nama_lengkap TIDAK perlu dikirim lagi di sini karena endpoint ini sekarang
       // tidak lagi menyentuh field akun sama sekali.
+      // Field anak-asuh (anak_ke/jumlah_saudara/nama ortu-wali) sengaja TIDAK dikirim utk
+      // PPG -- form-nya tidak menampilkan field itu utk PPG (lihat isPPGUser di atas), jadi
+      // tidak boleh ikut ditulis (walau cuma re-tulis null) dari state yang tidak pernah
+      // dia isi/lihat sendiri.
       const res = await authFetch('/api/generus', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -290,12 +306,14 @@ export default function ProfilPage() {
           tanggal_lahir: diriForm.tanggal_lahir || null,
           jenis_kelamin: diriForm.jenis_kelamin,
           alamat: diriForm.alamat.toUpperCase(),
-          anak_ke: diriForm.anak_ke ? parseInt(diriForm.anak_ke) : null,
-          jumlah_saudara: diriForm.jumlah_saudara ? parseInt(diriForm.jumlah_saudara) : null,
-          nama_ayah: diriForm.nama_ayah.toUpperCase(),
-          nama_ibu: diriForm.nama_ibu.toUpperCase(),
-          nama_wali: diriForm.nama_wali ? diriForm.nama_wali.toUpperCase() : null,
-          no_hp_orangtua_wali: diriForm.no_hp_orangtua_wali,
+          ...(!isPPGUser && {
+            anak_ke: diriForm.anak_ke ? parseInt(diriForm.anak_ke) : null,
+            jumlah_saudara: diriForm.jumlah_saudara ? parseInt(diriForm.jumlah_saudara) : null,
+            nama_ayah: diriForm.nama_ayah.toUpperCase(),
+            nama_ibu: diriForm.nama_ibu.toUpperCase(),
+            nama_wali: diriForm.nama_wali ? diriForm.nama_wali.toUpperCase() : null,
+            no_hp_orangtua_wali: diriForm.no_hp_orangtua_wali,
+          }),
         }),
       })
       const json = await res.json()
@@ -477,11 +495,15 @@ export default function ProfilPage() {
   const tabs = [
     { key: 'akun' as const, label: 'Akun' },
     ...(!isSuperAdmin ? [{ key: 'datadiri' as const, label: 'Data Diri' }] : []),
-    ...(!isSuperAdmin ? [{ key: 'presensi' as const, label: 'Riwayat Absensi' }] : []),
+    // Riwayat Absensi disembunyikan utk PPG -- dia pengawas, bukan peserta kegiatan, tidak
+    // pernah check-in sehingga tab ini akan selalu kosong (lihat catatan isPPGUser di atas).
+    ...(!isSuperAdmin && !isPPGUser ? [{ key: 'presensi' as const, label: 'Riwayat Absensi' }] : []),
     // Tab Notifikasi disembunyikan untuk Super Admin -- keempat jenis notifikasi yang ada
     // (pengumuman, kegiatan, reminder, approval_ppg) semuanya murni notifikasi konten
     // organisasi yang tidak relevan untuknya sebagai pengelola sistem, bukan pengurus
-    // organisasi (sejak audit peran Super Admin).
+    // organisasi (sejak audit peran Super Admin). Utk PPG tab-nya tetap tampil (pengumuman/
+    // kegiatan tetap relevan dia perlu tahu utk direview), toggle "Approval PPG"-nya saja
+    // yang disembunyikan di dalam (lihat notifOptions di bawah).
     ...(!isSuperAdmin ? [{ key: 'notifikasi' as const, label: 'Notifikasi' }] : []),
     { key: 'password' as const, label: 'Password' },
   ]
@@ -490,7 +512,10 @@ export default function ProfilPage() {
     { key: 'pengumuman', label: 'Pengumuman Baru', desc: 'Email saat ada pengumuman baru yang relevan untuk Anda.' },
     { key: 'kegiatan', label: 'Kegiatan Baru/Diubah', desc: 'Email saat ada kegiatan baru atau perubahan jadwal/lokasi.' },
     { key: 'reminder', label: 'Reminder H-1 Kegiatan', desc: 'Pengingat email sehari sebelum kegiatan berlangsung.' },
-    { key: 'approval_ppg', label: 'Approval PPG', desc: 'Email saat kegiatan/pengumuman Anda disetujui atau ditolak PPG.' },
+    // Disembunyikan utk PPG -- notifikasi ini utk PENGAJU kegiatan/pengumuman saat
+    // diputuskan PPG, sedangkan PPG sendiri tidak pernah bisa mengajukan keduanya
+    // (canManageKontenOrganisasi mengecualikan PPG), jadi tidak pernah relevan utk akunnya.
+    ...(!isPPGUser ? [{ key: 'approval_ppg' as const, label: 'Approval PPG', desc: 'Email saat kegiatan/pengumuman Anda disetujui atau ditolak PPG.' }] : []),
   ]
 
   return (
@@ -676,7 +701,7 @@ export default function ProfilPage() {
           {tab === 'datadiri' && !isSuperAdmin && (
             <div className="space-y-4">
               <p className="text-xs text-slate-500 bg-blue-50 p-3 rounded-xl border border-blue-100">
-                Data diri Anda. Perubahan akan tersimpan ke profil Generus.
+                {isPPGUser ? 'Data diri Anda sebagai PPG. Perubahan akan tersimpan ke profil Generus.' : 'Data diri Anda. Perubahan akan tersimpan ke profil Generus.'}
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -710,53 +735,60 @@ export default function ProfilPage() {
                   rows={2} placeholder="ALAMAT LENGKAP"
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none uppercase" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Anak Ke-</label>
-                  <input type="number" min={1} value={diriForm.anak_ke}
-                    onChange={e => setDiriForm(f => ({ ...f, anak_ke: e.target.value }))}
-                    placeholder="1"
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Dari ... Bersaudara</label>
-                  <input type="number" min={1} value={diriForm.jumlah_saudara}
-                    onChange={e => setDiriForm(f => ({ ...f, jumlah_saudara: e.target.value }))}
-                    placeholder="3"
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
-              <div className="border-t border-slate-100 pt-3 space-y-3">
-                <p className="text-xs font-medium text-slate-500">Data Orang Tua / Wali</p>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Nama Ayah Kandung *</label>
-                  <input value={diriForm.nama_ayah}
-                    onChange={e => setDiriForm(f => ({ ...f, nama_ayah: e.target.value.toUpperCase() }))}
-                    placeholder="NAMA AYAH KANDUNG"
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Nama Ibu Kandung *</label>
-                  <input value={diriForm.nama_ibu}
-                    onChange={e => setDiriForm(f => ({ ...f, nama_ibu: e.target.value.toUpperCase() }))}
-                    placeholder="NAMA IBU KANDUNG"
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Nama Wali (opsional)</label>
-                  <input value={diriForm.nama_wali}
-                    onChange={e => setDiriForm(f => ({ ...f, nama_wali: e.target.value.toUpperCase() }))}
-                    placeholder="NAMA WALI (jika ada)"
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">No. HP Orang Tua / Wali *</label>
-                  <input value={diriForm.no_hp_orangtua_wali}
-                    onChange={e => setDiriForm(f => ({ ...f, no_hp_orangtua_wali: e.target.value }))}
-                    placeholder="08xx-xxxx-xxxx"
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
+              {/* Anak ke-/jumlah saudara & Data Orang Tua/Wali disembunyikan utk PPG -- dia sudah
+                  dewasa, bukan anak asuh organisasi, konsisten dgn field yg sengaja dihilangkan
+                  di data-pembina/page.tsx utk biodata PPG (lihat catatan isPPGUser di atas). */}
+              {!isPPGUser && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Anak Ke-</label>
+                      <input type="number" min={1} value={diriForm.anak_ke}
+                        onChange={e => setDiriForm(f => ({ ...f, anak_ke: e.target.value }))}
+                        placeholder="1"
+                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Dari ... Bersaudara</label>
+                      <input type="number" min={1} value={diriForm.jumlah_saudara}
+                        onChange={e => setDiriForm(f => ({ ...f, jumlah_saudara: e.target.value }))}
+                        placeholder="3"
+                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                  </div>
+                  <div className="border-t border-slate-100 pt-3 space-y-3">
+                    <p className="text-xs font-medium text-slate-500">Data Orang Tua / Wali</p>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Nama Ayah Kandung *</label>
+                      <input value={diriForm.nama_ayah}
+                        onChange={e => setDiriForm(f => ({ ...f, nama_ayah: e.target.value.toUpperCase() }))}
+                        placeholder="NAMA AYAH KANDUNG"
+                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Nama Ibu Kandung *</label>
+                      <input value={diriForm.nama_ibu}
+                        onChange={e => setDiriForm(f => ({ ...f, nama_ibu: e.target.value.toUpperCase() }))}
+                        placeholder="NAMA IBU KANDUNG"
+                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Nama Wali (opsional)</label>
+                      <input value={diriForm.nama_wali}
+                        onChange={e => setDiriForm(f => ({ ...f, nama_wali: e.target.value.toUpperCase() }))}
+                        placeholder="NAMA WALI (jika ada)"
+                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">No. HP Orang Tua / Wali *</label>
+                      <input value={diriForm.no_hp_orangtua_wali}
+                        onChange={e => setDiriForm(f => ({ ...f, no_hp_orangtua_wali: e.target.value }))}
+                        placeholder="08xx-xxxx-xxxx"
+                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                  </div>
+                </>
+              )}
               <button onClick={saveDataDiri} disabled={saving}
                 className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition">
                 {saving ? 'Menyimpan...' : 'Simpan Data Diri'}
@@ -764,7 +796,7 @@ export default function ProfilPage() {
             </div>
           )}
 
-          {tab === 'presensi' && !isSuperAdmin && (
+          {tab === 'presensi' && !isSuperAdmin && !isPPGUser && (
             <div className="space-y-3">
               {loadingRiwayat ? (
                 <div className="text-center py-8 text-slate-400">
