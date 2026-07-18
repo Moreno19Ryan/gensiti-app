@@ -17,9 +17,25 @@ if (!supabaseUrl || !supabaseAnonKey) {
 // sessionStorage (native browser primitive -- otomatis hilang saat tab/browser DITUTUP,
 // tapi TETAP bertahan lewat reload/navigasi di tab yang sama, sesuai ekspektasi "ingat saya:
 // tidak" yang standar, bukan langsung logout begitu reload).
-let rememberMe = true
+//
+// PENTING: preferensi ini sendiri disimpan sbg flag kecil non-sensitif di localStorage
+// (`gensiti_remember_me`), TERPISAH dari token sesi -- bukan cuma variabel in-memory.
+// Tanpa ini, reload halaman akan mereset `rememberMe` ke default `true`, dan refresh token
+// otomatis GoTrueClient (berjalan diam-diam di background tiap sesi mendekati expired) akan
+// menulis ulang sesi ke localStorage walau user awalnya memilih "tidak diingat" -- diam-diam
+// "meng-upgrade" pilihannya jadi tersimpan permanen begitu dia reload sekali saja. Ditemukan
+// & diperbaiki 2026-07-18 saat audit fitur ini.
+function getInitialRememberMe(): boolean {
+  if (typeof window === 'undefined') return true
+  const saved = window.localStorage.getItem('gensiti_remember_me')
+  return saved === null ? true : saved === 'true'
+}
+let rememberMe = getInitialRememberMe()
 export function setRememberMe(value: boolean) {
   rememberMe = value
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem('gensiti_remember_me', String(value))
+  }
 }
 
 const dualStorage = {
@@ -43,6 +59,9 @@ const dualStorage = {
     if (typeof window === 'undefined') return
     window.localStorage.removeItem(key)
     window.sessionStorage.removeItem(key)
+    // Sesi dihapus (logout) -- reset preferensi ke default supaya sesi anonim berikutnya
+    // (mis. akun lain login di perangkat yg sama) tidak mewarisi pilihan "tidak diingat".
+    window.localStorage.removeItem('gensiti_remember_me')
   },
 }
 

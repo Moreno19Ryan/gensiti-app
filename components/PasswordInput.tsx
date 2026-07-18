@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { forwardRef, useEffect, useRef, useState } from 'react'
 
 // Input password dgn dua mode tampilan:
 //  1. Mode default (mata tertutup) -- <input type="password"> NATIVE, browser yang
@@ -40,13 +40,18 @@ interface Props {
   autoComplete?: string
   className?: string
   disabled?: boolean
+  required?: boolean
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void
 }
 
 const PREVIEW_DURATION_MS = 700
 
-export default function PasswordInput({
-  value, onChange, placeholder, id, name, autoComplete, className, disabled,
-}: Props) {
+// forwardRef -- dipakai app/login/page.tsx supaya bisa panggil .focus()/.reportValidity()
+// langsung ke <input> native di dalam (utk navigasi Enter dari field Nama Pengguna).
+// Konsumen lain (Profil, Generus, LupaPassword) tidak perlu ref, tetap kompatibel apa adanya.
+const PasswordInput = forwardRef<HTMLInputElement, Props>(function PasswordInput({
+  value, onChange, placeholder, id, name, autoComplete, className, disabled, required, onKeyDown,
+}, ref) {
   const [revealAll, setRevealAll] = useState(false)
   // Karakter terakhir yang baru diketik, ditampilkan sesaat di badge preview lalu di-clear
   // otomatis -- MURNI tampilan tambahan di luar <input>, tidak pernah memengaruhi value asli.
@@ -89,13 +94,16 @@ export default function PasswordInput({
   return (
     <div className="relative">
       <input
+        ref={ref}
         type={revealAll ? 'text' : 'password'}
         id={id}
         name={name}
         autoComplete={autoComplete}
         disabled={disabled}
+        required={required}
         value={value}
         onChange={handleChange}
+        onKeyDown={onKeyDown}
         placeholder={placeholder}
         className={className}
       />
@@ -134,4 +142,6 @@ export default function PasswordInput({
       )}
     </div>
   )
-}
+})
+
+export default PasswordInput

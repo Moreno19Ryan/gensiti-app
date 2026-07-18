@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { signIn, authFetch, getUserProfile } from '@/lib/auth'
 import { supabase, setRememberMe } from '@/lib/supabase'
@@ -25,6 +25,7 @@ export default function LoginPage() {
   // lib/supabase.ts utk cara flag ini sebenarnya memengaruhi tempat sesi disimpan.
   const [ingatSaya, setIngatSaya] = useState(true)
   const [stats, setStats] = useState<{ total_generus_aktif: number; total_kelompok: number; total_desa: number } | null>(null)
+  const passwordInputRef = useRef<HTMLInputElement>(null)
 
   // Statistik agregat publik (RPC get_landing_stats, anon-safe -- lihat komentar di
   // migration-nya: cuma 3 angka total, tanpa parameter scope, tanpa data individu/PII sama
@@ -211,8 +212,16 @@ export default function LoginPage() {
     }
   }
 
+  // Bersihkan pesan validasi custom (dipasang saat Enter ditekan di field Nama Pengguna
+  // sementara Password masih kosong -- lihat onKeyDown di bawah) begitu user mulai
+  // mengetik, supaya field tidak "terkunci invalid" selamanya setelah pesan itu tampil.
+  const handlePasswordChange = (v: string) => {
+    setPassword(v)
+    passwordInputRef.current?.setCustomValidity('')
+  }
+
   return (
-    <div className="min-h-screen flex font-[system-ui]" style={{ background: '#F5F7FA' }}>
+    <div className="min-h-screen flex font-[system-ui] animate-page-in" style={{ background: '#F5F7FA' }}>
       {/* Panel brand -- desktop saja (>= lg). Di mobile diganti header ringkas di bawah,
           murni via breakpoint Tailwind (bukan JS+resize listener spt draft awal di Claude
           Design) supaya tidak ada risiko hydration mismatch SSR/CSR di Next.js. */}
@@ -276,7 +285,7 @@ export default function LoginPage() {
             <span className="font-bold text-[17px] text-slate-800">GENSITI</span>
           </div>
 
-          <p className="text-slate-500 text-sm mb-1">Assalamualaikum,</p>
+          <p className="text-slate-500 text-sm mb-1">Assalamualaikum, Generus 👋</p>
           <h2 className="text-[26px] font-extrabold text-slate-900 mb-2 tracking-tight">Masuk ke akun Anda</h2>
           <p className="text-slate-400 text-sm mb-8">Gunakan nama pengguna terdaftar untuk melanjutkan.</p>
 
@@ -310,9 +319,24 @@ export default function LoginPage() {
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => {
+                    // Kalau user menekan Enter tapi Password masih kosong, jangan biarkan
+                    // form submit dgn error generik -- pindahkan fokus ke Password &
+                    // tampilkan notice validasi native ("harap isi bidang ini") di situ,
+                    // baru bersih setelah user mulai mengetik (lihat handlePasswordChange).
+                    if (e.key === 'Enter' && !password) {
+                      e.preventDefault()
+                      const el = passwordInputRef.current
+                      if (el) {
+                        el.setCustomValidity('Harap isi bidang ini.')
+                        el.focus()
+                        el.reportValidity()
+                      }
+                    }
+                  }}
                   required
                   autoCapitalize="characters"
-                  placeholder="cth. MORENO RYANDIKA"
+                  placeholder="cth. ROJUL BIN FULAN"
                   className="w-full pl-11 pr-4 py-3 rounded-[14px] border-[1.5px] border-[#E7EBF2] bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition uppercase"
                 />
               </div>
@@ -331,8 +355,10 @@ export default function LoginPage() {
                   <path d="M8 10V7a4 4 0 0 1 8 0v3" />
                 </svg>
                 <PasswordInput
+                  ref={passwordInputRef}
                   value={password}
-                  onChange={setPassword}
+                  onChange={handlePasswordChange}
+                  required
                   placeholder="Masukkan password"
                   autoComplete="current-password"
                   className="w-full pl-11 pr-11 py-3 rounded-[14px] border-[1.5px] border-[#E7EBF2] bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"

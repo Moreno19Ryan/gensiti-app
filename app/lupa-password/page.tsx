@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import PasswordInput from '@/components/PasswordInput'
+import { PPG_LOGO_LOGIN_BASE64 } from '@/lib/logo'
 
 const RESEND_COOLDOWN_SECONDS = 60
 
@@ -116,20 +117,62 @@ export default function LupaPasswordPage() {
     }
   }
 
-  const inputClass = 'w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition'
+  // Token style disamakan persis dgn app/login/page.tsx supaya kedua halaman auth terasa
+  // satu keluarga (rounded-[14px], border tipis #E7EBF2, focus ring biru).
+  const inputClass = 'w-full px-4 py-3 rounded-[14px] border-[1.5px] border-[#E7EBF2] bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition'
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-lg mb-4 p-2">
-            <img src="/icons/icon-512.png" alt="GENSITI" className="w-full h-full object-contain" />
+    <div className="min-h-screen flex font-[system-ui] animate-page-in" style={{ background: '#F5F7FA' }}>
+      {/* Panel brand -- sama strukturnya dgn app/login/page.tsx (desktop saja, >= lg). */}
+      <div
+        className="hidden lg:flex flex-1 min-w-0 flex-col justify-between p-14 text-white relative overflow-hidden"
+        style={{ background: 'linear-gradient(155deg,#0381FE 0%,#0753A8 60%,#0A3E7D 100%)' }}
+      >
+        <div className="absolute w-[520px] h-[520px] rounded-full bg-white/[0.06] -top-40 -right-40" />
+        <div className="absolute w-80 h-80 rounded-full bg-white/5 -bottom-24 -left-16" />
+
+        <div className="relative flex items-center gap-3.5">
+          <img src={PPG_LOGO_LOGIN_BASE64} alt="PPG" className="h-14 w-auto object-contain drop-shadow-lg" />
+          <div className="w-px h-9 bg-white/25" />
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center p-1.5 shrink-0">
+              <img src="/icons/icon-512.png" alt="GENSITI" className="w-full h-full object-contain" />
+            </div>
+            <span className="font-bold text-lg tracking-wide">GENSITI</span>
           </div>
-          <h1 className="text-3xl font-black text-white tracking-tight">GENSITI</h1>
-          <p className="text-blue-200 mt-1 text-sm">Smart Organization Management System</p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-2xl p-8">
+        <div className="relative">
+          <h1 className="text-[34px] font-extrabold leading-tight mb-4 max-w-md text-balance">
+            Reset password dengan aman
+          </h1>
+          <p className="text-[15px] leading-relaxed text-white/80 max-w-sm">
+            Kode verifikasi dikirim ke email yang terhubung dengan akun kamu -- tidak perlu menunggu approval siapapun.
+          </p>
+        </div>
+
+        <div className="relative flex items-center gap-2 text-white/70 text-[13px]">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+            <rect x="4" y="10" width="16" height="10" rx="2.2" />
+            <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+          </svg>
+          Kode berlaku 10 menit, hanya sekali pakai.
+        </div>
+      </div>
+
+      {/* Panel form */}
+      <div className="flex-1 flex items-center justify-center p-8">
+        <div className="w-full max-w-[380px]">
+          {/* Header ringkas -- mobile saja (< lg) */}
+          <div className="flex lg:hidden items-center gap-2.5 mb-8">
+            <img src={PPG_LOGO_LOGIN_BASE64} alt="PPG" className="h-10 w-auto object-contain" />
+            <div className="w-px h-7 bg-slate-200" />
+            <div className="w-8 h-8 rounded-lg bg-[#0381FE] flex items-center justify-center p-1.5 shrink-0">
+              <img src="/icons/icon-512.png" alt="GENSITI" className="w-full h-full object-contain" />
+            </div>
+            <span className="font-bold text-[17px] text-slate-800">GENSITI</span>
+          </div>
+
           {done ? (
             <div className="text-center py-4">
               <div className="w-14 h-14 bg-green-100 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-4">✓</div>
@@ -137,15 +180,16 @@ export default function LupaPasswordPage() {
               <p className="text-slate-500 text-sm mb-6">
                 Password akun kamu sudah diperbarui. Silakan masuk lagi dengan password baru.
               </p>
-              <Link href="/login" className="inline-block w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors">
+              <Link href="/login" className="inline-block w-full py-3.5 px-4 text-white font-bold rounded-[14px] transition-colors text-center"
+                style={{ background: '#0381FE', boxShadow: '0 8px 20px rgba(3,129,254,0.28)' }}>
                 Kembali ke Halaman Masuk
               </Link>
             </div>
           ) : step === 1 ? (
             <>
               <p className="text-slate-500 text-sm mb-1">Lupa password?</p>
-              <h2 className="text-xl font-bold text-slate-800 mb-1">Reset Password</h2>
-              <p className="text-slate-400 text-xs mb-6">
+              <h2 className="text-[26px] font-extrabold text-slate-900 mb-2 tracking-tight">Reset Password</h2>
+              <p className="text-slate-400 text-sm mb-8">
                 Masukkan nama pengguna kamu, kode verifikasi akan dikirim ke email yang terhubung dengan akun tersebut.
               </p>
 
@@ -157,7 +201,7 @@ export default function LupaPasswordPage() {
 
               <form onSubmit={handleRequestSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Nama Pengguna</label>
+                  <label className="block text-[13px] font-semibold text-slate-700 mb-1.5">Nama Pengguna</label>
                   <input
                     type="text"
                     value={username}
@@ -171,7 +215,8 @@ export default function LupaPasswordPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 mt-2"
+                  className="w-full py-3.5 px-4 text-white font-bold rounded-[14px] transition-colors flex items-center justify-center gap-2 mt-2 disabled:opacity-60"
+                  style={{ background: '#0381FE', boxShadow: '0 8px 20px rgba(3,129,254,0.28)' }}
                 >
                   {loading ? (
                     <>
@@ -184,15 +229,15 @@ export default function LupaPasswordPage() {
                 </button>
               </form>
 
-              <Link href="/login" className="block text-center text-sm text-blue-600 hover:underline font-medium mt-5">
+              <Link href="/login" className="block text-center text-sm text-[#0381FE] hover:underline font-semibold mt-5">
                 ← Kembali ke Halaman Masuk
               </Link>
             </>
           ) : (
             <>
               <p className="text-slate-500 text-sm mb-1">Langkah 2 dari 2</p>
-              <h2 className="text-xl font-bold text-slate-800 mb-1">Masukkan Kode & Password Baru</h2>
-              <p className="text-slate-400 text-xs mb-6">
+              <h2 className="text-[26px] font-extrabold text-slate-900 mb-2 tracking-tight">Masukkan Kode & Password Baru</h2>
+              <p className="text-slate-400 text-sm mb-8">
                 {info || 'Kode verifikasi sudah dikirim ke email yang terhubung dengan akun kamu (kalau nama pengguna terdaftar).'}
               </p>
 
@@ -204,7 +249,7 @@ export default function LupaPasswordPage() {
 
               <form onSubmit={handleConfirmSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Kode OTP</label>
+                  <label className="block text-[13px] font-semibold text-slate-700 mb-1.5">Kode OTP</label>
                   <input
                     type="text"
                     inputMode="numeric"
@@ -217,7 +262,7 @@ export default function LupaPasswordPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Password Baru</label>
+                  <label className="block text-[13px] font-semibold text-slate-700 mb-1.5">Password Baru</label>
                   <PasswordInput
                     value={newPassword}
                     onChange={setNewPassword}
@@ -228,7 +273,7 @@ export default function LupaPasswordPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Konfirmasi Password Baru</label>
+                  <label className="block text-[13px] font-semibold text-slate-700 mb-1.5">Konfirmasi Password Baru</label>
                   <PasswordInput
                     value={confirmPassword}
                     onChange={setConfirmPassword}
@@ -241,7 +286,8 @@ export default function LupaPasswordPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 mt-2"
+                  className="w-full py-3.5 px-4 text-white font-bold rounded-[14px] transition-colors flex items-center justify-center gap-2 mt-2 disabled:opacity-60"
+                  style={{ background: '#0381FE', boxShadow: '0 8px 20px rgba(3,129,254,0.28)' }}
                 >
                   {loading ? (
                     <>
@@ -258,7 +304,7 @@ export default function LupaPasswordPage() {
                 type="button"
                 onClick={handleResend}
                 disabled={cooldown > 0 || loading}
-                className="block w-full text-center text-sm text-blue-600 hover:underline font-medium mt-5 disabled:text-slate-400 disabled:no-underline"
+                className="block w-full text-center text-sm text-[#0381FE] hover:underline font-semibold mt-5 disabled:text-slate-400 disabled:no-underline"
               >
                 {cooldown > 0 ? `Kirim ulang kode (${cooldown}s)` : 'Kirim ulang kode'}
               </button>
@@ -272,11 +318,11 @@ export default function LupaPasswordPage() {
               </button>
             </>
           )}
-        </div>
 
-        <p className="text-center text-blue-300 text-xs mt-6">
-          &copy; {new Date().getFullYear()} GENSITI. Semua hak dilindungi.
-        </p>
+          <p className="text-center text-slate-400 text-[12.5px] mt-8">
+            GENSITI &middot; Sistem Manajemen Organisasi
+          </p>
+        </div>
       </div>
     </div>
   )
