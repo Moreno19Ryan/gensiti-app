@@ -205,10 +205,11 @@ export default function LupaPasswordPage() {
                   <input
                     type="text"
                     value={username}
-                    onChange={(e) => setUsername(e.target.value)}
+                    onChange={(e) => setUsername(e.target.value.toUpperCase())}
                     required
+                    autoCapitalize="characters"
                     placeholder="Nama lengkap atau nama panggilan"
-                    className={inputClass}
+                    className={`${inputClass} uppercase`}
                   />
                 </div>
 
