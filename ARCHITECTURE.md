@@ -13,6 +13,7 @@ project/produk dan konvensi coding, lihat [CLAUDE.md](CLAUDE.md); untuk riwayat 
 User → Vercel (Next.js App Router)  →  Supabase Postgres (RLS + RPC SECURITY DEFINER)
                                      →  Supabase Auth
                                      →  Resend (email)
+                                     →  Sentry (error monitoring, tier gratis)
 ```
 
 - Tidak ada backend custom terpisah — semua logika data lewat Supabase (Postgres + RLS +
@@ -215,7 +216,24 @@ Kalau restore benar-benar dibutuhkan (mis. data korup/terhapus tidak sengaja):
    `email_preferensi` — lihat `EXCLUDED_TABLES` di kode) tidak bisa direstore dari file
    ini sama sekali — di luar wewenang Super Admin secara desain.
 
-## 9. Yang Belum Terdokumentasi / Perlu Update Berkala
+## 9. Error Monitoring (Sentry)
+
+Sentry (`@sentry/nextjs`, tier gratis) dipasang untuk menangkap error tak
+tertangani di client, server, dan edge runtime.
+
+- Konfigurasi: `instrumentation-client.ts` (client), `sentry.server.config.ts`
+  (server), `sentry.edge.config.ts` (edge), didaftarkan lewat `instrumentation.ts`
+  (`register()` + `onRequestError`). `app/global-error.tsx` menangkap error yang
+  lolos sampai root layout.
+- `next.config.ts` dibungkus `withSentryConfig` untuk upload source maps saat
+  build (opsional, hanya jalan kalau `SENTRY_AUTH_TOKEN` tersedia).
+- DSN dan konfigurasi lain **selalu** lewat environment variable, tidak pernah
+  di-hardcode: `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_DSN` (wajib diisi agar Sentry
+  aktif; kalau kosong, SDK otomatis nonaktif lewat flag `enabled`), plus
+  `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` (opsional, untuk upload
+  source map di CI/Vercel). Lihat `.env.example`.
+
+## 10. Yang Belum Terdokumentasi / Perlu Update Berkala
 
 - Dokumen ini snapshot per tanggal di atas — RPC & tabel baru harus ditambahkan ke §3/§4
   saat migrasi baru diterapkan lewat Supabase MCP (`apply_migration`).
