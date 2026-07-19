@@ -124,6 +124,11 @@ ini disusun dari pola kerja & gap yang terlihat selama audit. **Perlu dikonfirma
 prioritasnya bersama Reno**, tapi ini kandidat area lanjutan yang masuk akal:
 
 ### A. Kesehatan & keamanan sistem (berkelanjutan)
+- [x] Endpoint health check publik `/api/health` (`GET`, tanpa autentikasi) -- balas `200`
+  + `{status: "ok", timestamp}`, sengaja tidak menyentuh Supabase sama sekali (tetap
+  menjawab walau database bermasalah) dan tidak membocorkan data internal apapun. Siap
+  dipantau UptimeRobot -- registrasi monitor-nya sendiri ke uptimerobot.com tetap manual
+  oleh Reno.
 - Audit RLS/API sudah dilakukan sekali (#74) -- sebaiknya jadi rutinitas berkala, terutama
   setiap kali ada fitur baru yang menyentuh tabel sensitif (users, keuangan, reset_password).
 - Belum ada rate limiting eksplisit di `/api/resolve-login` -- saat ini mengandalkan rate
