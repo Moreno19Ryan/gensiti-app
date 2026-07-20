@@ -61,6 +61,14 @@ punya gate sendiri, lihat §4).
 | `users` | Akun login (84 baris) — profil, role, scope, session token single-login | `role_id`, `desa_id`, `kelompok_id`, terhubung `auth.users` |
 | `generus` | Biodata anggota (83 baris) — bisa merangkap `users` lewat `user_id` | `desa_id`, `kelompok_id`, status arsip (menikah/meninggal/pindah_sambung) |
 
+> **Invarian RLS tulis `users` & `generus` (sejak 20 Juli 2026).** Kedua tabel ini
+> **tidak** pernah ditulis langsung dari client — semua create/update lewat API route
+> service-role (`/api/users`, `/api/generus`) yang bypass RLS + verifikasi manual. Karena
+> itu policy tulis langsung keduanya sengaja dibatasi **super_admin saja**
+> (`users_all_superadmin`, `generus_all_superadmin`); baca tetap hierarkis via policy SELECT
+> terpisah (`users_select`, `anggota_select`). Ini menutup celah eskalasi lewat anon key
+> (penting untuk client native nanti — lihat NATIVE_READINESS_AUDIT.md §G.1).
+
 ### Konten operasional
 | Tabel | Isi |
 |---|---|

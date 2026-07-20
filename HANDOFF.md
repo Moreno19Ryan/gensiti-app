@@ -61,6 +61,24 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 20 Juli 2026 (lanjutan) — RLS hardening (audit native #1, Batch A)
+
+- **Audit kesiapan native** ([NATIVE_READINESS_AUDIT.md](NATIVE_READINESS_AUDIT.md)) — assessment
+  arsitektur sebelum pengembangan Flutter/Tauri. Kesiapan ±60%; 3 gap struktural terbesar +
+  urutan prioritas perbaikan.
+- **Prioritas #1 (Batch A) sudah dijalankan** — verifikasi RLS langsung di DB (`pg_policies`,
+  `pg_proc`, security advisor) lalu migrasi `harden_rls_generus_write_and_cleanup`:
+  1. `generus` — policy tulis disamakan dgn `users` (super_admin saja; sebelumnya semua
+     tingkatan `daerah` bisa tulis langsung tanpa cek nama_role). Baca tak berubah.
+  2. `reset_password_requests` (retired) — cabut policy INSERT `WITH CHECK (true)` yg terbuka.
+  3. `increment_otp_attempt` — kunci `search_path`.
+  Verified tak memutus flow app (generus tak pernah ditulis langsung client). Security advisor
+  pasca-migrasi: 2 temuan hilang. Detail + sisa item (Batch B opsional, leaked-password
+  protection) di NATIVE_READINESS_AUDIT.md §5 Log Perubahan.
+- **Temuan penting audit:** fondasi RLS ternyata sudah kuat — `users` write-locked ke
+  super_admin (self-escalation terblokir), semua fungsi SECURITY DEFINER anon-executable
+  punya guard `auth.uid()`/tingkatan internal (tidak bocor).
+
 ### Sesi 20 Juli 2026
 
 - **Audit fitur absensi via QR Code** (diminta sebagai permintaan fitur baru, ternyata sudah

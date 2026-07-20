@@ -18,6 +18,15 @@ produk/arsitektur, lihat [CLAUDE.md](CLAUDE.md), [ARCHITECTURE.md](ARCHITECTURE.
 > query `pg_policies`, atau dashboard). Itu adalah langkah pertama yang direkomendasikan,
 > bukan asumsi yang sudah dipastikan.
 
+> **⟳ Pembaruan 20 Juli 2026 — verifikasi DB & perbaikan Batch A sudah dijalankan.**
+> RLS 22 tabel & fungsi SECURITY DEFINER sudah diinspeksi langsung (`pg_policies`,
+> `pg_proc`, security advisor). Hasil: fondasi lebih kuat dari dugaan awal — `users`
+> sudah write-locked ke super_admin (self-escalation terblokir), `password_reset_otp`
+> deny-all benar, dan fungsi laporan/`global_search`/`ajukan_izin_presensi` semuanya
+> punya guard `auth.uid()`/tingkatan internal (tidak bocor walau anon-executable). Migrasi
+> `harden_rls_generus_write_and_cleanup` sudah diterapkan (lihat "Log Perubahan" di akhir
+> dokumen). Bagian A.3, F/G di bawah sudah diperbarui dengan status aktual.
+
 ---
 
 ## 1. Ringkasan Eksekutif
@@ -118,19 +127,17 @@ masalah: backend jadi hidup independen dari web, dan aturannya cuma ditulis seka
   §4), bukan di React — ini justru contoh yang benar dan langsung reusable dari Flutter.
 
 #### A.3 — RLS yang diam-diam mengasumsikan pemanggil dari web
-**Risiko: Sedang · Effort: Kecil (verifikasi) — perlu verifikasi langsung DB**
+**Risiko: Sedang → ✅ TERVERIFIKASI (20 Juli 2026) — tidak ada asumsi web**
 
 Dari kode, otentikasi & RLS berbasis **`auth.uid()` / JWT** (helper `get_user_role`,
 `get_user_tingkatan`, `is_pengurus`, dst per ARCHITECTURE.md §4) — **tidak** ada
 ketergantungan pada header khusus browser, cookie, atau `Origin`. Secara desain ini
-**platform-agnostic** (JWT dari Flutter/desktop diperlakukan sama). Tidak ditemukan RLS
-policy yang membaca header request di kode aplikasi.
+**platform-agnostic** (JWT dari Flutter/desktop diperlakukan sama).
 
-**Namun** ini perlu dikonfirmasi langsung di DB sebelum native: query `pg_policies` untuk
-memastikan tak ada policy yang (a) mengandalkan `current_setting('request.header...')`
-tertentu, atau (b) meng-hardcode asumsi lain. Semua 19 tabel & ~65 RPC pada dasarnya perlu
-diakses dari mobile/desktop juga (hampir semua fitur), jadi verifikasi ini menyeluruh, bukan
-per-tabel pilih-pilih.
+**Terkonfirmasi via `pg_policies`:** seluruh 22 tabel RLS-nya berbasis `auth.uid()` +
+fungsi helper `get_user_*()`/`is_*()`. **Tidak ada** policy yang membaca
+`current_setting('request.header...')`, `Origin`, atau asumsi khusus browser lain. Semua
+tabel & RPC bisa diakses identik dari mobile/desktop. **Aman untuk multi-platform.**
 
 ---
 
@@ -316,28 +323,33 @@ Effort kecil untuk memperluas workflow yang sudah ada; nilainya besar.
 ### G. Keamanan untuk Permukaan Serangan yang Lebih Luas
 
 #### G.1 — Anon key ter-embed di binary + operasi sensitif
-**Risiko: Tinggi · Effort: Menengah — sebagian perlu verifikasi langsung DB**
+**Risiko: awalnya Tinggi → sebagian besar TERVERIFIKASI AMAN + gap yang ada sudah ditutup (20 Juli 2026)**
 
 Begitu native rilis, `NEXT_PUBLIC_SUPABASE_ANON_KEY` **pasti** bisa diekstrak dari APK/IPA/binary
 desktop. Ini **normal & aman untuk Supabase ASALKAN RLS rapat** — anon key hanya "tiket masuk",
-RLS yang menentukan boleh apa. **Yang harus dipastikan:** operasi yang sekarang "aman" **hanya
-karena** lewat service-role di server web (yang bypass RLS) harus **juga** ditolak di level RLS
-untuk siapa pun yang datang dengan anon key + JWT sendiri. Contoh operasi yang wajib diperiksa:
+RLS yang menentukan boleh apa. Hasil verifikasi langsung `pg_policies`/`pg_proc`:
 
-- **`users`**: pastikan RLS **menolak** self-update `role_id` / `is_active` / `desa_id` /
-  `kelompok_id` (kolom eskalasi hak akses). Saat ini proteksinya ada di **logika TS route** —
-  kalau RLS tabel `users` mengizinkan UPDATE self yang longgar, client jahat bisa **bypass route
-  dan langsung `UPDATE`** via anon key. **(Perlu verifikasi `pg_policies`.)**
-- **Pembuatan akun / ubah role / hierarki jenjang**: harus mustahil dilakukan tanpa lewat RPC
-  ber-otorisasi (menguatkan alasan A.1 — pindahkan ke RPC `SECURITY DEFINER`).
-- **`password_reset_otp`**: ARCHITECTURE.md menyebut RLS deny-all (hanya service role) — **baik**,
-  tinggal konfirmasi.
-- **`system_config`**, **`backup` (10 tabel)**: pastikan tidak ada jalur baca/tulis langsung dari
-  anon/authenticated di luar RPC/route berwenang.
+- **`users`** ✅ **sudah aman.** Hanya ada policy SELECT (self + hierarki) dan `users_all_superadmin`
+  (ALL, super_admin). **Tidak ada** policy UPDATE/INSERT untuk non-super-admin → self-update
+  `role_id`/`is_active`/scope via anon key **sudah terblokir RLS** (default-deny). Manajemen
+  anggota hanya lewat route service-role. Kekhawatiran awal **tidak terbukti**.
+- **`generus`** ⚠️→✅ **gap ditemukan & ditutup.** Policy lama `anggota_all_superadmin_daerah`
+  (FOR ALL) mengizinkan tulis untuk **semua** akun tingkatan `daerah` tanpa cek `nama_role`,
+  padahal `generus` tak pernah ditulis langsung client (semua via service-role). Diperbaiki
+  jadi tulis = super_admin saja (migrasi `harden_rls_generus_write_and_cleanup`), baca
+  daerah/ppg/desa/kelompok tetap utuh via `anggota_select`.
+- **`reset_password_requests`** ⚠️→✅ policy INSERT `WITH CHECK (true)` (anon insert tanpa batas,
+  tabel retired) **sudah dicabut** di migrasi yang sama.
+- **`password_reset_otp`** ✅ deny-all (0 policy, hanya service role) — **dikonfirmasi benar**.
+- **`system_config`** ✅ SELECT authenticated, UPDATE super_admin — rapat.
+- **Fungsi laporan / `global_search` / `ajukan_izin_presensi` / `proses_*`** ✅ walau
+  anon-executable, **semuanya punya guard internal** (`auth.uid()` / tingkatan) yang menolak
+  anon & role tak berwenang. Tidak bocor. Revoke anon-execute (defense-in-depth, Batch B)
+  **belum** dijalankan (opsional).
 
-> Ini **temuan prioritas tertinggi**: seluruh model keamanan multi-platform bertumpu pada RLS
-> yang rapat, dan sebagian saat ini "ditutupi" oleh logika di server web yang tidak berlaku
-> untuk client yang memanggil Supabase langsung.
+> **Status:** gap RLS nyata sudah ditutup. Model keamanan untuk anon key kini rapat di level
+> DB (bukan sekadar logika server web). Sisa: Batch B (revoke anon-execute, opsional) &
+> aktifkan leaked-password protection di Auth settings.
 
 #### G.2 — Rate limiting resolve-login (& password-reset)
 **Risiko: Sedang → Tinggi (naik untuk native) · Effort: Kecil–Menengah**
@@ -359,7 +371,7 @@ native jalan**, terakhir **paralel/kosmetik**.
 
 | # | Perbaikan | Kategori | Risiko | Effort | Kenapa urutan ini |
 |---|---|---|---|---|---|
-| **1** | **Audit & rapatkan RLS di DB** (verifikasi `pg_policies`: `users`, `system_config`, `password_reset_otp`, dll menolak akses langsung anon/authenticated ke operasi sensitif) | G.1, A.3 | Tinggi | Menengah | Seluruh model keamanan multi-platform bertumpu di sini. Anon key akan tersebar — RLS harus jadi benteng sesungguhnya, bukan logika server web. **Kerjakan paling awal & langsung di DB.** |
+| **1** | ~~**Audit & rapatkan RLS di DB**~~ ✅ **SELESAI (Batch A, 20 Juli 2026)** — verifikasi 22 tabel + fungsi; gap `generus`/`reset_password_requests` ditutup, `search_path` `increment_otp_attempt` dikunci. Sisa opsional: Batch B (revoke anon-execute) + leaked-password protection. | G.1, A.3 | ~~Tinggi~~ | Menengah | Seluruh model keamanan multi-platform bertumpu di sini. Anon key akan tersebar — RLS harus jadi benteng sesungguhnya, bukan logika server web. **Sudah dikerjakan paling awal & langsung di DB.** |
 | **2** | **Pindahkan otorisasi ke RPC `SECURITY DEFINER` + Edge Function** (users/generus → RPC; resolve-login/password-reset → Edge Function), hilangkan duplikasi aturan | A.1, A.2, B.3 | Tinggi | Besar | Menjadikan DB sumber kebenaran tunggal → Flutter tinggal panggil, tak menulis ulang aturan. Sekaligus melepas backend dari deployment Vercel & mengisolasi service-role key. |
 | **3** | **Contract test untuk authorization + RPC kritis** (server enforcement, resolve-login, laporan) + perluas CI ke test level-backend | F.1, F.2 | Tinggi | Menengah | Mengunci perilaku backend **sebelum** 3–4 client bergantung. Paling efektif dikerjakan tepat setelah #2 (menguji RPC baru). |
 | **4** | **Redesain single-session → model multi-device** (`user_sessions`) | B.2 | Tinggi | Menengah–Besar | Menyentuh model data + UX; harus final sebelum client mobile dibangun di atas asumsi sesi tunggal. |
@@ -382,4 +394,31 @@ Item #7 (design token) aman dikerjakan kapan pun karena tidak menyentuh backend.
   `pg_policies`) atau dashboard.
 - Dokumen ini snapshot per tanggal di atas — perbarui kalau arsitektur berubah (mis. setelah
   #2 dikerjakan, tabel §A dan diagram alur di ARCHITECTURE.md perlu ikut disesuaikan).
-- Tidak ada kode aplikasi yang diubah untuk audit ini (sesuai instruksi: assessment dulu).
+- Audit awal (assessment) tidak menyentuh kode; perbaikan #1 (Batch A) hanya mengubah **RLS di
+  database** (migrasi terlacak), bukan kode aplikasi.
+
+---
+
+## 5. Log Perubahan (perbaikan yang sudah dijalankan)
+
+### 20 Juli 2026 — Prioritas #1 Batch A (RLS hardening)
+
+Verifikasi RLS langsung di DB (`pg_policies`, `pg_proc`, security advisor) + migrasi
+**`harden_rls_generus_write_and_cleanup`** (diterapkan ke project `ccyqgcfjmzgkmkczuydv`):
+
+1. **`generus`** — `DROP POLICY anggota_all_superadmin_daerah` (FOR ALL, semua tingkatan
+   `daerah`) → `CREATE POLICY generus_all_superadmin` (FOR ALL, super_admin saja), samakan
+   dengan pola tabel `users`. Baca daerah/ppg/desa/kelompok tetap via `anggota_select`.
+   Verified aman: `generus` tak pernah ditulis langsung client (semua via route service-role),
+   dan tak ada fungsi DB yang menulis `generus`.
+2. **`reset_password_requests`** — `DROP POLICY reset_request_insert` (INSERT `WITH CHECK true`,
+   tabel retired). Policy `reset_request_superadmin` dibiarkan.
+3. **`increment_otp_attempt`** — `SET search_path = public, pg_temp` (tutup search_path mutable).
+
+Security advisor Supabase pasca-migrasi: `rls_policy_always_true` & `function_search_path_mutable`
+**hilang**. Sisa temuan (`rls_enabled_no_policy` pada `password_reset_otp` = deny-all sengaja;
+anon/authenticated function-execute = self-guarded; leaked-password protection = config Auth)
+bukan lubang aktif.
+
+**Belum dikerjakan (opsional / lanjutan):** Batch B (revoke anon `EXECUTE` — defense-in-depth),
+aktifkan leaked-password protection di Supabase Auth settings, dan prioritas #2 dst.
