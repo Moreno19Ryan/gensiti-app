@@ -1,0 +1,7 @@
+# Normalisasi line ending -- HANDOFF.md mencatat repo Windows Reno pakai core.autocrlf=true
+# bawaan Git, yang bisa bikin `git status` menampilkan file "modified" padahal isinya
+# identik (cuma beda LF/CRLF). text=auto biarkan Git yang deteksi file teks vs biner
+# (jadi aset biner di public/ tidak ikut dinormalisasi), eol=lf memaksa LF utk file teks
+# di working tree siapapun yang clone, konsisten dgn commit yang dibuat lewat Claude Code
+# (Linux, LF native).
+* text=auto eol=lf

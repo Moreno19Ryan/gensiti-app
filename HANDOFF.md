@@ -185,20 +185,15 @@ prioritasnya bersama Reno**, tapi ini kandidat area lanjutan yang masuk akal:
   yang sudah terbukti bagus di Laporan Bulanan v2.
 
 ### C. Kualitas & keberlanjutan jangka panjang
-- Tidak ada automated test (unit/integration) sejauh ini -- semua verifikasi manual (tsc,
-  eslint, uji browser langsung). Untuk skala kode 12rb+ baris dan fitur sekompleks laporan
-  bulanan (RPC agregasi berlapis), test otomatis untuk fungsi kritis (perhitungan H/I/S/A,
-  hierarki akses, resolve-login) akan mengurangi risiko regresi seiring proyek membesar.
-  Pertimbangkan setidaknya test untuk `lib/roles.ts` dan RPC-RPC laporan (lewat pgTAP atau
-  test di level aplikasi).
-- CI/CD saat ini murni Vercel auto-deploy tanpa gate (tidak ada CI yang menjalankan
-  tsc/eslint sebelum deploy) -- kalau commit langsung ke `main` tanpa cek lokal, ada risiko
-  deploy kode yang error. Pertimbangkan GitHub Action ringan (tsc + eslint) sebagai
-  pre-deploy check.
-- Dokumentasi arsitektur (skema database, daftar RPC, diagram alur peran/akses) belum ada
-  dalam bentuk terpisah -- pengetahuannya saat ini tersebar di komentar kode (yang memang
-  bagus & detail, tapi tidak ada satu tempat ringkas untuk onboarding cepat kalau ada
-  kontributor baru).
+- [x] Automated test dasar sudah ada: `lib/roles.test.ts` (36 test, hak akses/hierarki) +
+  2 test lain (38 total lewat `npm run test` / vitest). **Masih gap**: RPC laporan bulanan
+  (agregasi berlapis) dan `resolve-login` belum ada test otomatis (pgTAP atau test level
+  aplikasi) -- kalau mau nambah cakupan, ini kandidat berikutnya.
+- [x] CI/CD gate sudah ada: `.github/workflows/ci.yml` menjalankan `typecheck` + `lint` +
+  `test` di tiap push/PR ke `main` (bukan lagi murni Vercel auto-deploy tanpa gate).
+- [x] Dokumentasi arsitektur sudah ada di [ARCHITECTURE.md](ARCHITECTURE.md) -- skema
+  database, daftar RPC, peta hak akses, alur QR presensi, dan setup Sentry semua
+  terdokumentasi di satu tempat untuk onboarding cepat.
 
 ### D. Segera dikonfirmasi dengan Reno di awal sesi Claude Code
 1. Prioritas: lanjut fitur baru, atau dulukan hardening (test, CI, dokumentasi)?
