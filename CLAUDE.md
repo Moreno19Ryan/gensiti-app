@@ -66,7 +66,7 @@ npm audit
 ## Rencana Pengembangan ke Depan
 
 - [ ] Fitur reset password via OTP email (Supabase Auth + Resend)
-- [ ] Fitur absensi kegiatan (mulai dari QR Code, nanti bisa RFID/E-money)
+- [x] Fitur absensi kegiatan via QR Code (self check-in Generus, fallback kode manual 6-digit) — lihat `components/PresensiPanel.tsx` & ARCHITECTURE.md §10. Lanjutan (RFID/E-money) belum digarap.
 - [ ] PWA (Progressive Web App) sebagai jembatan sebelum native app
 - [ ] Native mobile app pakai Flutter (Android duluan, iOS menyusul)
 - [ ] Migrasi ownership Supabase, Vercel, Resend, dan domain Hostinger ke akun `generusbekasitimur@gmail.com` setelah app matang

@@ -61,6 +61,23 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 20 Juli 2026
+
+- **Audit fitur absensi via QR Code** (diminta sebagai permintaan fitur baru, ternyata sudah
+  ada) -- ditemukan fitur ini sudah diimplementasikan penuh & live sejak commit `1c2a222`
+  (`feat: QR check-in presensi + audit trail koreksi kehadiran`):
+  `components/PresensiPanel.tsx` men-generate QR dari `kode_presensi_aktif` (RPC
+  `generate_kode_presensi`) untuk Pengurus di kartu kegiatan, dan menyediakan scan kamera
+  (`qr-scanner`) untuk Generus dengan **fallback kode manual 6-digit tetap ada** (bukan
+  dihapus). Yang ternyata belum sinkron cuma dokumentasi: `CLAUDE.md` §"Rencana Pengembangan"
+  masih menandainya `[ ]` belum dikerjakan, dan `ARCHITECTURE.md` belum punya bagian yang
+  menjelaskan alur QR ini secara eksplisit (RPC-nya sudah terdaftar di §4, tapi lapisan
+  client -- payload QR, rotasi 5 menit, fallback manual -- belum). Diperbaiki: checklist
+  `CLAUDE.md` diceklis, ditambahkan [ARCHITECTURE.md §10](ARCHITECTURE.md#10-presensi-via-qr-code-client-side).
+  Tidak ada perubahan kode aplikasi -- `tsc --noEmit`, `eslint`, dan `npm run test` (38 test)
+  tetap sukses tanpa error/regresi, dan `npm run build` diverifikasi sukses (pakai
+  placeholder `NEXT_PUBLIC_SUPABASE_*` di sandbox tanpa akses `.env.local` asli).
+
 ### Sesi 19 Juli 2026
 
 - **Pasang Sentry error monitoring** (`@sentry/nextjs`, tier gratis) --

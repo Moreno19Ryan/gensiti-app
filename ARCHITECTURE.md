@@ -233,7 +233,31 @@ tertangani di client, server, dan edge runtime.
   `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` (opsional, untuk upload
   source map di CI/Vercel). Lihat `.env.example`.
 
-## 10. Yang Belum Terdokumentasi / Perlu Update Berkala
+## 10. Presensi via QR Code (Client-Side)
+
+Lapisan client di atas RPC presensi (§4 `generate_kode_presensi` / `submit_presensi`) —
+diimplementasikan di [components/PresensiPanel.tsx](components/PresensiPanel.tsx), dipasang
+per-kartu kegiatan di [app/(dashboard)/kegiatan/page.tsx](<app/(dashboard)/kegiatan/page.tsx>).
+
+- **Pengurus** (`canManagePresensi`, §6): tekan "Mulai Absensi" → memanggil
+  `generate_kode_presensi` → kode 6-digit yang didapat di-encode jadi QR PNG di sisi client
+  (`qrcode`, `QRCode.toDataURL`) dan ditampilkan besar di kartu kegiatan. Kode & QR **rotasi
+  otomatis tiap 5 menit** selagi sesi terbuka (`KODE_MASA_BERLAKU_MS`), memanggil ulang RPC
+  yang sama. Kode presensi tetap satu-satunya sumber kebenaran untuk validasi — QR murni
+  representasi visualnya, bukan jalur otorisasi terpisah.
+- **Generus & pengurus lain**: default-nya tombol "📷 Scan QR Absensi" (kamera device via
+  `qr-scanner`) untuk self check-in. **Input kode manual 6-digit tetap tersedia** sebagai
+  jalur alternatif (bukan dihapus) lewat link "Kamera tidak bisa? Masukkan kode manual" —
+  keduanya berakhir memanggil RPC `submit_presensi` yang sama persis, jadi validasi &
+  anti-duplikasi konsisten terlepas dari cara input.
+- **Payload QR**: JSON `{v: 1, kegiatanId, kode}` (bukan sekadar kode polos) supaya hasil
+  scan bisa divalidasi dulu di client (kegiatan cocok, format benar) sebelum memanggil
+  `submit_presensi` — pesan error lebih jelas & cepat kalau salah scan QR kegiatan lain,
+  meski otorisasi sesungguhnya tetap di RPC (server), tidak bisa dilewati dari sini.
+- Super Admin & PPG tidak melihat panel self check-in sama sekali (bukan peserta kegiatan
+  — lihat §6), hanya keterangan netral.
+
+## 11. Yang Belum Terdokumentasi / Perlu Update Berkala
 
 - Dokumen ini snapshot per tanggal di atas — RPC & tabel baru harus ditambahkan ke §3/§4
   saat migrasi baru diterapkan lewat Supabase MCP (`apply_migration`).
