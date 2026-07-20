@@ -21,8 +21,8 @@
   --color-blue-900: #0A3E7D;
   --color-blue-950: #072951;
 
-  /* Rotasi logo GENSITI di LoadingSpinner (components/LoadingSpinner.tsx) -- 1.5 detik
-     per putaran, lebih lambat & tenang dibanding animate-spin bawaan Tailwind (1 detik). */
+  /* Rotasi cincin LoadingSpinner (components/LoadingSpinner.tsx) -- 1.5 detik per
+     putaran, lebih lambat & tenang dibanding animate-spin bawaan Tailwind (1 detik). */
   --animate-spin-slow: spin-logo 1.5s linear infinite;
 }
 
@@ -30,6 +30,43 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+/* LoadingSpinner (components/LoadingSpinner.tsx) -- circular progress indicator gaya
+   Google/Material: cincin SVG berputar (--animate-spin-slow di atas) SEKALIGUS arc-nya
+   memanjang/memendek (gensiti-spinner-dash) dan warnanya bersiklus (gensiti-spinner-color)
+   lewat palet brand GENSITI -- biru utama (--color-blue-600 di atas) + aksen teal/amber/navy
+   yang diambil dari logo resmi (public/icons/icon-512.png). Percobaan awal memutar logo
+   GENSITI utuh dibatalkan -- logo itu ilustratif (ada menara & figur orang, bukan lambang
+   simetris) sehingga kalau diputar 360 derajat malah kelihatan aneh; sekarang cukup ambil
+   paletnya saja. */
+@keyframes gensiti-spinner-dash {
+  0% {
+    stroke-dasharray: 1, 200;
+    stroke-dashoffset: 0;
+  }
+  50% {
+    stroke-dasharray: 90, 200;
+    stroke-dashoffset: -35px;
+  }
+  100% {
+    stroke-dasharray: 90, 200;
+    stroke-dashoffset: -124px;
+  }
+}
+
+@keyframes gensiti-spinner-color {
+  0%, 100% { stroke: var(--color-blue-600); }
+  25% { stroke: #14b8a6; }
+  50% { stroke: #f59e0b; }
+  75% { stroke: #0a3e7d; }
+}
+
+.gensiti-spinner-arc {
+  stroke: var(--color-blue-600);
+  animation:
+    gensiti-spinner-dash 1.5s ease-in-out infinite,
+    gensiti-spinner-color 6s linear infinite;
 }
 
 /* Dark mode base overrides */
