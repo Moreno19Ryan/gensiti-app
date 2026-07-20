@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase'
 import { isGenerusBiasa, canManageMembers as checkCanManageMembers, canManagePresensi as checkCanManagePresensi, isTeamIT } from '@/lib/roles'
 import { loadFeatureToggles, isFeatureEnabled, FeatureToggle } from '@/lib/feature-toggles'
 import GlobalSearch from '@/components/GlobalSearch'
+import LoadingSpinner from '@/components/LoadingSpinner'
 
 interface NavItem {
   href: string
@@ -208,14 +209,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   if (loading || (user && maintenanceOk === null)) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100 dark:bg-slate-900">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          <span className="text-slate-500 dark:text-slate-300 font-medium">Memuat...</span>
-        </div>
-      </div>
-    )
+    return <LoadingSpinner label="Memuat..." fullScreen />
   }
 
   if (!user) return null

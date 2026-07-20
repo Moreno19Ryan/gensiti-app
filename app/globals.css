@@ -20,6 +20,16 @@
   --color-blue-800: #0753A8;
   --color-blue-900: #0A3E7D;
   --color-blue-950: #072951;
+
+  /* Rotasi logo GENSITI di LoadingSpinner (components/LoadingSpinner.tsx) -- 1.5 detik
+     per putaran, lebih lambat & tenang dibanding animate-spin bawaan Tailwind (1 detik). */
+  --animate-spin-slow: spin-logo 1.5s linear infinite;
+}
+
+@keyframes spin-logo {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Dark mode base overrides */
