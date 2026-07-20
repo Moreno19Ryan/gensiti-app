@@ -12,7 +12,7 @@
 // membuang cache lama dan tidak ada aset basi tersangkut dari nama aplikasi sebelumnya.
 const CACHE_NAME = 'gensiti-static-v2'
 
-self.addEventListener('install', (event) => {
+self.addEventListener('install', () => {
   self.skipWaiting()
 })
 

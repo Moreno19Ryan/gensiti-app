@@ -653,7 +653,6 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
     if (!previewOpen || loading) return null
     try {
       return getMultiSectionPdfPreviewDataUrl(exportOptions)
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     } catch (e) {
       console.error('Gagal membangun pratinjau PDF laporan bulanan:', e)
       return null

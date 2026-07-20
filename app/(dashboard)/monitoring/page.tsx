@@ -69,7 +69,6 @@ export default function MonitoringPage() {
     if (isSuperAdmin) tabs.push({ key: 'sesi', label: '🔐 Sesi Aktif' })
     if (isSuperAdmin) tabs.push({ key: 'maintenance', label: '🛠️ Perawatan Sistem' })
     return tabs
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuperAdmin, canSeeKesehatan, canSeeAudit, canSeeEmail, featureEnabled, featureChecking])
 
   const [tab, setTab] = useState<Tab | null>(null)

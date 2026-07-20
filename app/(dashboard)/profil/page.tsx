@@ -138,7 +138,6 @@ export default function ProfilPage() {
     params.delete('error_description')
     const qs = params.toString()
     window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : ''))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const toggleDarkMode = () => {
