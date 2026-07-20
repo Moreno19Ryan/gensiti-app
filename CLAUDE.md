@@ -19,6 +19,7 @@ Dokumen ini dibaca otomatis oleh Claude Code di setiap awal sesi. Isi konteks pr
 | Email Service | Resend (untuk OTP, notifikasi, reset password) |
 | Domain & DNS | hPanel Hostinger |
 | Script tambahan | Google Apps Script (GAS) |
+| Error Monitoring | Sentry (`@sentry/nextjs`, tier gratis) |
 
 ## Arsitektur
 

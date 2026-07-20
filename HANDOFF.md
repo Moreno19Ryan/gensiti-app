@@ -59,7 +59,22 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ---
 
-## 2. Yang Baru Saja Dikerjakan (sesi 16 Juli 2026)
+## 2. Yang Baru Saja Dikerjakan
+
+### Sesi 19 Juli 2026
+
+- **Pasang Sentry error monitoring** (`@sentry/nextjs`, tier gratis) --
+  `instrumentation-client.ts`, `sentry.server.config.ts`, `sentry.edge.config.ts`,
+  `instrumentation.ts` (`onRequestError`), `app/global-error.tsx`, dan
+  `next.config.ts` dibungkus `withSentryConfig`. DSN & konfigurasi lain lewat
+  environment variable (`NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_DSN`, `SENTRY_ORG`,
+  `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN`), tidak di-hardcode -- lihat
+  `.env.example` (file baru, mendokumentasikan semua env var yang dipakai app
+  ini). Detail lihat [ARCHITECTURE.md §9](ARCHITECTURE.md#9-error-monitoring-sentry).
+  `npm run build` + `tsc --noEmit` + `eslint` sukses tanpa error setelah
+  perubahan ini.
+
+### Sesi 16 Juli 2026
 
 1. **Fix bug kritis PasswordInput** (`components/PasswordInput.tsx`) -- input password lama
    memakai `<input type="text">` dengan value hasil masking manual, dan salah menafsirkan
