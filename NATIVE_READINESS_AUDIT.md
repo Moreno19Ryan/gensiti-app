@@ -352,14 +352,26 @@ RLS yang menentukan boleh apa. Hasil verifikasi langsung `pg_policies`/`pg_proc`
 > aktifkan leaked-password protection di Auth settings.
 
 #### G.2 — Rate limiting resolve-login (& password-reset)
-**Risiko: Sedang → Tinggi (naik untuk native) · Effort: Kecil–Menengah**
+**Risiko: Sedang → ✅ DIKERJAKAN (20 Juli 2026) · Effort: Kecil**
 
-`resolve-login` belum punya rate limiting eksplisit (mengandalkan rate limit bawaan Supabase
-Auth di `signInWithPassword`). Dengan lebih banyak jenis client yang bisa memanggilnya, risiko
-**enumerasi nama / brute force** naik. **`password-reset/request`** juga rawan
-**abuse/email-bombing** (kirim OTP berulang). Rekomendasi: tambahkan rate limit (per IP + per
-nama/target, mis. lockout sementara setelah N gagal) — sekalian saat memindahkannya ke Edge
-Function (B.3), karena Edge Function lebih cocok untuk logika ini daripada API route Vercel.
+`resolve-login` sebelumnya tanpa rate limit eksplisit (dan merupakan oracle enumerasi:
+200+email utk nama valid vs 404 utk tidak ada). `password-reset/request` sudah punya throttle
+**per-user** (3 OTP/15 menit) tapi belum **per-IP** (rawan spraying ke banyak akun).
+
+**Sudah ditambahkan** rate limiter per-IP berbasis DB (reusable oleh client native):
+- Migrasi `add_auth_rate_limit`: tabel `auth_rate_limit` (deny-all RLS) + RPC
+  `check_auth_rate_limit(key, max, window_seconds)` — atomic prune→count→insert, **service_role
+  only** (tak bisa dipanggil/di-bypass anon).
+- `resolve-login`: **120 req / 10 menit per IP** (sangat longgar — seluruh org bisa login
+  berbarengan dari satu wifi; tetap memotong brute-force). Diblokir → 429 dgn pesan generik
+  identik "nama/password salah" (tidak bocorkan validitas nama).
+- `password-reset/request`: **20 req / 15 menit per IP**, di atas throttle per-user yang sudah
+  ada. Diblokir → diam-diam jatuh ke response generik (anti-enumeration).
+- Keduanya **fail-open**: error limiter tidak pernah mengunci pengguna sah.
+
+**Catatan:** oracle enumerasi `resolve-login` (mengembalikan email) dimitigasi rate limit,
+belum dihilangkan total — fix tuntasnya adalah tidak pernah mengembalikan email (butuh ubah
+alur login client). Layak dipertimbangkan saat #2/#B.3 (pindah ke Edge Function).
 
 ---
 
@@ -378,7 +390,7 @@ native jalan**, terakhir **paralel/kosmetik**.
 | **5** | **Generalisasi arsitektur push** (skema `push_subscriptions` simpan platform+token; `notify_push` fan-out Web Push + FCM) | C.2 | Sedang | Menengah–Besar | Web tetap jalan; ubah skema sekarang agar tak perlu migrasi data saat FCM ditambah. |
 | **6** | **OAuth deep-link scheme + generalisasi redirect config** | D.2 | Sedang | Menengah | Prasyarat "Masuk dengan Google" di mobile; tak memblokir login nama+password. |
 | **7** | **Ekstrak design token lengkap** (palet + warna status/chart) ke satu sumber | E.2 | Sedang | Menengah | Paralelisabel, risiko rendah; mempercepat paritas visual Flutter. Bisa jalan kapan saja. |
-| **8** | **Rate limiting resolve-login + password-reset** | G.2 | Sedang | Kecil | Hardening; enak digabung dengan #2 saat keduanya pindah ke Edge Function. |
+| **8** | ~~**Rate limiting resolve-login + password-reset**~~ ✅ **SELESAI (20 Juli 2026)** — limiter per-IP berbasis DB (RPC `check_auth_rate_limit`), fail-open. | G.2 | Sedang | Kecil | Hardening; dikerjakan lebih awal sbg quick win. Logika limiter sudah di DB → ikut terpakai saat pindah ke Edge Function (#B.3). |
 
 **Ringkas:** #1–#3 adalah **pondasi backend/keamanan** yang tidak boleh ditawar sebelum native.
 #4–#6 **membuka jalan** fitur native (sesi, push, OAuth). #7–#8 bisa **paralel/menyusul**.
@@ -422,3 +434,20 @@ bukan lubang aktif.
 
 **Belum dikerjakan (opsional / lanjutan):** Batch B (revoke anon `EXECUTE` — defense-in-depth),
 aktifkan leaked-password protection di Supabase Auth settings, dan prioritas #2 dst.
+
+### 20 Juli 2026 — Prioritas #8 (rate limiting per-IP)
+
+Migrasi **`add_auth_rate_limit`** + wiring 2 route:
+
+1. Tabel `auth_rate_limit` (RLS deny-all) + RPC `check_auth_rate_limit(p_key, p_max,
+   p_window_seconds)` — sliding window atomic (prune→count→insert), `SECURITY DEFINER`,
+   `search_path` terkunci, EXECUTE **hanya service_role** (di-revoke dari public/anon/authenticated).
+   Diuji langsung: `max=3` → `true,true,true,false,false`.
+2. `app/api/resolve-login/route.ts` — cek per-IP (120/10 mnt) sebelum query; blokir → 429
+   pesan generik. Fail-open.
+3. `app/api/password-reset/request/route.ts` — cek per-IP (20/15 mnt) di atas throttle
+   per-user yang sudah ada; blokir → response generik (silent). Fail-open.
+
+Verifikasi: `typecheck` + `eslint` (0 error) + `vitest` (38) + `build` sukses. Limiter di-DB
+sengaja generic (`p_key` bebas) supaya reusable saat endpoint dipindah ke Edge Function (#B.3)
+& dipakai client native.

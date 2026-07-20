@@ -78,6 +78,10 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 - **Temuan penting audit:** fondasi RLS ternyata sudah kuat — `users` write-locked ke
   super_admin (self-escalation terblokir), semua fungsi SECURITY DEFINER anon-executable
   punya guard `auth.uid()`/tingkatan internal (tidak bocor).
+- **Prioritas #8 (rate limiting) juga dijalankan** — migrasi `add_auth_rate_limit` (tabel
+  `auth_rate_limit` deny-all + RPC `check_auth_rate_limit`, service_role only) + limiter
+  per-IP di `resolve-login` (120/10 mnt) & `password-reset/request` (20/15 mnt, di atas
+  throttle per-user yg sudah ada). Fail-open. Detail di NATIVE_READINESS_AUDIT.md §5.
 
 ### Sesi 20 Juli 2026
 

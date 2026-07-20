@@ -32,6 +32,43 @@ function escapeIlike(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
 }
 
+// Ambil IP client dari header proxy (Vercel mengisi x-forwarded-for). Dipangkas 45 char
+// (cukup utk IPv6) supaya string yang dikendalikan penyerang tidak bisa menggelembungkan
+// bucket_key. Fallback 'unknown' -- semua request tanpa IP terdeteksi berbagi satu bucket.
+function getClientIp(req: NextRequest): string {
+  const xff = req.headers.get('x-forwarded-for') || ''
+  const first = xff.split(',')[0]?.trim()
+  const ip = first || req.headers.get('x-real-ip') || 'unknown'
+  return ip.slice(0, 45)
+}
+
+// Rate limit per-IP untuk endpoint enumeration-sensitif ini (resolve-login mengembalikan
+// email utk nama valid vs 404 utk tidak ada -- oracle enumerasi akun). FAIL-OPEN: kalau
+// pengecekan limiter sendiri error, request TETAP dilanjutkan -- masalah infra tidak boleh
+// pernah mengunci pengguna sah dari login. Batas sengaja SANGAT longgar (120/10 menit per IP)
+// supaya seluruh organisasi (~82 akun) bisa login berbarengan dari satu wifi saat kegiatan
+// tanpa kena limit, tapi tetap memotong brute-force/enumerasi otomatis yang butuh
+// ratusan/ribuan percobaan. Naikkan lagi kalau ada venue dgn NAT sangat besar.
+const RL_MAX = 120
+const RL_WINDOW_SECONDS = 600
+async function isRateLimited(supabaseAdmin: ReturnType<typeof adminClient>, ip: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabaseAdmin.rpc('check_auth_rate_limit', {
+      p_key: `resolve-login:${ip}`,
+      p_max: RL_MAX,
+      p_window_seconds: RL_WINDOW_SECONDS,
+    })
+    if (error) {
+      console.error('[resolve-login] rate limit check error (fail-open):', error.message)
+      return false
+    }
+    return data === false // RPC return false = diblokir
+  } catch (e) {
+    console.error('[resolve-login] rate limit exception (fail-open):', e)
+    return false
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { username } = await req.json()
@@ -50,6 +87,13 @@ export async function POST(req: NextRequest) {
     }
 
     const supabaseAdmin = adminClient()
+
+    // Rate limit per-IP SEBELUM query apapun -- kalau diblokir, balas pesan generik yang
+    // SAMA PERSIS dengan "nama tidak ditemukan" (status 429 + teks identik) supaya tidak
+    // membocorkan apakah nama yang barusan dicoba valid atau tidak.
+    if (await isRateLimited(supabaseAdmin, getClientIp(req))) {
+      return NextResponse.json({ error: 'Nama pengguna atau password salah' }, { status: 429 })
+    }
 
     // Coba cocok ke login_username dulu (nama panggilan, jalur utama & tercepat -- kolom
     // ini yang di-generate saat akun dibuat, lihat generateUniqueLoginUsername di

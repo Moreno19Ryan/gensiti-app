@@ -23,6 +23,40 @@ const OTP_EXPIRY_MINUTES = 10
 const THROTTLE_WINDOW_MINUTES = 15
 const THROTTLE_MAX_REQUESTS = 3
 
+// Rate limit per-IP (di ATAS throttle per-user yang sudah ada di bawah). Throttle per-user
+// (THROTTLE_MAX_REQUESTS) mencegah pemboman email SATU akun; limiter per-IP ini mencegah
+// penyebaran ke BANYAK akun dari satu sumber (mass abuse/enumerasi). Batas longgar
+// (20/15 menit per IP) supaya beberapa orang reset dari satu wifi tetap aman, tapi memotong
+// abuse otomatis. FAIL-OPEN: error limiter tidak boleh mengunci alur reset yang sah.
+const IP_RL_MAX = 20
+const IP_RL_WINDOW_SECONDS = 900
+
+// Ambil IP client dari header proxy (Vercel mengisi x-forwarded-for), dipangkas 45 char.
+function getClientIp(req: NextRequest): string {
+  const xff = req.headers.get('x-forwarded-for') || ''
+  const first = xff.split(',')[0]?.trim()
+  const ip = first || req.headers.get('x-real-ip') || 'unknown'
+  return ip.slice(0, 45)
+}
+
+async function isIpRateLimited(supabaseAdmin: ReturnType<typeof adminClient>, ip: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabaseAdmin.rpc('check_auth_rate_limit', {
+      p_key: `password-reset:${ip}`,
+      p_max: IP_RL_MAX,
+      p_window_seconds: IP_RL_WINDOW_SECONDS,
+    })
+    if (error) {
+      console.error('[password-reset] rate limit check error (fail-open):', error.message)
+      return false
+    }
+    return data === false
+  } catch (e) {
+    console.error('[password-reset] rate limit exception (fail-open):', e)
+    return false
+  }
+}
+
 function hashOtp(otp: string, userId: string): string {
   return createHash('sha256').update(`${otp}:${userId}`).digest('hex')
 }
@@ -73,6 +107,13 @@ export async function POST(req: NextRequest) {
     }
 
     const supabaseAdmin = adminClient()
+
+    // Limiter per-IP: kalau terlampaui, diam-diam jatuh ke response generik yang sama
+    // (tidak insert/kirim apapun) -- persis pola throttle per-user di bawah, caller tidak
+    // pernah tahu dia diblokir (anti-enumeration + tidak membocorkan status rate limit).
+    if (await isIpRateLimited(supabaseAdmin, getClientIp(req))) {
+      return NextResponse.json(GENERIC_RESPONSE)
+    }
 
     let { data: user } = await supabaseAdmin
       .from('users')
