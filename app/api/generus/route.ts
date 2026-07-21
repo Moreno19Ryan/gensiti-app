@@ -22,6 +22,24 @@ function adminClient() {
   )
 }
 
+// Client ber-scope JWT si PEMANGGIL (anon key + token user), BUKAN service-role. Dipakai
+// untuk memanggil RPC yang menegakkan otorisasi lewat auth.uid() di dalam database
+// (get_generus_biodata dst) -- supaya identitas pemanggil sampai ke fungsi SQL apa adanya,
+// dan seluruh aturan akses jadi satu sumber kebenaran di DB (bukan diduplikasi lagi di TS).
+// Ini persis pola yang nanti dipakai client native (Flutter/desktop): mereka juga memanggil
+// RPC yang sama dengan JWT mereka sendiri, tanpa menulis ulang aturannya. autoRefresh/persist
+// dimatikan -- request server berumur pendek, cuma butuh token sekali pakai dari header.
+function userClient(token: string) {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+      auth: { autoRefreshToken: false, persistSession: false },
+    }
+  )
+}
+
 interface Caller {
   id: string
   tingkatan: string | null
@@ -120,48 +138,41 @@ async function generateUniqueLoginUsername(
   return `${base} (${Date.now()})`
 }
 
-// GET: Ambil biodata Generus by userId (server-side, bypass RLS)
-// Diizinkan untuk: pemilik data sendiri, atau pengguna yang berwenang mengelola Generus.
+// GET: Ambil biodata Generus by userId.
+// Diizinkan untuk: pemilik data sendiri, atau pengguna yang berwenang mengelola Generus
+// (dalam scope-nya). FASE 3 (strangler, audit native #2): otorisasi + query sekarang
+// dilakukan RPC get_generus_biodata (SECURITY DEFINER, sumber kebenaran tunggal di DB),
+// bukan lagi service-role + cek manual di TS di route ini. Route TETAP ada sebagai wrapper
+// tipis supaya kontrak HTTP-nya (dipanggil authFetch('/api/generus?userId=...') dari client)
+// TIDAK berubah sama sekali -- client tak perlu tahu backend-nya pindah. Dipanggil dengan JWT
+// si pemanggil (userClient, bukan service-role) supaya auth.uid() di dalam RPC terisi
+// identitas asli; SEMUA cek (akun aktif, pemilik/scope, anti-IDOR) ditegakkan di RPC.
 export async function GET(req: NextRequest) {
   try {
-    const supabaseAdmin = adminClient()
-    const { caller, reason } = await getCaller(req, supabaseAdmin)
-    if (!caller) return NextResponse.json({ error: reason || 'Unauthorized' }, { status: 401 })
-
     const { searchParams } = new URL(req.url)
     const userId = searchParams.get('userId')
     if (!userId) return NextResponse.json({ error: 'userId wajib diisi' }, { status: 400 })
 
-    // SECURITY FIX (IDOR) -- sebelumnya hanya cek "apakah caller pengurus" tanpa cek
-    // scope, sehingga Ketua/Sekretaris Kelompok A bisa menarik biodata sensitif (alamat,
-    // tanggal lahir, nama ortu/wali, no HP) milik Generus manapun di seluruh organisasi,
-    // bukan cuma yang ada dalam scope-nya. Sekarang scope target (desa/kelompok AKUN,
-    // dari tabel users) ikut divalidasi lewat canActOnScope, konsisten dengan PATCH di
-    // bawah dan dengan app/api/users/route.ts.
-    if (userId !== caller.id) {
-      if (!canManageMembers(caller)) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-      }
-      const { data: targetUser } = await supabaseAdmin
-        .from('users')
-        .select('desa_id, kelompok_id')
-        .eq('id', userId)
-        .single()
-      if (!canActOnScope(caller, targetUser?.desa_id ?? null, targetUser?.kelompok_id ?? null)) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-      }
+    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+    if (!token) {
+      return NextResponse.json({ error: 'Tidak ada token autentikasi (silakan login ulang).' }, { status: 401 })
     }
 
-    const { data, error } = await supabaseAdmin
-      .from('generus')
-      .select('*')
-      .eq('user_id', userId)
-      .single()
+    const { data, error } = await userClient(token).rpc('get_generus_biodata', { p_user_id: userId })
 
-    if (error && error.code !== 'PGRST116') {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      // Petakan SQLSTATE yang di-RAISE RPC ke status HTTP yang SAMA seperti route lama, supaya
+      // perilaku yang dilihat client identik: 28000 (akun nonaktif/tak login) -> 401,
+      // 42501 (bukan pemilik & tak berwenang atas scope) -> 403. Pesan sengaja generik
+      // ('Unauthorized'/'Forbidden') -- tidak membocorkan detail internal DB ke client.
+      const status = error.code === '28000' ? 401 : error.code === '42501' ? 403 : 500
+      const message = status === 401 ? 'Unauthorized' : status === 403 ? 'Forbidden' : error.message
+      return NextResponse.json({ error: message }, { status })
     }
-    return NextResponse.json({ data: data || null })
+
+    // RPC mengembalikan setof generus (0 atau 1 baris -- generus.user_id UNIQUE), samakan
+    // dengan kontrak lama yang balik objek tunggal atau null.
+    return NextResponse.json({ data: (data && data[0]) || null })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }

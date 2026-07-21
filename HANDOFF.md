@@ -61,6 +61,22 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 21 Juli 2026 (lanjutan 5) — Fase 3 pilot: `GET /api/generus` lewat RPC
+
+- **Fase 3 DIMULAI** (pertama kalinya jalur produksi dialihkan, bukan cuma aditif). Pilot:
+  handler `GET` di `app/api/generus/route.ts` sekarang **wrapper tipis** yang memanggil RPC
+  `get_generus_biodata` lewat `userClient(token)` (anon key + JWT pemanggil, bukan
+  service-role) -- otorisasi ditegakkan di DB via `auth.uid()`. Kontrak HTTP tak berubah
+  (client tetap `authFetch('/api/generus?userId=...')`), error RPC dipetakan ke status yang
+  sama (28000→401, 42501→403), bentuk balik `{ data: <row|null> }` identik.
+- Sekaligus merapikan `get_generus_biodata` (migrasi `gate_get_generus_biodata_on_caller_active`)
+  agar menggate `caller_account_active()` utk akses biodata SENDIRI juga (sebelumnya terlewat).
+- Diverifikasi: `typecheck`/`lint`/`test`/`build` sukses; RPC diverifikasi ulang di DB (4
+  skenario, termasuk self-nonaktif→Unauthorized). **Belum:** spot-check round-trip live --
+  HARUS dicek manual di URL preview PR (login → buka Data Generus/Profil>Data Diri) SEBELUM
+  merge ke `main`, karena merge = langsung live ke ~82 user. Detail di
+  [PLAN_MIGRASI_OTORISASI_RPC.md §0](PLAN_MIGRASI_OTORISASI_RPC.md) Fase 3.
+
 ### Sesi 21 Juli 2026 (lanjutan 4) — Fase 2 langkah 3 (TERAKHIR): RPC `update_user_profile`
 
 - **RPC penutup Fase 2** diterapkan (migrasi `add_update_user_profile_rpc`), mirror persis
