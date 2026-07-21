@@ -1,7 +1,7 @@
 # Rencana Migrasi Otorisasi ke RPC / Edge Function (Prioritas #2)
 
-> **Status: Fase 0+1 SELESAI & diterapkan ke production (21 Juli 2026).** Fase 2 ke atas
-> masih PROPOSAL — perlu di-review & disetujui sebelum eksekusi. Rujukan:
+> **Status: Fase 0+1 SELESAI. Fase 2 baru mulai (1 dari 3 RPC selesai).** Sisanya masih
+> PROPOSAL — perlu di-review & disetujui sebelum eksekusi. Rujukan:
 > [NATIVE_READINESS_AUDIT.md](NATIVE_READINESS_AUDIT.md) kategori A.1/A.2 dan prioritas #2.
 
 Tanggal: 20 Juli 2026 (dibuat), 21 Juli 2026 (Fase 0+1 dieksekusi).
@@ -37,8 +37,27 @@ DB branching Supabase (rencana awal utk testing sebelum production) ternyata but
 murni (`CREATE FUNCTION`/`GRANT`, tanpa `ALTER TABLE`/perubahan data) dan reversibel penuh
 lewat `DROP FUNCTION`, dengan verifikasi dijalankan segera setelah apply.
 
-**Fase 2 (RPC data-only, memanggil helper di atas) belum dikerjakan** -- lanjutan berikutnya
-sesuai rencana di bawah, tetap butuh persetujuan eksplisit sebelum eksekusi.
+**Fase 2 (RPC data-only, memanggil helper di atas) -- dipecah jadi 3 langkah terpisah**
+(bukan satu migrasi besar), diurutkan dari risiko terendah ke tertinggi karena
+`update_user_profile` (langkah ke-3) menyentuh proteksi Super Admin, hierarki role, dan
+arsip/pulihkan -- paling banyak guard keamanan.
+
+1. ✅ **`get_generus_biodata(p_user_id)` -- SELESAI** (21 Juli 2026, migrasi
+   `add_get_generus_biodata_rpc`). Mirror persis `GET /api/generus` (termasuk fix IDOR:
+   pemilik sendiri ATAU `can_manage_members()` + `can_act_on_scope()` atas scope target).
+   Sekaligus memperbaiki gap yang ditemukan saat menyiapkan RPC ini: 4 wrapper self-check
+   Fase 1 tidak mengecek `is_active` caller (migrasi susulan
+   `gate_authorization_helpers_on_caller_active` -- ditambahkan `caller_account_active()`
+   sebagai gate tambahan, konsisten dengan `getCaller()` TS yang fail-closed kalau akun
+   caller nonaktif). Diverifikasi lewat simulasi `auth.uid()` (teknik
+   `set local request.jwt.claims`) dgn 3 skenario nyata (super_admin lintas scope berhasil,
+   akses biodata sendiri berhasil, Generus biasa akses biodata Generus lain ditolak
+   `Forbidden`) -- bukan cuma dites lewat parameter literal seperti Fase 1, karena fungsi
+   ini bergantung pada `auth.uid()`. `get_advisors` bersih kecuali warning
+   `authenticated_security_definer_function_executable` yang disengaja. Route lama
+   `GET /api/generus` TETAP jalan -- RPC ini belum dipanggil kode manapun.
+2. ⬜ `update_generus_biodata(p_user_id, payload)` -- belum dikerjakan.
+3. ⬜ `update_user_profile(p_id, payload)` -- belum dikerjakan, paling kompleks/sensitif.
 
 ---
 
