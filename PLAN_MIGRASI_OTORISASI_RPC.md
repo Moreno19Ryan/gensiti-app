@@ -1,10 +1,9 @@
 # Rencana Migrasi Otorisasi ke RPC / Edge Function (Prioritas #2)
 
-> **Status: Fase 0+1+2 SELESAI. Fase 3 DIMULAI — pilot 1 dari 3 endpoint (`GET /api/generus`).**
-> Ini tahap pertama yang benar-benar mengubah jalur produksi (dipakai ~82 user aktif), jadi
-> tiap endpoint dialihkan satu per satu & butuh spot-check live di preview sebelum merge ke
-> `main`. Rujukan: [NATIVE_READINESS_AUDIT.md](NATIVE_READINESS_AUDIT.md) kategori A.1/A.2
-> dan prioritas #2.
+> **Status: Fase 0+1+2 SELESAI. Fase 3 BERJALAN — 2 dari 3 endpoint `/api/generus` (GET live,
+> PATCH menunggu spot-check).** Tiap endpoint mengubah jalur produksi (~82 user aktif), jadi
+> dialihkan satu per satu & butuh spot-check live di preview sebelum merge ke `main`. Rujukan:
+> [NATIVE_READINESS_AUDIT.md](NATIVE_READINESS_AUDIT.md) kategori A.1/A.2 dan prioritas #2.
 
 Tanggal: 20 Juli 2026 (dibuat), 21 Juli 2026 (Fase 0+1 dieksekusi).
 
@@ -116,20 +115,29 @@ begitu `auth.uid()` di dalam RPC terisi identitas asli & seluruh otorisasi diteg
 Ini juga persis pola yang akan dipakai client native (Flutter) -- memvalidasi seluruh
 pendekatan sekaligus.
 
-1. ⏳ **`GET /api/generus` -> `get_generus_biodata` -- PILOT (read-only), menunggu spot-check
-   live.** Handler GET di `app/api/generus/route.ts` sekarang wrapper tipis yang memanggil RPC
-   via `userClient`, memetakan error RPC ke status HTTP yang sama (`28000`->401, `42501`->403)
-   & mengembalikan bentuk `{ data: <row|null> }` yang identik. `getCaller`/`canManageMembers`/
-   `canActOnScope` di file itu MASIH dipakai handler PATCH (belum dialihkan), jadi tetap ada.
-   Sekaligus merapikan `get_generus_biodata` (migrasi `gate_get_generus_biodata_on_caller_active`)
-   agar menggate `caller_account_active()` juga utk akses biodata SENDIRI -- sebelumnya terlewat,
-   beda dari `getCaller()` TS yang fail-closed utk akun nonaktif. Diverifikasi ulang di DB
-   (super_admin lintas scope OK, self aktif OK, generus->generus lain Forbidden, self NONAKTIF
-   -> Unauthorized), `typecheck`/`lint`/`test`/`build` sukses. **Belum diverifikasi:** round-trip
-   live (authFetch -> route -> userClient.rpc -> auth.uid()) -- perlu spot-check manual di URL
-   preview PR (login lalu buka menu Data Generus / Profil > Data Diri, pastikan biodata tetap
-   tampil normal) SEBELUM merge ke `main`, karena merge = langsung live ke ~82 user.
-2. ⬜ `PATCH /api/generus` -> `update_generus_biodata` -- belum.
+1. ✅ **`GET /api/generus` -> `get_generus_biodata` -- LIVE di produksi** (PR #8, commit
+   `6c28682`). Handler GET jadi wrapper tipis yang memanggil RPC via `userClient`, memetakan
+   error RPC ke status HTTP yang sama (`28000`->401, `42501`->403) & mengembalikan bentuk
+   `{ data: <row|null> }` yang identik. Sekaligus merapikan `get_generus_biodata` (migrasi
+   `gate_get_generus_biodata_on_caller_active`) agar menggate `caller_account_active()` juga utk
+   akses biodata SENDIRI -- sebelumnya terlewat. Sudah di-spot-check di preview & health-check
+   produksi bersih (deploy READY, 0 error 5xx).
+2. ⏳ **`PATCH /api/generus` -> `update_generus_biodata` -- menunggu spot-check live.** Handler
+   PATCH jadi wrapper tipis: bangun `p_payload` jsonb HANYA dari field yang dikirim client
+   (mirror `!== undefined`; RPC beda-kan pakai operator `?`), teruskan `user_id`/`generus_id`
+   sbg param terpisah, panggil RPC via `userClient`. Untuk error 4xx otorisasi, **pesan
+   spesifik dari RPC diteruskan apa adanya** (RPC me-RAISE string yang SAMA PERSIS dgn route
+   lama, mis. "Status keanggotaan akun PPG hanya dapat diubah oleh Super Admin.") -> UX pesan
+   error tak berubah. Bentuk balik `{ success, newLoginUsername? }` identik. **Karena kedua
+   handler kini RPC, seluruh helper duplikat TS (`getCaller`/`canManageMembers`/`canActOnScope`/
+   `generateUniqueLoginUsername`/`adminClient`/`Caller`) DIHAPUS dari file** -- inilah "hapus
+   duplikasi" yang jadi tujuan Fase 3. Bonus: RPC jalankan otorisasi+tulis dalam SATU transaksi,
+   jadi sinkron `login_username` + update generus ATOMIK (route lama bisa partial-fail).
+   `update_generus_biodata` sendiri sudah diverifikasi 7 skenario tulis saat dibuat (PR #6);
+   `typecheck`/`lint`/`test`/`build` sukses. **Belum diverifikasi:** round-trip tulis live --
+   perlu spot-check manual di preview PR (login -> edit & SIMPAN biodata di Data Generus /
+   Profil > Data Diri, pastikan tersimpan + tak ada error) SEBELUM merge, karena ini jalur
+   TULIS ke data ~82 user.
 3. ⬜ `PATCH /api/users` (non-password) -> `update_user_profile` -- belum, paling sensitif.
 
 ---
