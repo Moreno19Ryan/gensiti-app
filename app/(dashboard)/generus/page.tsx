@@ -464,7 +464,17 @@ export default function DataGenerusPage() {
           editTarget ? 'UPDATE' : 'CREATE',
           'Pengguna',
           form.nama_lengkap,
-          { email: form.email, role_id: form.role_id, status_pengguna: form.status_pengguna },
+          {
+            email: form.email,
+            role_id: form.role_id,
+            status_pengguna: form.status_pengguna,
+            // Ikut dicatat utk edit existing user -- sebelumnya perubahan is_active lewat modal
+            // (beda dari tombol cepat toggleActive yang sudah eksplisit log ACTIVATE/DEACTIVATE)
+            // tidak tercermin di detail log sama sekali, menyulitkan investigasi kapan/oleh siapa
+            // status aktif berubah saat diedit bersamaan field lain. Nilainya SAMA PERSIS dengan
+            // body.is_active yang benar-benar dikirim ke /api/users di atas.
+            ...(editTarget ? { is_active: needsArchive ? false : form.is_active } : {}),
+          },
           userId
         )
       }
