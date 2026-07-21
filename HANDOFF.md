@@ -61,6 +61,19 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 21 Juli 2026 (lanjutan 2) — Fase 2 langkah 1: RPC `get_generus_biodata`
+
+- **RPC pertama Fase 2** ([PLAN_MIGRASI_OTORISASI_RPC.md](PLAN_MIGRASI_OTORISASI_RPC.md) §0)
+  diterapkan: `get_generus_biodata(p_user_id)`, mirror persis `GET /api/generus` (termasuk
+  fix IDOR scope). Route lama tetap jalan, RPC belum dipanggil kode manapun.
+- **Gap ditemukan & diperbaiki**: 4 wrapper self-check dari Fase 1 (`can_manage_members`
+  dkk) ternyata tidak mengecek `is_active` caller -- beda dari `getCaller()` TS yang selalu
+  fail-closed kalau akun caller nonaktif. Ditambahkan `caller_account_active()` sebagai
+  gate tambahan (migrasi `gate_authorization_helpers_on_caller_active`).
+- Diverifikasi lewat simulasi `auth.uid()` (`set local request.jwt.claims`) dgn user
+  sungguhan (read-only): super_admin lintas scope berhasil, akses biodata sendiri berhasil,
+  Generus biasa akses biodata Generus lain ditolak. `get_advisors` bersih.
+
 ### Sesi 21 Juli 2026 (lanjutan) — Fase 0+1 migrasi otorisasi RPC (audit native #2)
 
 - **Perbaikan kecil**: audit log `logAudit()` di modal edit Data Generus sekarang ikut
