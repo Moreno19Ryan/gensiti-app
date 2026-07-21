@@ -1,8 +1,9 @@
 # Rencana Migrasi Otorisasi ke RPC / Edge Function (Prioritas #2)
 
-> **Status: Fase 0+1+2 SELESAI (semua 3 RPC diterapkan & terverifikasi).** Fase 3 ke atas
-> (pindahkan pemanggil web ke RPC ini) masih PROPOSAL — perlu di-review & disetujui sebelum
-> eksekusi. Rujukan: [NATIVE_READINESS_AUDIT.md](NATIVE_READINESS_AUDIT.md) kategori A.1/A.2
+> **Status: Fase 0+1+2 SELESAI. Fase 3 DIMULAI — pilot 1 dari 3 endpoint (`GET /api/generus`).**
+> Ini tahap pertama yang benar-benar mengubah jalur produksi (dipakai ~82 user aktif), jadi
+> tiap endpoint dialihkan satu per satu & butuh spot-check live di preview sebelum merge ke
+> `main`. Rujukan: [NATIVE_READINESS_AUDIT.md](NATIVE_READINESS_AUDIT.md) kategori A.1/A.2
 > dan prioritas #2.
 
 Tanggal: 20 Juli 2026 (dibuat), 21 Juli 2026 (Fase 0+1 dieksekusi).
@@ -101,6 +102,35 @@ arsip/pulihkan -- paling banyak guard keamanan.
 **Fase 2 SELESAI TOTAL.** Ketiga RPC sudah hidup berdampingan dengan route lama, siap jadi
 fondasi Fase 3 (pindahkan pemanggil web) kapan pun disetujui untuk dieksekusi -- masing-masing
 langkah Fase 3 tetap butuh persetujuan eksplisit terpisah sesuai kesepakatan proses.
+
+### Fase 3 -- Pindahkan pemanggil web ke RPC (BEHAVIOR-CHANGING, per-endpoint)
+
+Beda kategori risiko dari Fase 0-2: ini pertama kalinya jalur produksi yang dipakai ~82 user
+aktif benar-benar dialihkan. Prinsip: satu endpoint per langkah, route lama diubah jadi
+**wrapper tipis** (kontrak HTTP tak berubah -> frontend tak perlu disentuh -> revert = 1 file),
+spot-check live di preview sebelum merge ke `main`.
+
+**Pola teknis kunci:** route memanggil RPC lewat **client ber-scope JWT pemanggil**
+(`userClient(token)` = anon key + `Authorization: Bearer <token>`), BUKAN service-role. Dengan
+begitu `auth.uid()` di dalam RPC terisi identitas asli & seluruh otorisasi ditegakkan di DB.
+Ini juga persis pola yang akan dipakai client native (Flutter) -- memvalidasi seluruh
+pendekatan sekaligus.
+
+1. ⏳ **`GET /api/generus` -> `get_generus_biodata` -- PILOT (read-only), menunggu spot-check
+   live.** Handler GET di `app/api/generus/route.ts` sekarang wrapper tipis yang memanggil RPC
+   via `userClient`, memetakan error RPC ke status HTTP yang sama (`28000`->401, `42501`->403)
+   & mengembalikan bentuk `{ data: <row|null> }` yang identik. `getCaller`/`canManageMembers`/
+   `canActOnScope` di file itu MASIH dipakai handler PATCH (belum dialihkan), jadi tetap ada.
+   Sekaligus merapikan `get_generus_biodata` (migrasi `gate_get_generus_biodata_on_caller_active`)
+   agar menggate `caller_account_active()` juga utk akses biodata SENDIRI -- sebelumnya terlewat,
+   beda dari `getCaller()` TS yang fail-closed utk akun nonaktif. Diverifikasi ulang di DB
+   (super_admin lintas scope OK, self aktif OK, generus->generus lain Forbidden, self NONAKTIF
+   -> Unauthorized), `typecheck`/`lint`/`test`/`build` sukses. **Belum diverifikasi:** round-trip
+   live (authFetch -> route -> userClient.rpc -> auth.uid()) -- perlu spot-check manual di URL
+   preview PR (login lalu buka menu Data Generus / Profil > Data Diri, pastikan biodata tetap
+   tampil normal) SEBELUM merge ke `main`, karena merge = langsung live ke ~82 user.
+2. ⬜ `PATCH /api/generus` -> `update_generus_biodata` -- belum.
+3. ⬜ `PATCH /api/users` (non-password) -> `update_user_profile` -- belum, paling sensitif.
 
 ---
 
