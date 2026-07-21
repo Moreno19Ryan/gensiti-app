@@ -240,6 +240,9 @@ tertangani di client, server, dan edge runtime.
   aktif; kalau kosong, SDK otomatis nonaktif lewat flag `enabled`), plus
   `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` (opsional, untuk upload
   source map di CI/Vercel). Lihat `.env.example`.
+- **Status: terverifikasi jalan di production** (21 Juli 2026) — project Sentry
+  `javascript-nextjs` (org `generus-bekasi-timur`), DSN terisi di Vercel, error
+  test dari browser production berhasil tertangkap di Sentry Issues.
 
 ## 10. Presensi via QR Code (Client-Side)
 

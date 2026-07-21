@@ -61,6 +61,18 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 21 Juli 2026 — Sentry terverifikasi jalan di production
+
+- **Sentry error monitoring** (dipasang sesi 19 Juli) **sudah diverifikasi jalan penuh di
+  production**, bukan cuma terpasang di kode. Langkah verifikasi: project Sentry dibuat
+  (org `generus-bekasi-timur`, project `javascript-nextjs`, platform Next.js), DSN diisi ke
+  Vercel env vars (`NEXT_PUBLIC_SENTRY_DSN` + `SENTRY_DSN`), redeploy, lalu error test
+  dilempar langsung dari browser production (`gensiti-app.vercel.app`) dan dikonfirmasi
+  muncul di Sentry Issues (`JAVASCRIPT-NEXTJS-1`, route `/login`) dalam hitungan detik.
+  `SENTRY_ORG`/`SENTRY_PROJECT`/`SENTRY_AUTH_TOKEN` (source map upload) masih belum diisi --
+  opsional, build tetap sukses tanpa itu (cuma warning "will not upload source maps").
+  Tidak ada perubahan kode aplikasi di sesi ini.
+
 ### Sesi 20 Juli 2026 (lanjutan) — RLS hardening (audit native #1, Batch A)
 
 - **Audit kesiapan native** ([NATIVE_READINESS_AUDIT.md](NATIVE_READINESS_AUDIT.md)) — assessment
