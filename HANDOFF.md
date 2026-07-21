@@ -61,6 +61,23 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 21 Juli 2026 (lanjutan) — Fase 0+1 migrasi otorisasi RPC (audit native #2)
+
+- **Perbaikan kecil**: audit log `logAudit()` di modal edit Data Generus sekarang ikut
+  mencatat `is_active` (sebelumnya cuma tombol cepat toggle yang eksplisit log
+  ACTIVATE/DEACTIVATE; edit lewat modal tidak tercermin di detail log).
+- **Fase 0+1 dari [PLAN_MIGRASI_OTORISASI_RPC.md](PLAN_MIGRASI_OTORISASI_RPC.md) dieksekusi**
+  (prioritas #2 audit native) -- 9 fungsi helper SQL aditif (`can_manage_members`,
+  `can_act_on_scope`, `allowed_target_tingkatan`, `can_assign_tingkatan`,
+  `normalize_login_username`, + versi "pure" masing-masing) yang mirror persis logika
+  otorisasi di `app/api/users/route.ts`/`app/api/generus/route.ts`. Belum dipanggil kode
+  manapun -- nol perubahan perilaku. Diverifikasi lewat 30 test case paritas (cocok dgn
+  `lib/roles.test.ts`) + `get_advisors` (ditemukan & diperbaiki: search_path belum terkunci
+  di 5 fungsi, grant PUBLIC implisit di 4 wrapper -- kedua isu diperbaiki migrasi susulan).
+  DB branching Supabase tidak tersedia (butuh plan Pro) -- migrasi diterapkan langsung ke
+  production karena aditif murni & reversibel, sesuai persetujuan eksplisit per langkah.
+  Detail lengkap di PLAN_MIGRASI_OTORISASI_RPC.md §0.
+
 ### Sesi 21 Juli 2026 — Sentry terverifikasi jalan di production
 
 - **Sentry error monitoring** (dipasang sesi 19 Juli) **sudah diverifikasi jalan penuh di
