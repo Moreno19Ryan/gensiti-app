@@ -1,8 +1,9 @@
 # Rencana Migrasi Otorisasi ke RPC / Edge Function (Prioritas #2)
 
-> **Status: Fase 0+1 SELESAI. Fase 2: 2 dari 3 RPC selesai.** Sisanya masih
-> PROPOSAL — perlu di-review & disetujui sebelum eksekusi. Rujukan:
-> [NATIVE_READINESS_AUDIT.md](NATIVE_READINESS_AUDIT.md) kategori A.1/A.2 dan prioritas #2.
+> **Status: Fase 0+1+2 SELESAI (semua 3 RPC diterapkan & terverifikasi).** Fase 3 ke atas
+> (pindahkan pemanggil web ke RPC ini) masih PROPOSAL — perlu di-review & disetujui sebelum
+> eksekusi. Rujukan: [NATIVE_READINESS_AUDIT.md](NATIVE_READINESS_AUDIT.md) kategori A.1/A.2
+> dan prioritas #2.
 
 Tanggal: 20 Juli 2026 (dibuat), 21 Juli 2026 (Fase 0+1 dieksekusi).
 
@@ -75,8 +76,31 @@ arsip/pulihkan -- paling banyak guard keamanan.
    end-to-end TANPA mengubah data production secara permanen; dikonfirmasi tidak ada residu
    setelah semua transaksi di-rollback. `get_advisors` bersih. Route lama
    `PATCH /api/generus` TETAP jalan -- RPC ini belum dipanggil kode manapun.
-3. ⬜ `update_user_profile(p_id, payload)` -- belum dikerjakan, paling kompleks/sensitif
-   (proteksi Super Admin, hierarki role, arsip/pulihkan).
+3. ✅ **`update_user_profile(p_id, p_payload)` -- SELESAI** (21 Juli 2026, migrasi
+   `add_update_user_profile_rpc`). Mirror persis `PATCH /api/users` **bagian non-password**
+   (password TETAP di GoTrue `auth.admin.updateUserById`, tidak pernah pindah ke RPC ini --
+   lihat §2 kendala teknis). Guard yang dipindahkan: proteksi Super Admin (HANYA
+   no_hp/avatar_url boleh diubah, field lain diblokir total termasuk oleh Super Admin lain),
+   guard PPG (field administratif akun PPG hanya Super Admin), guard scope akun
+   (desa_id/kelompok_id -- wajib `can_manage_members()` DAN `can_act_on_scope()` atas lokasi
+   LAMA **dan** BARU, tidak pernah lewat self-edit), larangan role_id menjadi super_admin
+   kedua (berlaku bahkan utk caller Super Admin sendiri), hierarki jenjang (`can_assign_tingkatan`)
+   utk role_id target lain, dan semantik arsip/pulihkan (`archive`/`restore` override
+   `is_active`+`is_archived`+`alasan_arsip`+`tanggal_arsip`).
+   Diverifikasi lewat 10 skenario tulis nyata dalam `BEGIN...ROLLBACK` (data user sungguhan,
+   tanpa mengubah production secara permanen): self-edit nama sendiri berhasil, cross-scope
+   non-privileged ditolak, admin field (is_active) oleh Ketua Kelompok dlm scope berhasil,
+   pindah scope ke tujuan tak berwenang ditolak, edit nama_lengkap Super Admin ditolak vs
+   no_hp Super Admin berhasil, guard PPG ditolak utk non-super-admin, role_id->super_admin
+   ditolak (bahkan dicoba oleh Super Admin sendiri), hierarki role_id lintas jenjang ditolak,
+   archive mengarsipkan dgn benar, restore memulihkan dgn benar. Semua dikonfirmasi tanpa
+   residu data setelah rollback. `get_advisors` bersih kecuali warning
+   `authenticated_security_definer_function_executable` yang disengaja. Route lama
+   `PATCH /api/users` TETAP jalan -- RPC ini belum dipanggil kode manapun.
+
+**Fase 2 SELESAI TOTAL.** Ketiga RPC sudah hidup berdampingan dengan route lama, siap jadi
+fondasi Fase 3 (pindahkan pemanggil web) kapan pun disetujui untuk dieksekusi -- masing-masing
+langkah Fase 3 tetap butuh persetujuan eksplisit terpisah sesuai kesepakatan proses.
 
 ---
 

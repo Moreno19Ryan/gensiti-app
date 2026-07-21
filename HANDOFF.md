@@ -61,6 +61,21 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 21 Juli 2026 (lanjutan 4) — Fase 2 langkah 3 (TERAKHIR): RPC `update_user_profile`
+
+- **RPC penutup Fase 2** diterapkan (migrasi `add_update_user_profile_rpc`), mirror persis
+  `PATCH /api/users` bagian non-password (password tetap di GoTrue, di luar RPC). Guard yang
+  dipindahkan: proteksi Super Admin, guard PPG, guard scope lama+baru, larangan role_id jadi
+  super_admin kedua, hierarki jenjang, semantik arsip/pulihkan. Detail lengkap di
+  [PLAN_MIGRASI_OTORISASI_RPC.md §0](PLAN_MIGRASI_OTORISASI_RPC.md) langkah 3.
+- Diverifikasi lewat 10 skenario tulis nyata dalam `BEGIN...ROLLBACK` (data user sungguhan,
+  tanpa mengubah production secara permanen) -- semua sesuai ekspektasi, dikonfirmasi tanpa
+  residu. `get_advisors` bersih. Route lama tetap jalan.
+- **Fase 2 (RPC data-only, prioritas #2 audit native) SELESAI TOTAL** -- ketiga RPC
+  (`get_generus_biodata`, `update_generus_biodata`, `update_user_profile`) sudah hidup
+  berdampingan dgn route lama, siap jadi fondasi Fase 3 (pindahkan pemanggil web) kapan pun
+  disetujui.
+
 ### Sesi 21 Juli 2026 (lanjutan 3) — Fase 2 langkah 2: RPC `update_generus_biodata`
 
 - **RPC tulis biodata Generus** diterapkan (migrasi `add_update_generus_biodata_rpc`),
