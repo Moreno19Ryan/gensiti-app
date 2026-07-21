@@ -1,10 +1,46 @@
 # Rencana Migrasi Otorisasi ke RPC / Edge Function (Prioritas #2)
 
-> **Status: PROPOSAL — perlu di-review & disetujui sebelum eksekusi.**
-> Belum ada kode/DB yang diubah untuk dokumen ini. Rujukan: [NATIVE_READINESS_AUDIT.md](NATIVE_READINESS_AUDIT.md)
-> kategori A.1/A.2 dan prioritas #2.
+> **Status: Fase 0+1 SELESAI & diterapkan ke production (21 Juli 2026).** Fase 2 ke atas
+> masih PROPOSAL — perlu di-review & disetujui sebelum eksekusi. Rujukan:
+> [NATIVE_READINESS_AUDIT.md](NATIVE_READINESS_AUDIT.md) kategori A.1/A.2 dan prioritas #2.
 
-Tanggal: 20 Juli 2026.
+Tanggal: 20 Juli 2026 (dibuat), 21 Juli 2026 (Fase 0+1 dieksekusi).
+
+## 0. Status Eksekusi
+
+**Fase 0+1 (helper SQL aditif) sudah diterapkan** lewat migrasi
+`add_shared_authorization_helpers` + perbaikan `harden_authorization_helpers_search_path_and_grants`
+(cabut grant `PUBLIC` implisit + kunci `search_path`, ditemukan lewat security advisor
+pasca-migrasi). Fungsi baru (semua di schema `public`, belum dipanggil kode manapun -- nol
+perubahan perilaku app):
+
+- `normalize_login_username(text)` -- normalisasi nama login (trim+collapse+uppercase)
+- `member_management_allowed(tingkatan, nama_role)` / `can_manage_members()` -- mirror
+  `canManageMembers` di `app/api/users/route.ts`
+- `scope_action_allowed(...)` / `can_act_on_scope(target_desa, target_kelompok)` -- mirror
+  `canActOnScope`
+- `tingkatan_hierarchy_allowed(tingkatan)` / `allowed_target_tingkatan()` -- mirror
+  `getAllowedTargetTingkatan`
+- `tingkatan_assignment_allowed(...)` / `can_assign_tingkatan(target_tingkatan)` -- mirror
+  `canAssignTingkatan`
+
+Setiap aturan dipecah 2 lapis: fungsi murni (parameter eksplisit, dites lewat `SELECT`
+langsung tanpa perlu sesi login) + wrapper self-check (`SECURITY DEFINER`, `search_path`
+terkunci, pakai `auth.uid()` via `get_user_tingkatan()`/dst yang sudah ada). **Verifikasi
+paritas**: 30 test case (mirror kasus di `lib/roles.test.ts`) dijalankan langsung di DB
+production setelah migrasi, semua cocok 100% dengan logika TS existing. `get_advisors`
+pasca-migrasi bersih kecuali 4 warning `authenticated_security_definer_function_executable`
+yang memang disengaja (pola sama seperti `is_pengurus()` dkk yang sudah ada).
+
+DB branching Supabase (rencana awal utk testing sebelum production) ternyata butuh plan Pro
+(project ini masih gratis) -- migrasi diterapkan langsung ke production karena sifatnya aditif
+murni (`CREATE FUNCTION`/`GRANT`, tanpa `ALTER TABLE`/perubahan data) dan reversibel penuh
+lewat `DROP FUNCTION`, dengan verifikasi dijalankan segera setelah apply.
+
+**Fase 2 (RPC data-only, memanggil helper di atas) belum dikerjakan** -- lanjutan berikutnya
+sesuai rencana di bawah, tetap butuh persetujuan eksplisit sebelum eksekusi.
+
+---
 
 ---
 
