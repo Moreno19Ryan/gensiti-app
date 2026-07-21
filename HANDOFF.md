@@ -61,6 +61,16 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 21 Juli 2026 (lanjutan 3) — Fase 2 langkah 2: RPC `update_generus_biodata`
+
+- **RPC tulis biodata Generus** diterapkan (migrasi `add_update_generus_biodata_rpc`),
+  mirror persis `PATCH /api/generus` (guard admin field, guard PPG, guard tempat sambung
+  lama+baru, sinkron `login_username`). Detail lengkap di
+  [PLAN_MIGRASI_OTORISASI_RPC.md §0](PLAN_MIGRASI_OTORISASI_RPC.md) langkah 2.
+- Diverifikasi lewat 7 skenario tulis nyata di dalam `BEGIN...ROLLBACK` (data user
+  sungguhan, tanpa mengubah production secara permanen) -- semua sesuai ekspektasi,
+  dikonfirmasi tidak ada residu. `get_advisors` bersih. Route lama tetap jalan.
+
 ### Sesi 21 Juli 2026 (lanjutan 2) — Fase 2 langkah 1: RPC `get_generus_biodata`
 
 - **RPC pertama Fase 2** ([PLAN_MIGRASI_OTORISASI_RPC.md](PLAN_MIGRASI_OTORISASI_RPC.md) §0)

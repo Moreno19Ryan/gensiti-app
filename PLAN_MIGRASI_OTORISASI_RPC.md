@@ -1,6 +1,6 @@
 # Rencana Migrasi Otorisasi ke RPC / Edge Function (Prioritas #2)
 
-> **Status: Fase 0+1 SELESAI. Fase 2 baru mulai (1 dari 3 RPC selesai).** Sisanya masih
+> **Status: Fase 0+1 SELESAI. Fase 2: 2 dari 3 RPC selesai.** Sisanya masih
 > PROPOSAL — perlu di-review & disetujui sebelum eksekusi. Rujukan:
 > [NATIVE_READINESS_AUDIT.md](NATIVE_READINESS_AUDIT.md) kategori A.1/A.2 dan prioritas #2.
 
@@ -56,8 +56,27 @@ arsip/pulihkan -- paling banyak guard keamanan.
    ini bergantung pada `auth.uid()`. `get_advisors` bersih kecuali warning
    `authenticated_security_definer_function_executable` yang disengaja. Route lama
    `GET /api/generus` TETAP jalan -- RPC ini belum dipanggil kode manapun.
-2. ⬜ `update_generus_biodata(p_user_id, payload)` -- belum dikerjakan.
-3. ⬜ `update_user_profile(p_id, payload)` -- belum dikerjakan, paling kompleks/sensitif.
+2. ✅ **`update_generus_biodata(p_user_id, p_generus_id, p_payload)` -- SELESAI** (21 Juli
+   2026, migrasi `add_update_generus_biodata_rpc`). Mirror persis `PATCH /api/generus`:
+   guard `hasAdminFields` (status_anggota/status_pengguna/pindah sambung hanya via
+   `can_manage_members()`), guard PPG (field administratif akun PPG hanya Super Admin),
+   guard tempat sambung (desa_id/kelompok_id GENERUS -- wajib `can_manage_members()` DAN
+   `can_act_on_scope()` atas tujuan BARU, bukan cuma lokasi lama), sinkronisasi
+   `login_username` otomatis saat `nama_panggilan` berubah (bug fix "Reno" yang sama persis
+   dgn versi TS, termasuk fallback timestamp kalau 100x suffix bentrok). `p_payload` berupa
+   `jsonb` (bukan parameter satu-satu) supaya operator `?` bisa membedakan "field tidak
+   dikirim" vs "field dikirim null/kosong", sama seperti semantik `!== undefined` di TS.
+   Update kolom pakai `CASE WHEN` eksplisit per kolom (bukan dynamic SQL) demi keamanan &
+   review-ability pada data 82 pengguna nyata. Diverifikasi lewat 7 skenario tulis nyata
+   (self-edit, cross-scope ditolak, admin field oleh Ketua Kelompok dlm scope, pindah
+   sambung ke scope tak berwenang ditolak, sinkron login_username, guard PPG ditolak utk
+   non-super-admin, guard PPG berhasil utk super_admin) -- masing-masing dijalankan dalam
+   `BEGIN...ROLLBACK` di data user sungguhan (bukan data sintetis) supaya tervalidasi
+   end-to-end TANPA mengubah data production secara permanen; dikonfirmasi tidak ada residu
+   setelah semua transaksi di-rollback. `get_advisors` bersih. Route lama
+   `PATCH /api/generus` TETAP jalan -- RPC ini belum dipanggil kode manapun.
+3. ⬜ `update_user_profile(p_id, payload)` -- belum dikerjakan, paling kompleks/sensitif
+   (proteksi Super Admin, hierarki role, arsip/pulihkan).
 
 ---
 
