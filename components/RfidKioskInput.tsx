@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type FocusEvent } from 'react'
 import { submitPresensiOffline, getJumlahAntrean } from '@/lib/offline-queue'
 
 interface Props {
@@ -15,17 +15,9 @@ interface Props {
 // sebagai bukti device ini sedang membuka sesi presensi yang sah -- pola otorisasi yang
 // sama dengan QR/manual (kode presensi tetap satu-satunya sumber kebenaran), RFID cuma
 // cara baru mengidentifikasi generus-nya lewat kartu, bukan jalur otorisasi terpisah.
-// Input auto-focus & auto-clear supaya kartu berikutnya bisa langsung di-tap tanpa perlu
-// klik apa pun di antaranya.
 export default function RfidKioskInput({ kegiatanId, kode, onCheckin }: Props) {
   const [uid, setUid] = useState('')
   const [loading, setLoading] = useState(false)
-  // Reader HID cuma "mengetik" ke elemen yang sedang fokus -- kalau operator sempat mengklik
-  // elemen lain (mis. tombol "Perbarui kode"/"Saya Hadir" di panel yang sama), ketikan kartu
-  // berikutnya akan terbuang sia-sia tanpa kartu tsb kelihatan "gagal" sama sekali (diam-diam
-  // hilang). `focused` menggerakkan indikator visual, refocusTimer mengembalikan fokus
-  // otomatis TAPI ditunda sedikit (bukan sinkron) supaya klik ke tombol lain di layar yang
-  // sama sempat selesai diproses dulu sebelum fokus direbut balik.
   const [focused, setFocused] = useState(true)
   const [jumlahAntrean, setJumlahAntrean] = useState(0)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -45,8 +37,15 @@ export default function RfidKioskInput({ kegiatanId, kode, onCheckin }: Props) {
     return () => { cancelled = true; clearInterval(interval); window.removeEventListener('online', refresh) }
   }, [])
 
-  const handleBlur = () => {
+  // Kalau fokus pindah karena operator SENGAJA mengklik elemen interaktif lain di panel yang
+  // sama (tombol "Perbarui kode", "Saya Hadir", dst), biarkan -- jangan rebut fokus supaya
+  // klik itu tetap berfungsi. Selain itu (klik area kosong / fokus hilang tanpa sebab jelas),
+  // tarik paksa fokus balik supaya reader HID tidak diam-diam kehilangan target ketikan.
+  const handleBlur = (e: FocusEvent<HTMLInputElement>) => {
     setFocused(false)
+    const nextTarget = e.relatedTarget as HTMLElement | null
+    const pindahKeElemenInteraktif = nextTarget?.tagName === 'BUTTON' || nextTarget?.tagName === 'A'
+    if (pindahKeElemenInteraktif) return
     refocusTimer.current = setTimeout(() => inputRef.current?.focus(), 100)
   }
 
@@ -56,10 +55,13 @@ export default function RfidKioskInput({ kegiatanId, kode, onCheckin }: Props) {
     setLoading(true)
     setUid('')
     try {
+      // p_waktu_scan diambil SAAT INI (bukan saat flush nanti) -- lihat catatan sama di
+      // PresensiPanel.tsx.
       const hasil = await submitPresensiOffline('submit_presensi_rfid', {
         p_kegiatan_id: kegiatanId,
         p_kode: kode,
         p_kartu_uid: uidTrimmed,
+        p_waktu_scan: new Date().toISOString(),
       })
       if (hasil.error) throw new Error(hasil.error)
       if (hasil.queued) {
@@ -79,12 +81,11 @@ export default function RfidKioskInput({ kegiatanId, kode, onCheckin }: Props) {
   }
 
   return (
-    <div className={`rounded-xl p-4 text-center space-y-2 border transition-colors ${
-      focused ? 'bg-green-50 border-green-200' : 'bg-slate-100 border-slate-300'
-    }`}>
-      <p className={`text-xs font-medium ${focused ? 'text-green-700' : 'text-slate-500'}`}>
-        {focused ? '🟢 Siap menerima kartu -- tap kartu Generus ke reader' : '⚪ Klik kotak di bawah untuk mulai'}
-      </p>
+    <div className="relative">
+      {/* Input asli tetap di DOM & bisa menerima fokus (display:none/visibility:hidden ditolak
+          browser untuk difokuskan) -- disembunyikan lewat opacity-0 & ditumpuk di atas seluruh
+          kartu status (absolute inset-0), supaya klik di MANA PUN pada kartu ini memfokuskan
+          input, bukan cuma kotak kecil seperti sebelumnya. */}
       <input
         ref={inputRef}
         value={uid}
@@ -92,13 +93,21 @@ export default function RfidKioskInput({ kegiatanId, kode, onCheckin }: Props) {
         onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }}
         onFocus={() => setFocused(true)}
         onBlur={handleBlur}
-        placeholder="Tap kartu di sini..."
         disabled={loading}
-        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-mono text-center focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+        autoComplete="off"
+        aria-label="Input kartu RFID"
+        className="absolute inset-0 z-10 w-full h-full opacity-0 cursor-default disabled:cursor-wait"
       />
-      {jumlahAntrean > 0 && (
-        <p className="text-[11px] text-amber-600">📶 {jumlahAntrean} antrean menunggu sinkronisasi</p>
-      )}
+      <div className={`rounded-xl p-4 text-center border-2 transition-colors ${
+        focused ? 'bg-green-50 border-green-400' : 'bg-amber-50 border-amber-400 animate-pulse'
+      }`}>
+        <p className={`text-sm font-semibold ${focused ? 'text-green-700' : 'text-amber-700'}`}>
+          {focused ? '🟢 Kiosk siap -- tap kartu Generus ke reader' : '⚠️ Kiosk terjeda -- klik kartu ini untuk lanjut'}
+        </p>
+        {jumlahAntrean > 0 && (
+          <p className="text-[11px] text-amber-600 mt-1">📶 {jumlahAntrean} antrean menunggu sinkronisasi</p>
+        )}
+      </div>
     </div>
   )
 }

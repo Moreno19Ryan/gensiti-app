@@ -191,9 +191,13 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
   // lib/user-context.tsx). `queued: true` di sini TETAP dianggap sukses dari sudut pandang
   // Generus (kartunya sudah "dipegang" sistem), bukan error yang perlu di-retry manual.
   const submitCheckinDenganKode = async (kodeUntukDikirim: string): Promise<{ queued: boolean }> => {
+    // p_waktu_scan diambil SAAT INI (bukan saat flush nanti) -- supaya waktu_absen yang
+    // tercatat di database tetap waktu generus benar-benar tap/scan, bukan waktu antrean
+    // akhirnya berhasil disinkronkan (bisa selisih lama kalau sinyal lama pulih).
     const hasil = await submitPresensiOffline('submit_presensi', {
       p_kegiatan_id: kegiatan.id,
       p_kode: kodeUntukDikirim,
+      p_waktu_scan: new Date().toISOString(),
     })
     if (hasil.error) throw new Error(hasil.error)
     if (hasil.queued) setJumlahAntrean((n) => n + 1)
