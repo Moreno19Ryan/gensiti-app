@@ -61,6 +61,23 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 22 Juli 2026 — Fase 3 endpoint 3 (TERAKHIR, hibrida): `PATCH /api/users` lewat RPC
+
+- **Endpoint terakhir Fase 3**, beda karakter dari 2 sebelumnya: **HYBRID**. Field non-password
+  (nama/no_hp/role/scope/is_active/avatar/archive/restore) dialihkan ke RPC `update_user_profile`;
+  `password` TETAP di route via GoTrue Admin API (tak bisa 100% RPC). RPC dipanggil LEBIH DULU
+  (bahkan payload kosong) supaya jadi gerbang otorisasi ganda: field akun DAN ganti password --
+  password tak pernah tersentuh kalau caller tak berwenang atas target. `getCaller`/
+  `canManageMembers`/`canActOnScope` TIDAK dihapus dari file (masih dipakai `POST` bikin-akun).
+- **Perbaikan sebelum wiring**: pesan error hierarki role di RPC sebelumnya generik, diperbaiki
+  (migrasi `fix_update_user_profile_role_hierarchy_message`) agar identik dgn route lama
+  (sebut jenjang tujuan + daftar jenjang yang boleh ditetapkan) -- wrapper meneruskan pesan RPC
+  apa adanya, jadi harus benar-benar sama dulu.
+- Diverifikasi ulang (self, Super Admin protected, PPG guard, pesan hierarki role, 2 skenario
+  baru gerbang password) + `typecheck`/`lint`/`test`/`build` sukses. **Belum:** spot-check live
+  (termasuk ganti password nyata) SEBELUM merge. Detail di
+  [PLAN_MIGRASI_OTORISASI_RPC.md §0](PLAN_MIGRASI_OTORISASI_RPC.md) Fase 3 poin 3.
+
 ### Sesi 21 Juli 2026 (lanjutan 6) — Fase 3 endpoint 2: `PATCH /api/generus` lewat RPC
 
 - **Handler PATCH `/api/generus` dialihkan ke RPC `update_generus_biodata`** (wrapper tipis,

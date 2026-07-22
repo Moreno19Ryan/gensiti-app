@@ -9,6 +9,24 @@ function adminClient() {
   )
 }
 
+// Client ber-scope JWT si PEMANGGIL (anon key + token user), BUKAN service-role -- dipakai
+// PATCH (lihat catatan Fase 3 di sana) supaya identitas pemanggil sampai ke RPC apa adanya.
+// Sama persis pola di app/api/generus/route.ts.
+function userClient(token: string) {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+      auth: { autoRefreshToken: false, persistSession: false },
+    }
+  )
+}
+
+function bearerToken(req: NextRequest): string {
+  return (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+}
+
 interface Caller {
   id: string
   tingkatan: string | null
@@ -317,164 +335,73 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PATCH: Update field AKUN murni (email/no_hp/role/scope/status aktif/avatar/password).
-// Biodata Generus (tempat lahir, nama ortu, dll) TIDAK lagi ditangani di sini -- lihat
-// app/api/generus/route.ts PATCH. Field desa_id/kelompok_id di sini adalah SCOPE AKUN
-// (dipakai utk otorisasi & filter), beda dari generus.desa_id/kelompok_id yang berarti
-// tempat sambung generus saat ini (lihat komentar di app/api/generus/route.ts).
+// Field non-password yang diteruskan ke p_payload RPC update_user_profile -- HANYA key yang
+// benar-benar dikirim client (mirror `!== undefined`). password SENGAJA TIDAK di sini --
+// lihat catatan Fase 3 di PATCH di bawah.
+const PATCH_PAYLOAD_FIELDS = [
+  'nama_lengkap', 'no_hp', 'role_id', 'desa_id', 'kelompok_id', 'is_active',
+  'avatar_url', 'archive', 'alasan_arsip', 'restore',
+] as const
+
+// PATCH: Update field AKUN (nama/no_hp/role/scope/status aktif/avatar/arsip-pulihkan/password).
+// Biodata Generus (tempat lahir, nama ortu, dll) TIDAK di sini -- lihat app/api/generus/route.ts
+// PATCH. desa_id/kelompok_id di sini adalah SCOPE AKUN, beda dari generus.desa_id/kelompok_id
+// (tempat sambung generus).
+//
+// FASE 3 (strangler, audit native #2) -- HYBRID, beda dari GET/PATCH generus yang 100% RPC:
+// seluruh field NON-PASSWORD dialihkan ke RPC update_user_profile (SECURITY DEFINER, sumber
+// kebenaran otorisasi tunggal di DB, termasuk proteksi Super Admin/PPG/hierarki role/scope
+// lama+baru/arsip-pulihkan). Field `password` TETAP di sini via GoTrue Admin API
+// (auth.admin.updateUserById) -- RPC Postgres murni TIDAK BISA mengubah password auth
+// (lihat PLAN_MIGRASI_OTORISASI_RPC.md §2 kendala teknis), jadi tak bisa 100% dipindah.
+//
+// RPC dipanggil LEBIH DULU (bahkan kalau body cuma berisi `password` tanpa field lain) --
+// RPC-nya sendiri tetap menegakkan gerbang otorisasi dasar (diri sendiri ATAU berwenang atas
+// scope target) via auth.uid(), walau payload-nya kosong. Ini artinya password TIDAK PERNAH
+// diubah lewat GoTrue kalau caller tidak berwenang atas target -- RPC berfungsi ganda sbg
+// otorisasi utk field akun DAN gerbang otorisasi utk ganti password, tanpa perlu getCaller()/
+// canManageMembers()/canActOnScope() lagi di sini (semuanya masih dipakai POST, jadi tetap
+// ada di file ini).
 export async function PATCH(req: NextRequest) {
   try {
-    const supabaseAdmin = adminClient()
-    const { caller, reason } = await getCaller(req, supabaseAdmin)
-    if (!caller) return NextResponse.json({ error: reason || 'Unauthorized' }, { status: 401 })
-
-    const {
-      id, nama_lengkap, no_hp, role_id, desa_id, kelompok_id, is_active, password,
-      avatar_url,
-      archive, alasan_arsip,
-      restore,
-    } = await req.json()
-
-    if (!id) return NextResponse.json({ error: 'ID wajib diisi' }, { status: 400 })
-
-    // Proteksi super_admin: cek role & scope target sebelum mengizinkan perubahan
-    const { data: targetUserRole } = await supabaseAdmin
-      .from('users')
-      .select('desa_id, kelompok_id, roles:role_id(tingkatan)')
-      .eq('id', id)
-      .single()
-    const targetRole = targetUserRole?.roles as { tingkatan?: string } | { tingkatan?: string }[] | null
-    const targetTingkatan = Array.isArray(targetRole) ? targetRole[0]?.tingkatan : targetRole?.tingkatan
-    const isTargetSuperAdmin = targetTingkatan === 'super_admin'
-    // PPG berada di ATAS jenjang Daerah (pengawas, bukan bawahan) -- lihat isPPG di lib/roles.ts.
-    // canActOnScope() meloloskan caller tingkatan 'daerah' tanpa syarat tambahan untuk SEMUA
-    // target (termasuk PPG), yang secara organisasi terbalik: Ketua/Sekretaris Daerah bisa
-    // menonaktifkan/mengarsipkan/menurunkan role akun pengawasnya sendiri. Aksi administratif
-    // berdampak (nonaktifkan/arsipkan/pulihkan/ubah role) pada akun PPG sekarang dibatasi
-    // Super Admin saja -- biodata/kontak (nama_lengkap, no_hp, password) TETAP boleh diedit
-    // Daerah lewat menu Data Pembina (itulah tujuan menu itu ada), hanya field administratif
-    // berdampak yang dikunci di sini.
-    const isTargetPPG = targetTingkatan === 'ppg'
-
-    const isSelf = id === caller.id
-    const currentDesaId = targetUserRole?.desa_id ?? null
-    const currentKelompokId = targetUserRole?.kelompok_id ?? null
-    // Otorisasi: harus salah satu dari — mengubah data diri sendiri, atau berwenang
-    // mengelola anggota lain dalam scope-nya (Ketua/Wakil/Super Admin sesuai desa/kelompok).
-    if (!isSelf) {
-      if (!canActOnScope(caller, currentDesaId, currentKelompokId)) {
-        return NextResponse.json({ error: 'Anda tidak berwenang mengubah pengguna ini.' }, { status: 403 })
-      }
+    const token = bearerToken(req)
+    if (!token) {
+      return NextResponse.json({ error: 'Tidak ada token autentikasi (silakan login ulang).' }, { status: 401 })
     }
 
-    // SECURITY FIX -- desa_id/kelompok_id (scope akun, dipakai utk otorisasi & filter)
-    // SELALU harus melalui pengurus berwenang (canManageMembers), TIDAK PERNAH lewat
-    // self-edit -- sebelumnya field ini luput dari hasAdminFields di bawah DAN dari cek
-    // scope di atas (yang di-skip total kalau isSelf), sehingga siapapun yang login bisa
-    // memindahkan desa_id/kelompok_id akunnya sendiri ke Desa/Kelompok manapun lalu
-    // mewarisi hak kelola scope tujuan itu di request berikutnya. Selain itu, cek scope
-    // di atas hanya memvalidasi lokasi LAMA target -- tanpa cek lokasi BARU (tujuan
-    // pindah), Ketua Desa A yang sah bisa memindahkan anggotanya sendiri ke Desa B tanpa
-    // Desa B pernah menyetujui. Di bawah ini keduanya divalidasi: caller harus berwenang
-    // ATAS scope lama maupun scope baru sebelum pemindahan diizinkan.
-    if (desa_id !== undefined || kelompok_id !== undefined) {
-      if (!canManageMembers(caller)) {
-        return NextResponse.json({ error: 'Anda tidak berwenang mengubah tempat sambung (Desa/Kelompok) pengguna.' }, { status: 403 })
-      }
-      if (!canActOnScope(caller, currentDesaId, currentKelompokId)) {
-        return NextResponse.json({ error: 'Anda tidak berwenang mengubah pengguna ini.' }, { status: 403 })
-      }
-      const newDesaId = desa_id !== undefined ? (desa_id || null) : currentDesaId
-      const newKelompokId = kelompok_id !== undefined ? (kelompok_id || null) : currentKelompokId
-      if (!canActOnScope(caller, newDesaId, newKelompokId)) {
-        return NextResponse.json({ error: 'Anda tidak berwenang memindahkan pengguna ke Desa/Kelompok tujuan ini.' }, { status: 403 })
-      }
+    const body = await req.json()
+    if (!body?.id) return NextResponse.json({ error: 'ID wajib diisi' }, { status: 400 })
+
+    const payload: Record<string, unknown> = {}
+    for (const k of PATCH_PAYLOAD_FIELDS) if (body[k] !== undefined) payload[k] = body[k]
+
+    const { data, error } = await userClient(token).rpc('update_user_profile', {
+      p_id: body.id,
+      p_payload: payload,
+    })
+
+    if (error) {
+      // 28000 -> 401, 42501 -> 403 (pesan spesifik dari RPC diteruskan apa adanya -- string
+      // di-RAISE identik dgn route lama, termasuk detail hierarki role & daftar jenjang yang
+      // boleh ditetapkan), 22004 (id wajib) -> 400. Error DB lain -> 500.
+      const code = error.code
+      if (code === '28000') return NextResponse.json({ error: 'Sesi tidak valid (silakan login ulang).' }, { status: 401 })
+      if (code === '42501') return NextResponse.json({ error: error.message }, { status: 403 })
+      if (code === '22004') return NextResponse.json({ error: error.message }, { status: 400 })
+      return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    if (isTargetSuperAdmin) {
-      // Super admin HANYA boleh update: no_hp, avatar_url, dan password
-      // Semua field lain — termasuk nama_lengkap — diblokir sepenuhnya
-      const hasProtectedFields = nama_lengkap !== undefined
-        || role_id !== undefined || desa_id !== undefined || kelompok_id !== undefined
-        || is_active !== undefined || archive !== undefined || restore !== undefined
-      if (hasProtectedFields) {
-        return NextResponse.json({ error: 'Profil Super Admin tidak dapat diubah.' }, { status: 403 })
-      }
+    // Field akun (non-password) berhasil -- caller terbukti berwenang atas target. Baru
+    // sekarang proses password (kalau dikirim), lewat service-role (GoTrue Admin API TIDAK
+    // menerima JWT user biasa, wajib service-role). Urutan ini (RPC dulu, baru password)
+    // sengaja -- password tidak pernah tersentuh kalau otorisasi field akun gagal duluan.
+    if (body.password) {
+      const { error: pwError } = await adminClient().auth.admin.updateUserById(body.id, { password: body.password })
+      if (pwError) return NextResponse.json({ error: pwError.message }, { status: 500 })
     }
 
-    // Field administratif (role, scope, status akun) hanya boleh diubah oleh yang berwenang
-    // mengelola Generus — mencegah pengguna menaikkan hak aksesnya sendiri lewat halaman profil.
-    const hasAdminFields = role_id !== undefined || is_active !== undefined || archive !== undefined || restore !== undefined
-    if (hasAdminFields && !canManageMembers(caller)) {
-      return NextResponse.json({ error: 'Anda tidak berwenang mengubah role atau status akun.' }, { status: 403 })
-    }
-
-    // Lihat catatan isTargetPPG di atas -- field administratif berdampak pada akun PPG
-    // (nonaktifkan/arsipkan/pulihkan/ubah role) hanya boleh dilakukan Super Admin, siapapun
-    // lain yang lolos canManageMembers() (termasuk Ketua/Sekretaris Daerah) tetap ditolak.
-    if (hasAdminFields && isTargetPPG && caller.tingkatan !== 'super_admin') {
-      return NextResponse.json({ error: 'Status/role akun PPG hanya dapat diubah oleh Super Admin.' }, { status: 403 })
-    }
-
-    // Super Admin adalah akun tunggal mutlak — role_id siapapun tidak boleh diarahkan
-    // menjadi Super Admin lewat aplikasi ini, oleh siapapun termasuk Super Admin itu sendiri.
-    if (role_id !== undefined) {
-      const newRoleTingkatan = await getRoleTingkatan(supabaseAdmin, role_id)
-      if (newRoleTingkatan === 'super_admin') {
-        return NextResponse.json({ error: 'Tidak dapat mengubah role pengguna menjadi Super Admin.' }, { status: 403 })
-      }
-      // Hierarki jenjang berlaku juga saat mengedit role user existing (bukan cuma saat
-      // membuat baru) -- kalau tidak, pembatasan create bisa dilewati dgn cara membuat user
-      // biasa dulu lalu langsung menaikkan role-nya lewat form edit.
-      if (!isSelf && !canAssignTingkatan(caller, newRoleTingkatan)) {
-        return NextResponse.json({
-          error: `Anda tidak berwenang mengubah role pengguna ke jenjang "${newRoleTingkatan}". Role yang boleh Anda tetapkan: ${getAllowedTargetTingkatan(caller).join(', ') || '(tidak ada)'}.`,
-        }, { status: 403 })
-      }
-    }
-
-    if (password) {
-      await supabaseAdmin.auth.admin.updateUserById(id, { password })
-    }
-
-    const userPayload: Record<string, unknown> = {}
-    if (nama_lengkap !== undefined) userPayload.nama_lengkap = nama_lengkap
-    if (no_hp !== undefined) userPayload.no_hp = no_hp || null
-    if (role_id !== undefined) userPayload.role_id = role_id || null
-    if (desa_id !== undefined) userPayload.desa_id = desa_id || null
-    if (kelompok_id !== undefined) userPayload.kelompok_id = kelompok_id || null
-    if (is_active !== undefined) userPayload.is_active = is_active
-    if (avatar_url !== undefined) {
-      userPayload.avatar_url = avatar_url || null
-      userPayload.foto_url = avatar_url || null
-    }
-
-    if (archive === true) {
-      userPayload.is_active = false
-      userPayload.is_archived = true
-      userPayload.alasan_arsip = alasan_arsip || 'Tidak diketahui'
-      userPayload.tanggal_arsip = new Date().toISOString()
-    }
-
-    // Pulihkan akun yang sebelumnya diarsipkan (menikah/meninggal dunia/pindah sambung ke
-    // daerah lain) -- kebalikan dari blok `archive` di atas. Akun diaktifkan kembali & jejak
-    // arsip (alasan/tanggal) dihapus supaya tidak ada info arsip basi menempel di akun yang
-    // sudah dipulihkan. Biodata terkait (generus.status_pengguna dikembalikan ke 'lajang',
-    // pindah_desa_id/kelompok_id/pindah_ke_daerah_lain direset) ditangani terpisah oleh
-    // caller lewat app/api/generus/route.ts PATCH -- endpoint ini (users) tetap murni akun.
-    if (restore === true) {
-      userPayload.is_active = true
-      userPayload.is_archived = false
-      userPayload.alasan_arsip = null
-      userPayload.tanggal_arsip = null
-    }
-
-    if (Object.keys(userPayload).length > 0) {
-      const { error } = await supabaseAdmin.from('users').update(userPayload).eq('id', id)
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-
-    return NextResponse.json({ success: true })
+    // RPC balik { success: true }; diteruskan apa adanya -- bentuk balik identik dgn route lama.
+    return NextResponse.json(data)
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }
