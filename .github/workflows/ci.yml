@@ -15,7 +15,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Node 22+ perlu utk lib/authz-rpc.contract.test.ts -- @supabase/supabase-js
+          # menginisialisasi RealtimeClient di constructor (walau cuma dipakai .rpc(), tanpa
+          # subscribe realtime apapun), dan itu butuh native WebSocket global yang baru ada
+          # sejak Node 22; di Node 20 langsung throw "Node.js 20 detected without native
+          # WebSocket support" saat createClient() dipanggil, sebelum test manapun sempat
+          # jalan. Next.js sendiri sudah lama mendukung Node 22 (>= 18.18 disyaratkan).
+          node-version: 22
           cache: npm
 
       - run: npm ci
@@ -28,3 +34,10 @@ jobs:
 
       - name: Test
         run: npm run test
+        env:
+          # Prioritas #3 NATIVE_READINESS_AUDIT.md: contract test lib/authz-rpc.contract.test.ts
+          # memanggil RPC otorisasi murni di Supabase lewat ANON KEY -- bukan secret, sama
+          # persis yang sudah ter-embed di bundle client browser (lihat lib/supabase.ts).
+          # Tanpa env ini test tsb di-skip diam-diam (lihat describe.skipIf di file itu).
+          NEXT_PUBLIC_SUPABASE_URL: https://ccyqgcfjmzgkmkczuydv.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNjeXFnY2ZqbXpna21rY3p1eWR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NTg2MzUsImV4cCI6MjA5ODAzNDYzNX0.08YZeLbbo6oneL-q3eUNuQuOVbe8vll3EPckxAsqqxQ

@@ -384,8 +384,8 @@ native jalan**, terakhir **paralel/kosmetik**.
 | # | Perbaikan | Kategori | Risiko | Effort | Kenapa urutan ini |
 |---|---|---|---|---|---|
 | **1** | ~~**Audit & rapatkan RLS di DB**~~ ✅ **SELESAI (Batch A, 20 Juli 2026)** — verifikasi 22 tabel + fungsi; gap `generus`/`reset_password_requests` ditutup, `search_path` `increment_otp_attempt` dikunci. Sisa opsional: Batch B (revoke anon-execute) + leaked-password protection. | G.1, A.3 | ~~Tinggi~~ | Menengah | Seluruh model keamanan multi-platform bertumpu di sini. Anon key akan tersebar — RLS harus jadi benteng sesungguhnya, bukan logika server web. **Sudah dikerjakan paling awal & langsung di DB.** |
-| **2** | **Pindahkan otorisasi ke RPC `SECURITY DEFINER` + Edge Function** (users/generus → RPC; resolve-login/password-reset → Edge Function), hilangkan duplikasi aturan | A.1, A.2, B.3 | Tinggi | Besar | Menjadikan DB sumber kebenaran tunggal → Flutter tinggal panggil, tak menulis ulang aturan. Sekaligus melepas backend dari deployment Vercel & mengisolasi service-role key. |
-| **3** | **Contract test untuk authorization + RPC kritis** (server enforcement, resolve-login, laporan) + perluas CI ke test level-backend | F.1, F.2 | Tinggi | Menengah | Mengunci perilaku backend **sebelum** 3–4 client bergantung. Paling efektif dikerjakan tepat setelah #2 (menguji RPC baru). |
+| **2** | ~~**Pindahkan otorisasi ke RPC `SECURITY DEFINER`**~~ ✅ **SELESAI (21-22 Juli 2026)** — `users`/`generus` (GET+PATCH) kini RPC (`get_generus_biodata`, `update_generus_biodata`, `update_user_profile`), route lama jadi wrapper tipis. Password tetap GoTrue (kendala teknis, lihat PLAN_MIGRASI_OTORISASI_RPC.md §2). Edge Function (resolve-login/password-reset) untuk B.3 belum -- baru relevan saat proyek Flutter benar-benar mulai. | A.1, A.2, B.3 | ~~Tinggi~~ | Besar | Menjadikan DB sumber kebenaran tunggal → Flutter tinggal panggil, tak menulis ulang aturan. **Detail lengkap & log verifikasi di PLAN_MIGRASI_OTORISASI_RPC.md.** |
+| **3** | ⏳ **Contract test untuk authorization + RPC kritis** — **sebagian selesai**: `lib/authz-rpc.contract.test.ts` (31 test, CI) mengunci 5 fungsi otorisasi murni dari Fase 1. RPC yang bergantung `auth.uid()` (`can_manage_members`, `get_generus_biodata`, dst) & RPC laporan/resolve-login **belum** -- butuh fixture akun test (di luar super_admin, akun tunggal mutlak) sebelum bisa diotomasi penuh. | F.1, F.2 | Tinggi | Menengah | Mengunci perilaku backend **sebelum** 3–4 client bergantung. |
 | **4** | **Redesain single-session → model multi-device** (`user_sessions`) | B.2 | Tinggi | Menengah–Besar | Menyentuh model data + UX; harus final sebelum client mobile dibangun di atas asumsi sesi tunggal. |
 | **5** | **Generalisasi arsitektur push** (skema `push_subscriptions` simpan platform+token; `notify_push` fan-out Web Push + FCM) | C.2 | Sedang | Menengah–Besar | Web tetap jalan; ubah skema sekarang agar tak perlu migrasi data saat FCM ditambah. |
 | **6** | **OAuth deep-link scheme + generalisasi redirect config** | D.2 | Sedang | Menengah | Prasyarat "Masuk dengan Google" di mobile; tak memblokir login nama+password. |
@@ -412,6 +412,30 @@ Item #7 (design token) aman dikerjakan kapan pun karena tidak menyentuh backend.
 ---
 
 ## 5. Log Perubahan (perbaikan yang sudah dijalankan)
+
+### 22 Juli 2026 — Prioritas #3 (sebagian): contract test fungsi otorisasi murni
+
+`lib/authz-rpc.contract.test.ts` (baru) -- 31 test Vitest yang memanggil 5 fungsi otorisasi
+murni di DB (`member_management_allowed`, `scope_action_allowed`, `tingkatan_hierarchy_allowed`,
+`tingkatan_assignment_allowed`, `normalize_login_username`) lewat **anon key** (bukan secret --
+sama seperti dipakai client browser). Mirror persis 30 skenario yang diverifikasi manual via SQL
+saat migrasi Fase 1 diterapkan (21 Juli) -- kini permanen & otomatis di CI, bukan sekali jalan.
+`ci.yml` diberi env `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY` (nilai publik,
+plain di workflow, bukan GitHub secret) khusus step Test. Tanpa env ini (mis. lokal tanpa
+`.env.local`) test di-skip diam-diam (`describe.skipIf`), tidak pernah gagal.
+
+**Catatan verifikasi:** sandbox pengerjaan sesi ini diblokir proxy jaringan mengakses
+`*.supabase.co` langsung (beda dari tool MCP Supabase yang lewat jalur lain) -- run lokal
+gagal karena itu, BUKAN karena RPC salah (dikonfirmasi ulang lewat MCP `execute_sql` bahwa
+`normalize_login_username(...)` tetap mengembalikan nilai benar). Verifikasi sesungguhnya
+menunggu run CI asli (GitHub Actions, akses internet normal) setelah PR dibuka.
+
+**Belum selesai** (di luar cakupan sesi ini): RPC yang bergantung `auth.uid()`
+(`can_manage_members`, `get_generus_biodata`, `update_generus_biodata`, `update_user_profile`)
+serta RPC laporan/`resolve-login` butuh sesi login sungguhan utk diuji end-to-end. Tak bisa
+pakai fixture akun `super_admin` terisolasi (trigger `enforce_single_super_admin` menolak baris
+kedua) -- kalau dilanjutkan, perlu akun test non-super-admin (Ketua/Generus) khusus + kredensial
+tersimpan sbg GitHub secret, keputusan yang butuh persetujuan eksplisit lebih dulu.
 
 ### 20 Juli 2026 — Prioritas #1 Batch A (RLS hardening)
 

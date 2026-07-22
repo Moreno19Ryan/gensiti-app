@@ -61,6 +61,14 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 22 Juli 2026 (lanjutan) — Prioritas #3 (sebagian): contract test otorisasi
+
+- **`lib/authz-rpc.contract.test.ts`** (baru): 31 test Vitest mengunci 5 fungsi otorisasi
+  murni (Fase 1) lewat anon key -- mirror 30 skenario yang sebelumnya cuma diverifikasi
+  manual via SQL. Masuk `ci.yml` (env publik, bukan secret). Lokal tanpa env, test skip
+  diam-diam. Detail + batasan (RPC ber-`auth.uid()` & super_admin belum bisa diotomasi
+  penuh) di [NATIVE_READINESS_AUDIT.md §5](NATIVE_READINESS_AUDIT.md).
+
 ### Sesi 22 Juli 2026 — Fase 3 endpoint 3 (TERAKHIR, hibrida): `PATCH /api/users` lewat RPC
 
 - **Endpoint terakhir Fase 3**, beda karakter dari 2 sebelumnya: **HYBRID**. Field non-password
