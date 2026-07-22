@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { submitPresensiOffline, getJumlahAntrean } from '@/lib/offline-queue'
 
 interface Props {
   kegiatanId: string
@@ -20,11 +20,35 @@ interface Props {
 export default function RfidKioskInput({ kegiatanId, kode, onCheckin }: Props) {
   const [uid, setUid] = useState('')
   const [loading, setLoading] = useState(false)
+  // Reader HID cuma "mengetik" ke elemen yang sedang fokus -- kalau operator sempat mengklik
+  // elemen lain (mis. tombol "Perbarui kode"/"Saya Hadir" di panel yang sama), ketikan kartu
+  // berikutnya akan terbuang sia-sia tanpa kartu tsb kelihatan "gagal" sama sekali (diam-diam
+  // hilang). `focused` menggerakkan indikator visual, refocusTimer mengembalikan fokus
+  // otomatis TAPI ditunda sedikit (bukan sinkron) supaya klik ke tombol lain di layar yang
+  // sama sempat selesai diproses dulu sebelum fokus direbut balik.
+  const [focused, setFocused] = useState(true)
+  const [jumlahAntrean, setJumlahAntrean] = useState(0)
   const inputRef = useRef<HTMLInputElement | null>(null)
+  const refocusTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     inputRef.current?.focus()
+    return () => { if (refocusTimer.current) clearTimeout(refocusTimer.current) }
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const refresh = () => getJumlahAntrean().then((n) => { if (!cancelled) setJumlahAntrean(n) })
+    refresh()
+    const interval = setInterval(refresh, 5000)
+    window.addEventListener('online', refresh)
+    return () => { cancelled = true; clearInterval(interval); window.removeEventListener('online', refresh) }
+  }, [])
+
+  const handleBlur = () => {
+    setFocused(false)
+    refocusTimer.current = setTimeout(() => inputRef.current?.focus(), 100)
+  }
 
   const handleSubmit = async () => {
     const uidTrimmed = uid.trim()
@@ -32,14 +56,20 @@ export default function RfidKioskInput({ kegiatanId, kode, onCheckin }: Props) {
     setLoading(true)
     setUid('')
     try {
-      const { data, error } = await supabase.rpc('submit_presensi_rfid', {
+      const hasil = await submitPresensiOffline('submit_presensi_rfid', {
         p_kegiatan_id: kegiatanId,
         p_kode: kode,
         p_kartu_uid: uidTrimmed,
       })
-      if (error) throw error
-      const nama = data?.nama_lengkap ? ` -- ${data.nama_lengkap}` : ''
-      onCheckin(`✓ Absensi tercatat${nama}`, true)
+      if (hasil.error) throw new Error(hasil.error)
+      if (hasil.queued) {
+        setJumlahAntrean((n) => n + 1)
+        onCheckin('📶 Sinyal terputus -- absensi disimpan & akan otomatis terkirim saat online kembali.', true)
+      } else {
+        const data = hasil.data as { nama_lengkap?: string } | undefined
+        const nama = data?.nama_lengkap ? ` -- ${data.nama_lengkap}` : ''
+        onCheckin(`✓ Absensi tercatat${nama}`, true)
+      }
     } catch (e) {
       onCheckin(e instanceof Error ? e.message : 'Gagal membaca kartu.', false)
     } finally {
@@ -49,17 +79,26 @@ export default function RfidKioskInput({ kegiatanId, kode, onCheckin }: Props) {
   }
 
   return (
-    <div className="bg-slate-50 rounded-xl p-4 text-center space-y-2">
-      <p className="text-xs text-slate-400">Mode Kartu RFID -- tap kartu Generus ke reader</p>
+    <div className={`rounded-xl p-4 text-center space-y-2 border transition-colors ${
+      focused ? 'bg-green-50 border-green-200' : 'bg-slate-100 border-slate-300'
+    }`}>
+      <p className={`text-xs font-medium ${focused ? 'text-green-700' : 'text-slate-500'}`}>
+        {focused ? '🟢 Siap menerima kartu -- tap kartu Generus ke reader' : '⚪ Klik kotak di bawah untuk mulai'}
+      </p>
       <input
         ref={inputRef}
         value={uid}
         onChange={e => setUid(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }}
+        onFocus={() => setFocused(true)}
+        onBlur={handleBlur}
         placeholder="Tap kartu di sini..."
         disabled={loading}
         className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-mono text-center focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
       />
+      {jumlahAntrean > 0 && (
+        <p className="text-[11px] text-amber-600">📶 {jumlahAntrean} antrean menunggu sinkronisasi</p>
+      )}
     </div>
   )
 }

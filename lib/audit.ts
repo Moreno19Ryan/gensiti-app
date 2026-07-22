@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/nextjs'
 import { supabase } from './supabase'
 import { UserProfile } from './types'
 
@@ -32,8 +33,11 @@ export async function logAudit(
       desa_id: user.desa_id || null,
       kelompok_id: user.kelompok_id || null,
     })
-    } catch {
-    // Audit log gagal tidak boleh menghentikan operasi utama
+    } catch (err) {
+    // Audit log gagal tidak boleh menghentikan operasi utama (fail-open by design) --
+    // tapi kegagalannya sendiri tetap harus terlihat, jadi dilaporkan diam-diam ke Sentry
+    // (bukan dilempar ke client) supaya jejak audit yang bolong tidak lolos tanpa jejak sama sekali.
     console.warn('[GENSITI] Audit log gagal:', { action, module, targetDesc })
+    Sentry.captureException(err, { extra: { action, module, targetDesc, targetId } })
   }
 }

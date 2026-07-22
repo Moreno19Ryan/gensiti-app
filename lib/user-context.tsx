@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, useRef, ReactNode } fro
 import { supabase } from './supabase'
 import { getUserProfile } from './auth'
 import { UserProfile } from './types'
+import { flushAntrean } from './offline-queue'
 
 // Satu "kehadiran" presence per user -- dilacak lewat channel.track() di bawah, dipakai
 // utk menghitung onlineCount (global) sekaligus onlineCountScoped (lihat di bawah).
@@ -128,6 +129,22 @@ export function UserProvider({ children }: { children: ReactNode }) {
       }
     }, 30_000)
     return () => clearInterval(interval)
+  }, [user?.id])
+
+  // Antrean presensi offline (lib/offline-queue.ts) -- coba kuras begitu user siap (menutup
+  // kemungkinan ada antrean tersisa dari sesi sebelumnya yang terputus sebelum sempat sync)
+  // DAN setiap kali browser mendeteksi koneksi kembali. Sengaja digantung di sini (provider
+  // tunggal di root), bukan di tiap PresensiPanel/RfidKioskInput -- supaya tidak ada beberapa
+  // instance memicu flush paralel yang sama saat lebih dari satu kartu kegiatan terbuka.
+  // Digerbang oleh user?.id supaya tidak pernah mencoba flush sebelum sesi login dipastikan
+  // siap (kalau tidak, RPC akan ditolak dgn "Anda harus login" yang keliru dianggap penolakan
+  // sementara, padahal itemnya sendiri sebenarnya valid).
+  useEffect(() => {
+    if (!user?.id) return
+    flushAntrean()
+    const handleOnline = () => flushAntrean()
+    window.addEventListener('online', handleOnline)
+    return () => window.removeEventListener('online', handleOnline)
   }, [user?.id])
 
   // Presence tracking - aktif di semua halaman saat user login
