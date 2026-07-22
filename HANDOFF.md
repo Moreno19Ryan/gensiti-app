@@ -61,6 +61,22 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 21 Juli 2026 (lanjutan 6) — Fase 3 endpoint 2: `PATCH /api/generus` lewat RPC
+
+- **Handler PATCH `/api/generus` dialihkan ke RPC `update_generus_biodata`** (wrapper tipis,
+  `userClient` + JWT pemanggil). Bangun `p_payload` jsonb hanya dari field yang dikirim client
+  (mirror `!== undefined`), teruskan `user_id`/`generus_id` sbg param. Error 4xx otorisasi:
+  pesan spesifik dari RPC diteruskan apa adanya (string di-RAISE identik dgn route lama). Bentuk
+  balik `{ success, newLoginUsername? }` identik → frontend tak berubah.
+- **Karena GET (endpoint 1) sudah RPC juga, seluruh helper duplikat TS di file itu DIHAPUS**
+  (`getCaller`/`canManageMembers`/`canActOnScope`/`generateUniqueLoginUsername`/`adminClient`/
+  `Caller`) — file generus route kini bersih: 2 wrapper RPC + helper token. Ini "hapus
+  duplikasi" tujuan Fase 3. Bonus: otorisasi+tulis kini ATOMIK (satu transaksi RPC).
+- `typecheck`/`lint`/`test`/`build` sukses. RPC-nya sendiri sudah diverifikasi 7 skenario saat
+  dibuat (PR #6). **Belum:** round-trip TULIS live — HARUS spot-check di preview PR (login →
+  edit & SIMPAN biodata) SEBELUM merge, karena ini jalur tulis ke data ~82 user. Detail di
+  [PLAN_MIGRASI_OTORISASI_RPC.md §0](PLAN_MIGRASI_OTORISASI_RPC.md) Fase 3 poin 2.
+
 ### Sesi 21 Juli 2026 (lanjutan 5) — Fase 3 pilot: `GET /api/generus` lewat RPC
 
 - **Fase 3 DIMULAI** (pertama kalinya jalur produksi dialihkan, bukan cuma aditif). Pilot:
