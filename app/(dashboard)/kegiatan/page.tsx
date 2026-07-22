@@ -7,6 +7,7 @@ import { Kegiatan } from '@/lib/types'
 import { logAudit } from '@/lib/audit'
 import { canManageKontenOrganisasi, isGenerusBiasa } from '@/lib/roles'
 import { useFeatureAccess } from '@/lib/feature-toggles'
+import { RFID_PRESENSI_READY } from '@/lib/rfid'
 import Modal from '@/components/Modal'
 import PresensiPanel from '@/components/PresensiPanel'
 import PengajuanIzinPanel from '@/components/PengajuanIzinPanel'
@@ -65,6 +66,8 @@ const emptyForm = {
   kategori_kegiatan: '',
   target_peserta: 'semua_generus',
   target_kelas_ngaji: '',
+  presensi_metode_qr: true,
+  presensi_metode_rfid: false,
 }
 
 export default function KegiatanPage() {
@@ -168,6 +171,10 @@ export default function KegiatanPage() {
       kategori_kegiatan: k.kategori_kegiatan || '',
       target_peserta: k.target_peserta || 'semua_generus',
       target_kelas_ngaji: k.target_kelas_ngaji || '',
+      // Data lama (sebelum kolom ini ada) bisa saja tersimpan null -- default ke QR nyala
+      // (perilaku lama sebelum toggle ini ada) & RFID mati.
+      presensi_metode_qr: k.presensi_metode_qr ?? true,
+      presensi_metode_rfid: k.presensi_metode_rfid ?? false,
     })
     setModalOpen(true)
   }
@@ -218,6 +225,11 @@ export default function KegiatanPage() {
         kategori_kegiatan: isDaerah ? (form.kategori_kegiatan || null) : null,
         target_peserta: form.target_peserta,
         target_kelas_ngaji: form.target_peserta === 'kelas_ngaji_tertentu' ? form.target_kelas_ngaji : null,
+        presensi_metode_qr: form.presensi_metode_qr,
+        // RFID belum siap dipakai (lihat lib/rfid.ts) -- dikunci false di server terlepas
+        // dari state form, supaya toggle-nya tidak bisa "bocor" aktif lewat cara lain
+        // selain lib/rfid.ts sendiri (mis. devtools mengubah state React manual).
+        presensi_metode_rfid: RFID_PRESENSI_READY ? form.presensi_metode_rfid : false,
       }
       if (editTarget) {
         const { error: err } = await supabase.from('kegiatan').update(payload).eq('id', editTarget.id)
@@ -582,6 +594,32 @@ export default function KegiatanPage() {
               )}
             </div>
             <p className="text-xs text-slate-400 mt-1">Menentukan siapa yang wajib absensi untuk kegiatan ini.</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Metode Presensi</label>
+            <div className="flex flex-wrap gap-4">
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={form.presensi_metode_qr}
+                  onChange={e => setForm(f => ({ ...f, presensi_metode_qr: e.target.checked }))}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                QR Code
+              </label>
+              <label className={`flex items-center gap-2 text-sm ${RFID_PRESENSI_READY ? 'text-slate-600' : 'text-slate-300'}`}>
+                <input
+                  type="checkbox"
+                  checked={RFID_PRESENSI_READY && form.presensi_metode_rfid}
+                  disabled={!RFID_PRESENSI_READY}
+                  onChange={e => setForm(f => ({ ...f, presensi_metode_rfid: e.target.checked }))}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                />
+                Kartu RFID {!RFID_PRESENSI_READY && <span className="italic">(Segera Hadir)</span>}
+              </label>
+            </div>
+            <p className="text-xs text-slate-400 mt-1">Input kode manual 6-digit selalu tersedia terlepas dari pilihan di atas.</p>
           </div>
 
           {form.tingkatan !== 'daerah' && (

@@ -58,6 +58,9 @@ export interface Generus {
   foto_url: string | null
   status: 'aktif' | 'non-aktif'
   created_at: string
+  // UID kartu RFID yang terdaftar untuk Generus ini (mode kiosk check-in) -- null kalau
+  // belum pernah didaftarkan. Lihat lib/rfid.ts.
+  kartu_rfid_uid: string | null
 }
 
 export interface Kegiatan {
@@ -83,6 +86,10 @@ export interface Kegiatan {
   kategori_kegiatan: 'pengajian_rutin' | 'pegasus' | 'penerobosan_pusat' | 'pengajian_gabungan' | null
   target_peserta: 'semua_generus' | 'hanya_pengurus' | 'kelas_ngaji_tertentu'
   target_kelas_ngaji: 'pra_remaja' | 'remaja_muda' | 'remaja_dewasa' | null
+  // Metode presensi yang aktif untuk kegiatan ini -- manual (input 6-digit) selalu tersedia
+  // di luar dua flag ini, QR & RFID opsional & bisa dinyalakan bersamaan. Lihat lib/rfid.ts.
+  presensi_metode_qr: boolean
+  presensi_metode_rfid: boolean
 }
 
 export type StatusPengajuanIzin = 'menunggu' | 'disetujui' | 'ditolak'

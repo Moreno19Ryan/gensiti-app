@@ -182,6 +182,35 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
   per-IP di `resolve-login` (120/10 mnt) & `password-reset/request` (20/15 mnt, di atas
   throttle per-user yg sudah ada). Fail-open. Detail di NATIVE_READINESS_AUDIT.md §5.
 
+### Sesi 22 Juli 2026
+
+- **Struktur presensi via Kartu RFID** (mode kiosk, reader dipegang Pengurus) -- disiapkan
+  penuh atas permintaan Reno, tapi **sengaja belum diaktifkan di UI produksi** karena QR
+  masih dianggap cukup untuk saat ini dan fiturnya belum pernah diuji pakai reader USB
+  fisik sungguhan. Dikunci lewat `RFID_PRESENSI_READY = false` di `lib/rfid.ts` -- ganti
+  ke `true` + deploy setelah pengujian fisik berhasil, tidak perlu perubahan kode lain.
+  - Migrasi Supabase (`add_rfid_presensi`, diterapkan lewat MCP `apply_migration`):
+    kolom `generus.kartu_rfid_uid` (unique) dan `kegiatan.presensi_metode_qr`/
+    `presensi_metode_rfid` (boolean, default `true`/`false`), plus 3 RPC baru
+    (`daftarkan_kartu_rfid`, `cabut_kartu_rfid`, `submit_presensi_rfid`) -- detail lengkap
+    di [ARCHITECTURE.md §11](ARCHITECTURE.md#11-presensi-via-kartu-rfid-struktur-siap-belum-aktif).
+  - Kode baru: `lib/rfid.ts` (flag kesiapan), `components/RfidKioskInput.tsx` (input
+    kiosk auto-focus utk reader keyboard-wedge). Terintegrasi ke `PresensiPanel.tsx`
+    (kiosk RFID sisi Pengurus), `app/(dashboard)/kegiatan/page.tsx` (toggle metode
+    presensi QR/RFID per kegiatan -- kode manual tetap selalu tersedia di luar toggle
+    ini), dan `app/(dashboard)/generus/page.tsx` (tombol "Kartu RFID" di modal Detail
+    Generus utk daftar/cabut kartu). Semua elemen UI RFID di-gate lewat
+    `RFID_PRESENSI_READY` -- kalau `false`, tombol/checkbox-nya tidak dirender sama
+    sekali (bukan cuma disabled), supaya tidak ada dead-end UI di produksi.
+  - Diverifikasi: `tsc --noEmit`, `eslint` (0 error, warning sama seperti baseline),
+    `npm run test` (38/38), `npm run build` sukses. `get_advisors` Supabase menunjukkan
+    RPC baru memicu advisory generik yang sama seperti `generate_kode_presensi`/
+    `submit_presensi` yang sudah ada (SECURITY DEFINER + authenticated executable) --
+    bukan temuan baru, pola yang sudah diterima proyek ini.
+  - **Belum dilakukan** (di luar cakupan sesi ini): uji end-to-end pakai reader RFID USB
+    fisik. Sebelum `RFID_PRESENSI_READY` diganti `true`, sebaiknya dicoba dulu di satu
+    kegiatan kecil (mirip kegiatan "tes" yang dipakai audit QR sebelumnya).
+
 ### Sesi 20 Juli 2026
 
 - **Audit fitur absensi via QR Code** (diminta sebagai permintaan fitur baru, ternyata sudah

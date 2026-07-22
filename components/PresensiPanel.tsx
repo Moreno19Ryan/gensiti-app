@@ -7,6 +7,8 @@ import { canManagePresensi, isPPG } from '@/lib/roles'
 import { UserProfile } from '@/lib/types'
 import QRCode from 'qrcode'
 import QrScanner from 'qr-scanner'
+import { RFID_PRESENSI_READY } from '@/lib/rfid'
+import RfidKioskInput from './RfidKioskInput'
 
 interface Props {
   kegiatan: Kegiatan
@@ -126,7 +128,7 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
   // rotasi otomatis tiap 5 menit) -- generate sebagai data URL PNG di sisi client, tidak
   // perlu request ke server terpisah.
   useEffect(() => {
-    if (!kode || !expiredAt || !isAktif) {
+    if (!kode || !expiredAt || !isAktif || !kegiatan.presensi_metode_qr) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setQrDataUrl(null)
       return
@@ -137,7 +139,7 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
       .catch(() => { if (!cancelled) setQrDataUrl(null) })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kode, expiredAt, kegiatan.id])
+  }, [kode, expiredAt, kegiatan.id, kegiatan.presensi_metode_qr])
 
   const mulaiAtauRotasiPresensi = useCallback(async () => {
     setLoadingAksi(true)
@@ -342,14 +344,18 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
             </button>
           ) : (
             <div className="bg-slate-50 rounded-xl p-4 text-center">
-              <p className="text-xs text-slate-400 mb-2">Scan QR untuk Absensi</p>
-              {qrDataUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={qrDataUrl} alt="QR Absensi" className="mx-auto rounded-lg border border-slate-200 bg-white p-2" width={200} height={200} />
-              ) : (
-                <div className="w-[200px] h-[200px] mx-auto rounded-lg border border-slate-200 bg-white flex items-center justify-center">
-                  <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                </div>
+              {kegiatan.presensi_metode_qr && (
+                <>
+                  <p className="text-xs text-slate-400 mb-2">Scan QR untuk Absensi</p>
+                  {qrDataUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={qrDataUrl} alt="QR Absensi" className="mx-auto rounded-lg border border-slate-200 bg-white p-2" width={200} height={200} />
+                  ) : (
+                    <div className="w-[200px] h-[200px] mx-auto rounded-lg border border-slate-200 bg-white flex items-center justify-center">
+                      <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  )}
+                </>
               )}
               <p className="text-xs text-slate-400 mt-2">Berlaku {fmtMenitDetik(sisaDetik)} lagi · otomatis berganti tiap 5 menit</p>
               <p className="text-[11px] text-slate-300 mt-1 font-mono tracking-widest">Kode: {kode}</p>
@@ -358,9 +364,19 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
                 disabled={loadingAksi}
                 className="mt-3 text-xs text-blue-600 hover:underline font-medium"
               >
-                Perbarui QR sekarang
+                Perbarui kode sekarang
               </button>
             </div>
+          )}
+          {isAktif && RFID_PRESENSI_READY && kegiatan.presensi_metode_rfid && (
+            <RfidKioskInput
+              kegiatanId={kegiatan.id}
+              kode={kode}
+              onCheckin={(pesan, sukses) => {
+                setStatusCheckin(sukses ? 'sukses' : 'gagal')
+                setPesanCheckin(pesan)
+              }}
+            />
           )}
           {errorMsg && <p className="text-xs text-red-500">{errorMsg}</p>}
 

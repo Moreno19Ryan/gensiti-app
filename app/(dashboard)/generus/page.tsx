@@ -8,6 +8,7 @@ import { authFetch } from '@/lib/auth'
 import { canManageMembers as checkCanManageMembers, getAllowedTargetTingkatan } from '@/lib/roles'
 import { useFeatureAccess } from '@/lib/feature-toggles'
 import { formatAge } from '@/lib/date'
+import { RFID_PRESENSI_READY } from '@/lib/rfid'
 import Modal from '@/components/Modal'
 import PasswordInput from '@/components/PasswordInput'
 import { exportToPDF, exportToExcel } from '@/lib/export'
@@ -51,6 +52,7 @@ interface Member {
     pindah_ke_daerah_lain: boolean | null
     anak_ke: number | null
     jumlah_saudara: number | null
+    kartu_rfid_uid: string | null
   } | null
 }
 
@@ -206,6 +208,11 @@ export default function DataGenerusPage() {
   const [newCredentials, setNewCredentials] = useState<{ nama: string; username: string; password: string; biodataWarning?: string } | null>(null)
   // Diisi kalau /api/generus PATCH mengembalikan newLoginUsername
   const [usernameChangedNotice, setUsernameChangedNotice] = useState<{ nama: string; username: string } | null>(null)
+  // Modal "Daftarkan Kartu RFID" -- lihat lib/rfid.ts (fitur belum aktif di UI produksi).
+  const [kartuTarget, setKartuTarget] = useState<Member | null>(null)
+  const [kartuUidInput, setKartuUidInput] = useState('')
+  const [kartuSaving, setKartuSaving] = useState(false)
+  const [kartuError, setKartuError] = useState('')
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -216,7 +223,7 @@ export default function DataGenerusPage() {
         roles:role_id(id, nama_role, tingkatan),
         desa:desa_id(id, nama_desa),
         kelompok:kelompok_id(id, nama_kelompok),
-        generus(id, nomor_generus, nama_panggilan, tanggal_lahir, tempat_lahir, jenis_kelamin, alamat, tinggi_badan, berat_badan, kelas_ngaji, nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali, status, status_pengguna, pindah_desa_id, pindah_kelompok_id, pindah_ke_daerah_lain, anak_ke, jumlah_saudara)
+        generus(id, nomor_generus, nama_panggilan, tanggal_lahir, tempat_lahir, jenis_kelamin, alamat, tinggi_badan, berat_badan, kelas_ngaji, nama_ayah, nama_ibu, nama_wali, no_hp_orangtua_wali, status, status_pengguna, pindah_desa_id, pindah_kelompok_id, pindah_ke_daerah_lain, anak_ke, jumlah_saudara, kartu_rfid_uid)
       `)
       .order('nama_lengkap')
 
@@ -586,6 +593,37 @@ export default function DataGenerusPage() {
     loadData()
   }
 
+  // Daftarkan/cabut kartu RFID -- otorisasi & validasi (unik, scope Desa/Kelompok) sepenuhnya
+  // di RPC (daftarkan_kartu_rfid/cabut_kartu_rfid), sisi client cuma tampilkan hasilnya.
+  const handleDaftarkanKartu = async () => {
+    if (!kartuTarget?.generus?.id || !kartuUidInput.trim()) return
+    setKartuSaving(true)
+    setKartuError('')
+    const { error: err } = await supabase.rpc('daftarkan_kartu_rfid', {
+      p_generus_id: kartuTarget.generus.id,
+      p_kartu_uid: kartuUidInput.trim(),
+    })
+    setKartuSaving(false)
+    if (err) { setKartuError(err.message); return }
+    if (user) await logAudit(user, 'UPDATE', 'Kartu RFID', kartuTarget.nama_lengkap, undefined, kartuTarget.generus.id)
+    setKartuTarget(null)
+    setKartuUidInput('')
+    loadData()
+  }
+
+  const handleCabutKartu = async () => {
+    if (!kartuTarget?.generus?.id) return
+    setKartuSaving(true)
+    setKartuError('')
+    const { error: err } = await supabase.rpc('cabut_kartu_rfid', { p_generus_id: kartuTarget.generus.id })
+    setKartuSaving(false)
+    if (err) { setKartuError(err.message); return }
+    if (user) await logAudit(user, 'UPDATE', 'Kartu RFID', `${kartuTarget.nama_lengkap} -- dicabut`, undefined, kartuTarget.generus.id)
+    setKartuTarget(null)
+    setKartuUidInput('')
+    loadData()
+  }
+
   const set = (key: string, val: string | boolean) => setForm(f => ({ ...f, [key]: val }))
   const setUpper = (key: string, val: string) => setForm(f => ({ ...f, [key]: toUpperWords(val) }))
 
@@ -937,6 +975,15 @@ export default function DataGenerusPage() {
                 <button onClick={() => { setDetailModal(null); openEdit(detailModal) }}
                   className="flex-1 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition">
                   Edit
+                </button>
+              )}
+              {/* Kartu RFID -- fitur belum aktif di produksi (lihat lib/rfid.ts), tombol
+                  sengaja disembunyikan total (bukan cuma disabled) supaya tidak ada dead-end
+                  UI sebelum siap. */}
+              {RFID_PRESENSI_READY && canActOn(detailModal) && (
+                <button onClick={() => { setKartuUidInput(''); setKartuError(''); setKartuTarget(detailModal); setDetailModal(null) }}
+                  className="flex-1 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
+                  Kartu RFID
                 </button>
               )}
               <button onClick={() => setDetailModal(null)}
@@ -1390,6 +1437,48 @@ export default function DataGenerusPage() {
               <button onClick={confirmRestore}
                 className="flex-1 py-2.5 bg-orange-500 text-white rounded-xl text-sm font-medium hover:bg-orange-600 transition">
                 Ya, Pulihkan
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Daftarkan/cabut kartu RFID -- lihat lib/rfid.ts (fitur belum aktif di produksi,
+          modal ini hanya bisa dibuka lewat tombol yang juga di-gate RFID_PRESENSI_READY). */}
+      {kartuTarget && (
+        <Modal open={!!kartuTarget} onClose={() => { setKartuTarget(null); setKartuUidInput(''); setKartuError('') }} title="Kartu RFID" size="sm">
+          <div className="space-y-4">
+            <p className="text-sm text-slate-500">
+              Tap kartu <strong>{kartuTarget.nama_lengkap}</strong> ke reader RFID untuk mendaftarkan/mengganti kartu.
+            </p>
+            {kartuTarget.generus?.kartu_rfid_uid && (
+              <div className="p-2.5 bg-slate-50 rounded-xl text-xs text-slate-500">
+                Kartu terdaftar saat ini: <span className="font-mono">{kartuTarget.generus.kartu_rfid_uid}</span>
+              </div>
+            )}
+            <input
+              autoFocus
+              value={kartuUidInput}
+              onChange={e => setKartuUidInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleDaftarkanKartu() }}
+              placeholder="Tap kartu di sini..."
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            {kartuError && <p className="text-xs text-red-500">{kartuError}</p>}
+            <div className="flex gap-3 pt-2 border-t border-slate-100">
+              <button onClick={() => { setKartuTarget(null); setKartuUidInput(''); setKartuError('') }}
+                className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
+                Batal
+              </button>
+              {kartuTarget.generus?.kartu_rfid_uid && (
+                <button onClick={handleCabutKartu} disabled={kartuSaving}
+                  className="flex-1 py-2.5 border border-red-200 text-red-500 rounded-xl text-sm font-medium hover:bg-red-50 disabled:opacity-50 transition">
+                  Cabut Kartu
+                </button>
+              )}
+              <button onClick={handleDaftarkanKartu} disabled={kartuSaving || !kartuUidInput.trim()}
+                className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition">
+                {kartuSaving ? 'Menyimpan...' : 'Simpan'}
               </button>
             </div>
           </div>

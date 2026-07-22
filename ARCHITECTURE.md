@@ -59,7 +59,7 @@ punya gate sendiri, lihat §4).
 | `desa` | 10 Desa | induk `kelompok`, banyak tabel scope |
 | `kelompok` | 50 Kelompok | `desa_id` → `desa` |
 | `users` | Akun login (84 baris) — profil, role, scope, session token single-login | `role_id`, `desa_id`, `kelompok_id`, terhubung `auth.users` |
-| `generus` | Biodata anggota (83 baris) — bisa merangkap `users` lewat `user_id` | `desa_id`, `kelompok_id`, status arsip (menikah/meninggal/pindah_sambung) |
+| `generus` | Biodata anggota (83 baris) — bisa merangkap `users` lewat `user_id`, `kartu_rfid_uid` (unique, lihat §11) | `desa_id`, `kelompok_id`, status arsip (menikah/meninggal/pindah_sambung) |
 
 > **Invarian RLS tulis `users` & `generus` (sejak 20 Juli 2026).** Kedua tabel ini
 > **tidak** pernah ditulis langsung dari client — semua create/update lewat API route
@@ -72,7 +72,7 @@ punya gate sendiri, lihat §4).
 ### Konten operasional
 | Tabel | Isi |
 |---|---|
-| `kegiatan` | Kegiatan/acara — scope tingkatan, target peserta, kode presensi rotasi 5 menit, alur approval PPG (`status_approval`) untuk kegiatan tingkat Daerah |
+| `kegiatan` | Kegiatan/acara — scope tingkatan, target peserta, kode presensi rotasi 5 menit, `presensi_metode_qr`/`presensi_metode_rfid` (metode presensi aktif, lihat §10-§11), alur approval PPG (`status_approval`) untuk kegiatan tingkat Daerah |
 | `absensi` | Rekap kehadiran per kegiatan per generus (`hadir/tidak_hadir/izin/sakit`) + jejak koreksi manual |
 | `pengajuan_izin_presensi` | Pengajuan izin generus, perlu approval pengurus sebelum masuk `absensi.status=izin` |
 | `pengumuman` | Pengumuman — scope tingkatan, alur approval PPG utk tingkat Daerah |
@@ -121,7 +121,9 @@ sesungguhnya" di komentar `lib/roles.ts`.
 
 **Presensi**: `generate_kode_presensi` (buka/rotasi kode 6-digit), `submit_presensi`
 (self check-in generus), `ajukan_izin_presensi`, `proses_izin_presensi`,
-`auto_alpha_generus_kegiatan_selesai` (trigger auto-alpha saat kegiatan selesai)
+`auto_alpha_generus_kegiatan_selesai` (trigger auto-alpha saat kegiatan selesai),
+`submit_presensi_rfid`/`daftarkan_kartu_rfid`/`cabut_kartu_rfid` (kiosk RFID, struktur
+siap belum aktif — lihat §11)
 
 **Approval workflow** (PPG untuk kegiatan/pengumuman Daerah, Bendahara untuk
 reimbursement): `approve_kegiatan`, `reject_kegiatan`, `approve_pengumuman`,
@@ -268,7 +270,45 @@ per-kartu kegiatan di [app/(dashboard)/kegiatan/page.tsx](<app/(dashboard)/kegia
 - Super Admin & PPG tidak melihat panel self check-in sama sekali (bukan peserta kegiatan
   — lihat §6), hanya keterangan netral.
 
-## 11. Yang Belum Terdokumentasi / Perlu Update Berkala
+## 11. Presensi via Kartu RFID (Struktur Siap, Belum Aktif)
+
+Lapisan kiosk di atas presensi yang sama (§4, §10) — reader RFID dipegang **Pengurus**
+(beda dari QR/manual yang self-service), Generus tap kartu bergiliran ke device yang sama.
+Skema, RPC, dan komponennya sudah lengkap, tapi **belum ditampilkan di UI produksi**:
+dikunci lewat `RFID_PRESENSI_READY = false` di [lib/rfid.ts](lib/rfid.ts) sampai diuji
+dengan reader USB fisik sungguhan. Ganti ke `true` + deploy setelah pengujian berhasil —
+tidak perlu perubahan kode lain.
+
+- **Skema baru**: `generus.kartu_rfid_uid` (text, unique, nullable — satu kartu = satu
+  Generus) dan `kegiatan.presensi_metode_qr` / `kegiatan.presensi_metode_rfid` (boolean,
+  default `true`/`false`) — Pengurus memilih metode mana yang aktif per kegiatan lewat
+  form di `app/(dashboard)/kegiatan/page.tsx`. **Input kode manual selalu tersedia di luar
+  kedua flag ini**, tidak pernah ikut di-toggle.
+- **`daftarkan_kartu_rfid(p_generus_id, p_kartu_uid)`** / **`cabut_kartu_rfid(p_generus_id)`**:
+  bind/lepas UID kartu ke seorang Generus. Otorisasi sama seperti `canManageMembers`
+  (§6): Ketua/Wakil Ketua/Sekretaris jenjang manapun + Super Admin, dengan scope Desa/
+  Kelompok ditegakkan di RPC (bukan cuma UI). Dipanggil dari tombol "Kartu RFID" di modal
+  Detail Generus (`app/(dashboard)/generus/page.tsx`).
+- **`submit_presensi_rfid(p_kegiatan_id, p_kode, p_kartu_uid)`**: variasi `submit_presensi`
+  dengan satu beda kunci — identitas peserta dicari lewat `kartu_rfid_uid`, **bukan**
+  `auth.uid()`, karena yang login di reader adalah Pengurus, bukan pemilik kartu.
+  Konsekuensinya, otorisasi PEMANGGIL disamakan dengan `generate_kode_presensi` (Ketua/
+  Wapon/Sekretaris + scope kegiatan) supaya cuma device yang dioperasikan Pengurus resmi
+  yang bisa men-tap-kan kartu orang lain. Semua validasi bisnis lain (kode aktif & belum
+  kedaluwarsa, kegiatan `ongoing`, scope alamat sambung, `target_peserta`, anti-duplikasi,
+  PPG dikecualikan) identik dengan `submit_presensi` supaya kedua jalur presensi selalu
+  konsisten. `absensi.keterangan` diisi `'RFID check-in'` (beda dari `'Self check-in'`)
+  untuk keperluan rekap/audit.
+- **`components/RfidKioskInput.tsx`**: dirender di `PresensiPanel.tsx` sisi Pengurus saat
+  `RFID_PRESENSI_READY && kegiatan.presensi_metode_rfid`. Input tersembunyi auto-focus
+  menerima ketikan reader USB mode "keyboard wedge" (UID + Enter), auto-clear & re-focus
+  setelah tiap submit supaya kartu berikutnya bisa langsung di-tap tanpa klik apa pun.
+- **Keamanan UID kartu**: UID bukan rahasia (bisa dibaca reader murah mana pun) — level
+  keamanan sesungguhnya ada di kombinasi *kode presensi aktif* (rotasi 5 menit, sama
+  seperti QR) + *device dipegang Pengurus yang login*, bukan di kerahasiaan UID itu
+  sendiri. Cukup untuk skala organisasi ini, bukan tingkat keamanan bank-grade.
+
+## 12. Yang Belum Terdokumentasi / Perlu Update Berkala
 
 - Dokumen ini snapshot per tanggal di atas — RPC & tabel baru harus ditambahkan ke §3/§4
   saat migrasi baru diterapkan lewat Supabase MCP (`apply_migration`).
