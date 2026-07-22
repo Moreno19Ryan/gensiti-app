@@ -1,9 +1,10 @@
 # Rencana Migrasi Otorisasi ke RPC / Edge Function (Prioritas #2)
 
-> **Status: Fase 0+1+2 SELESAI. Fase 3 BERJALAN — 2 dari 3 endpoint `/api/generus` (GET live,
-> PATCH menunggu spot-check).** Tiap endpoint mengubah jalur produksi (~82 user aktif), jadi
-> dialihkan satu per satu & butuh spot-check live di preview sebelum merge ke `main`. Rujukan:
-> [NATIVE_READINESS_AUDIT.md](NATIVE_READINESS_AUDIT.md) kategori A.1/A.2 dan prioritas #2.
+> **Status: Fase 0+1+2 SELESAI. Fase 3: `/api/generus` (GET+PATCH) LIVE. Endpoint terakhir
+> `/api/users` PATCH (non-password) menunggu spot-check.** Tiap endpoint mengubah jalur
+> produksi (~82 user aktif), jadi dialihkan satu per satu & butuh spot-check live di preview
+> sebelum merge ke `main`. Rujukan: [NATIVE_READINESS_AUDIT.md](NATIVE_READINESS_AUDIT.md)
+> kategori A.1/A.2 dan prioritas #2.
 
 Tanggal: 20 Juli 2026 (dibuat), 21 Juli 2026 (Fase 0+1 dieksekusi).
 
@@ -122,23 +123,41 @@ pendekatan sekaligus.
    `gate_get_generus_biodata_on_caller_active`) agar menggate `caller_account_active()` juga utk
    akses biodata SENDIRI -- sebelumnya terlewat. Sudah di-spot-check di preview & health-check
    produksi bersih (deploy READY, 0 error 5xx).
-2. ⏳ **`PATCH /api/generus` -> `update_generus_biodata` -- menunggu spot-check live.** Handler
-   PATCH jadi wrapper tipis: bangun `p_payload` jsonb HANYA dari field yang dikirim client
-   (mirror `!== undefined`; RPC beda-kan pakai operator `?`), teruskan `user_id`/`generus_id`
-   sbg param terpisah, panggil RPC via `userClient`. Untuk error 4xx otorisasi, **pesan
-   spesifik dari RPC diteruskan apa adanya** (RPC me-RAISE string yang SAMA PERSIS dgn route
-   lama, mis. "Status keanggotaan akun PPG hanya dapat diubah oleh Super Admin.") -> UX pesan
-   error tak berubah. Bentuk balik `{ success, newLoginUsername? }` identik. **Karena kedua
-   handler kini RPC, seluruh helper duplikat TS (`getCaller`/`canManageMembers`/`canActOnScope`/
-   `generateUniqueLoginUsername`/`adminClient`/`Caller`) DIHAPUS dari file** -- inilah "hapus
-   duplikasi" yang jadi tujuan Fase 3. Bonus: RPC jalankan otorisasi+tulis dalam SATU transaksi,
-   jadi sinkron `login_username` + update generus ATOMIK (route lama bisa partial-fail).
-   `update_generus_biodata` sendiri sudah diverifikasi 7 skenario tulis saat dibuat (PR #6);
-   `typecheck`/`lint`/`test`/`build` sukses. **Belum diverifikasi:** round-trip tulis live --
-   perlu spot-check manual di preview PR (login -> edit & SIMPAN biodata di Data Generus /
-   Profil > Data Diri, pastikan tersimpan + tak ada error) SEBELUM merge, karena ini jalur
-   TULIS ke data ~82 user.
-3. ⬜ `PATCH /api/users` (non-password) -> `update_user_profile` -- belum, paling sensitif.
+2. ✅ **`PATCH /api/generus` -> `update_generus_biodata` -- LIVE di produksi** (PR #9, commit
+   `cf140d4`). Handler PATCH jadi wrapper tipis: bangun `p_payload` jsonb HANYA dari field
+   yang dikirim client (mirror `!== undefined`; RPC beda-kan pakai operator `?`), teruskan
+   `user_id`/`generus_id` sbg param terpisah, panggil RPC via `userClient`. Untuk error 4xx
+   otorisasi, **pesan spesifik dari RPC diteruskan apa adanya** (RPC me-RAISE string yang SAMA
+   PERSIS dgn route lama) -> UX pesan error tak berubah. Bentuk balik
+   `{ success, newLoginUsername? }` identik. **Karena kedua handler (GET+PATCH) kini RPC,
+   seluruh helper duplikat TS (`getCaller`/`canManageMembers`/`canActOnScope`/
+   `generateUniqueLoginUsername`/`adminClient`/`Caller`) DIHAPUS dari file** (net −211 baris)
+   -- inilah "hapus duplikasi" yang jadi tujuan Fase 3. Bonus: RPC jalankan otorisasi+tulis
+   dalam SATU transaksi, jadi sinkron `login_username` + update generus ATOMIK. Sudah
+   di-spot-check tulis di preview & health-check produksi bersih (32x status 200, 0 error
+   4xx/5xx).
+3. ⏳ **`PATCH /api/users` (non-password) -> `update_user_profile` -- menunggu spot-check
+   live.** Beda dari #1/#2 -- ini **HYBRID**, bukan 100% RPC: field non-password (nama/no_hp/
+   role/scope/is_active/avatar/archive/restore) dialihkan ke RPC, tapi `password` TETAP di
+   route via GoTrue Admin API (`auth.admin.updateUserById`) karena RPC Postgres murni tak bisa
+   mengubah password auth (lihat §2 kendala teknis). **RPC dipanggil LEBIH DULU** (bahkan kalau
+   body cuma berisi `password` tanpa field lain) -- RPC-nya sendiri tetap menegakkan gerbang
+   otorisasi dasar (diri sendiri ATAU berwenang atas scope target) via `auth.uid()` walau
+   payload-nya kosong, jadi password TIDAK PERNAH diproses lewat GoTrue kalau caller tak
+   berwenang atas target. Ini artinya `getCaller`/`canManageMembers`/`canActOnScope` TIDAK
+   dihapus dari file (masih dipakai `POST` bikin-akun baru yang harus tetap pakai GoTrue
+   `createUser`, di luar cakupan migrasi ini).
+   **Perbaikan sebelum wiring:** ditemukan pesan error hierarki role di `update_user_profile`
+   sebelumnya generik ("...ke jenjang tersebut."), beda dari route lama yang menyebut jenjang
+   tujuan + daftar jenjang yang boleh ditetapkan -- diperbaiki (migrasi
+   `fix_update_user_profile_role_hierarchy_message`) sebelum wrapper dipasang, supaya pesan
+   yang diteruskan apa adanya benar-benar identik.
+   Diverifikasi ulang: self-edit OK, proteksi Super Admin OK, guard PPG OK, pesan hierarki role
+   kini identik ("...ke jenjang \"desa\". Role yang boleh Anda tetapkan: kelompok."), DAN 2
+   skenario baru khusus gerbang password (payload kosong dari caller tak berwenang -> ditolak;
+   dari diri sendiri -> lolos) -- semua via `BEGIN...ROLLBACK`. `typecheck`/`lint`/`test`/
+   `build` sukses. **Belum diverifikasi:** round-trip live (termasuk ganti password nyata) --
+   perlu spot-check manual di preview SEBELUM merge.
 
 ---
 
