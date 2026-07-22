@@ -283,7 +283,11 @@ tidak perlu perubahan kode lain.
   Generus) dan `kegiatan.presensi_metode_qr` / `kegiatan.presensi_metode_rfid` (boolean,
   default `true`/`false`) — Pengurus memilih metode mana yang aktif per kegiatan lewat
   form di `app/(dashboard)/kegiatan/page.tsx`. **Input kode manual selalu tersedia di luar
-  kedua flag ini**, tidak pernah ikut di-toggle.
+  kedua flag ini**, tidak pernah ikut di-toggle. Constraint `kegiatan_minimal_satu_metode_
+  presensi` (`CHECK (presensi_metode_qr OR presensi_metode_rfid)`) mencegah kedua flag
+  mati bersamaan di level database — bukan cuma validasi form — supaya tidak ada kegiatan
+  tersimpan tanpa metode presensi cepat apapun (kode manual tanpa QR/RFID berarti Pengurus
+  harus membacakan kode satu per satu ke tiap Generus, hampir pasti bukan yang dimaksud).
 - **`daftarkan_kartu_rfid(p_generus_id, p_kartu_uid)`** / **`cabut_kartu_rfid(p_generus_id)`**:
   bind/lepas UID kartu ke seorang Generus. Otorisasi sama seperti `canManageMembers`
   (§6): Ketua/Wakil Ketua/Sekretaris jenjang manapun + Super Admin, dengan scope Desa/

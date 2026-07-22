@@ -202,6 +202,16 @@ export default function KegiatanPage() {
       setError('Pilih kelas ngaji untuk target peserta.')
       return
     }
+    // Kode manual selalu tersedia (tidak pernah bisa dimatikan, lihat ARCHITECTURE.md §10-§11),
+    // TAPI QR/RFID sengaja tidak boleh dimatikan berbarengan -- kalau keduanya mati, Pengurus
+    // harus membacakan kode 6-digit satu per satu ke tiap Generus tanpa ada cara lebih cepat
+    // sama sekali, yang hampir pasti bukan yang dimaksud saat form disimpan (biasanya kelupaan
+    // menyalakan salah satu, bukan keputusan sadar). Guard ini menegah kegiatan "presensi tanpa
+    // metode cepat apapun" tersimpan tanpa disadari.
+    if (!form.presensi_metode_qr && !(RFID_PRESENSI_READY && form.presensi_metode_rfid)) {
+      setError('Aktifkan minimal satu metode presensi (QR Code atau Kartu RFID).')
+      return
+    }
     setSaving(true)
     try {
       // tingkatan SELALU eksplisit (tidak pernah null/kosong) -- sebelumnya field ini tidak
@@ -231,13 +241,21 @@ export default function KegiatanPage() {
         // selain lib/rfid.ts sendiri (mis. devtools mengubah state React manual).
         presensi_metode_rfid: RFID_PRESENSI_READY ? form.presensi_metode_rfid : false,
       }
+      // Pesan ramah utk constraint kegiatan_minimal_satu_metode_presensi (§ di atas) --
+      // backstop DB seharusnya tidak pernah kena lewat form ini (sudah divalidasi di atas),
+      // tapi kalau toh kena (mis. race condition/panggilan langsung di luar form), jangan
+      // tampilkan nama constraint Postgres mentah ke Pengurus.
+      const pesanRamah = (msg: string) =>
+        msg.includes('kegiatan_minimal_satu_metode_presensi')
+          ? 'Aktifkan minimal satu metode presensi (QR Code atau Kartu RFID).'
+          : msg
       if (editTarget) {
         const { error: err } = await supabase.from('kegiatan').update(payload).eq('id', editTarget.id)
-        if (err) { setError(`Gagal menyimpan perubahan: ${err.message}`); return }
+        if (err) { setError(`Gagal menyimpan perubahan: ${pesanRamah(err.message)}`); return }
         if (user) await logAudit(user, 'UPDATE', 'Kegiatan', form.nama_kegiatan, payload, editTarget.id)
       } else {
         const { data: inserted, error: err } = await supabase.from('kegiatan').insert(payload).select('id').single()
-        if (err) { setError(`Gagal membuat kegiatan: ${err.message}`); return }
+        if (err) { setError(`Gagal membuat kegiatan: ${pesanRamah(err.message)}`); return }
         if (user) await logAudit(user, 'CREATE', 'Kegiatan', form.nama_kegiatan, payload, inserted?.id)
       }
       setModalOpen(false)

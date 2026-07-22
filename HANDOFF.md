@@ -69,6 +69,29 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
   diam-diam. Detail + batasan (RPC ber-`auth.uid()` & super_admin belum bisa diotomasi
   penuh) di [NATIVE_READINESS_AUDIT.md §5](NATIVE_READINESS_AUDIT.md).
 
+### Sesi 22 Juli 2026 (lanjutan 2) — Fix: kegiatan bisa tersimpan tanpa metode presensi aktif
+
+- **Bug ditemukan Reno**: form Tambah/Edit Kegiatan tidak mencegah kedua toggle metode
+  presensi (QR/RFID) dimatikan bersamaan — kegiatan tetap bisa tersimpan & berjalan, cuma
+  mengandalkan kode manual (Pengurus membacakan kode 6-digit satu per satu, tanpa cara
+  lebih cepat sama sekali), hampir pasti bukan yang dimaksud saat kelupaan menyalakan
+  salah satu toggle.
+- **Diperbaiki di dua lapis** (konsisten dgn prinsip proyek ini -- proteksi harus di
+  database, bukan cuma UI):
+  1. Validasi form (`handleSave` di `app/(dashboard)/kegiatan/page.tsx`) menolak simpan
+     dgn pesan jelas kalau `presensi_metode_qr` dan `presensi_metode_rfid` sama-sama mati.
+  2. Migrasi Supabase `require_at_least_one_presensi_metode`: constraint
+     `kegiatan_minimal_satu_metode_presensi` (`CHECK (presensi_metode_qr OR
+     presensi_metode_rfid)`) di tabel `kegiatan` -- backstop kalau ada jalur tulis lain di
+     luar form ini. Pesan error Postgres mentah dipetakan ke pesan ramah di
+     `handleSave` kalau backstop ini yang kena. Diverifikasi lewat `BEGIN...ROLLBACK`
+     langsung di DB (insert dgn keduanya `false` ditolak, dgn salah satu `true` diterima).
+- Data existing aman (1 baris kegiatan di DB, sudah `presensi_metode_qr=true` dari
+  default kolom) -- constraint tidak butuh backfill. Detail di
+  [ARCHITECTURE.md §11](ARCHITECTURE.md#11-presensi-via-kartu-rfid-struktur-siap-belum-aktif).
+- Diverifikasi: `tsc --noEmit`, `eslint` (0 error), `npm run test` (38/38), `npm run build`
+  sukses.
+
 ### Sesi 22 Juli 2026 — Fase 3 endpoint 3 (TERAKHIR, hibrida): `PATCH /api/users` lewat RPC
 
 - **Endpoint terakhir Fase 3**, beda karakter dari 2 sebelumnya: **HYBRID**. Field non-password
