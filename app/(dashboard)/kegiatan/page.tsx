@@ -598,26 +598,30 @@ export default function KegiatanPage() {
 
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Metode Presensi</label>
-            <div className="flex flex-wrap gap-4">
-              <label className="flex items-center gap-2 text-sm text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={form.presensi_metode_qr}
-                  onChange={e => setForm(f => ({ ...f, presensi_metode_qr: e.target.checked }))}
-                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                />
-                QR Code
-              </label>
-              <label className={`flex items-center gap-2 text-sm ${RFID_PRESENSI_READY ? 'text-slate-600' : 'text-slate-300'}`}>
-                <input
-                  type="checkbox"
-                  checked={RFID_PRESENSI_READY && form.presensi_metode_rfid}
+            <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 px-3">
+              <div className="flex items-center justify-between gap-4 py-2.5">
+                <span className="text-sm text-slate-600">QR Code</span>
+                <button
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, presensi_metode_qr: !f.presensi_metode_qr }))}
+                  className={`shrink-0 relative w-11 h-6 rounded-full transition-colors ${form.presensi_metode_qr ? 'bg-blue-600' : 'bg-slate-200'}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${form.presensi_metode_qr ? 'translate-x-5' : 'translate-x-0'}`} />
+                </button>
+              </div>
+              <div className="flex items-center justify-between gap-4 py-2.5">
+                <span className={`text-sm ${RFID_PRESENSI_READY ? 'text-slate-600' : 'text-slate-300'}`}>
+                  Kartu RFID {!RFID_PRESENSI_READY && <span className="italic">(Segera Hadir)</span>}
+                </span>
+                <button
+                  type="button"
                   disabled={!RFID_PRESENSI_READY}
-                  onChange={e => setForm(f => ({ ...f, presensi_metode_rfid: e.target.checked }))}
-                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
-                />
-                Kartu RFID {!RFID_PRESENSI_READY && <span className="italic">(Segera Hadir)</span>}
-              </label>
+                  onClick={() => setForm(f => ({ ...f, presensi_metode_rfid: !f.presensi_metode_rfid }))}
+                  className={`shrink-0 relative w-11 h-6 rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${RFID_PRESENSI_READY && form.presensi_metode_rfid ? 'bg-blue-600' : 'bg-slate-200'}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${RFID_PRESENSI_READY && form.presensi_metode_rfid ? 'translate-x-5' : 'translate-x-0'}`} />
+                </button>
+              </div>
             </div>
             <p className="text-xs text-slate-400 mt-1">Input kode manual 6-digit selalu tersedia terlepas dari pilihan di atas.</p>
           </div>
