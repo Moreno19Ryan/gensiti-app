@@ -15,7 +15,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Node 22+ perlu utk lib/authz-rpc.contract.test.ts -- @supabase/supabase-js
+          # menginisialisasi RealtimeClient di constructor (walau cuma dipakai .rpc(), tanpa
+          # subscribe realtime apapun), dan itu butuh native WebSocket global yang baru ada
+          # sejak Node 22; di Node 20 langsung throw "Node.js 20 detected without native
+          # WebSocket support" saat createClient() dipanggil, sebelum test manapun sempat
+          # jalan. Next.js sendiri sudah lama mendukung Node 22 (>= 18.18 disyaratkan).
+          node-version: 22
           cache: npm
 
       - run: npm ci
