@@ -61,6 +61,40 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 24 Juli 2026 — Insiden: 2 commit lolos ke main tanpa PR/review, branch protection diaktifkan
+
+- Ditemukan Reno (bukan lewat proses audit terjadwal) bahwa 2 commit sempat masuk ke
+  `main` LANGSUNG (push tanpa PR, tanpa review) sebelum sesi ini:
+  - `eeccd81` (2026-07-22 10:35 UTC) -- "fix: ganti checkbox metode presensi (QR/RFID)
+    jadi toggle switch"
+  - `4611126` (2026-07-22 10:53 UTC) -- "fix: cegah kegiatan tersimpan tanpa metode
+    presensi aktif (QR & RFID mati)" (isinya sudah didokumentasikan di atas, bagian
+    "Sesi 22 Juli 2026 (lanjutan 2)")
+- Keduanya commit non-merge (1 parent), diverifikasi TIDAK punya PR terkait (dicek
+  terhadap seluruh 13 PR yang pernah ada di repo ini) dan tidak punya footer
+  `Claude-Session` (beda dari commit sesi ini/sesi lain yang biasa mencantumkan link
+  session) -- artinya tidak bisa diidentifikasi sesi/entitas Claude Code mana yang
+  melakukan push ini.
+- Sebagai pembanding: commit `7e558bf` (PR #11, "Prioritas #3 contract test otorisasi")
+  yang sempat dicurigai serupa ternyata SAH -- benar-benar lewat PR, di-merge manual
+  oleh Reno, hanya dari sesi Claude Code lain (bukan sesi yang sedang berjalan sekarang).
+- **Root cause**: branch protection untuk `main` belum aktif saat itu -- tidak ada
+  gerbang teknis yang mencegah push langsung dari sesi mana pun, termasuk sesi yang
+  tidak diawasi Reno secara real-time.
+- **Respons**: branch protection diaktifkan untuk `main` -- wajib lewat Pull Request,
+  minimal 1 approval dari reviewer ber-akses write sebelum merge (dikonfirmasi lewat
+  `list_repository_collaborators`: `Moreno19Ryan` [admin/pemilik] dan
+  `generusbekasitimur-arch` [write]; approval PR berikutnya, #12 & #13, memang datang
+  dari `generusbekasitimur-arch`). Sejak itu tidak ada lagi commit yang masuk `main`
+  tanpa lewat proses PR.
+- Dampak isi 2 commit itu sendiri: tidak berbahaya secara fungsional (satu perbaikan
+  bug validasi form, satu perubahan UI checkbox->toggle) -- risiko yang jadi perhatian
+  di sini murni soal PROSES (bypass review), bukan soal kerusakan dari isi perubahannya.
+- **Belum terkonfirmasi**: apakah setting "Require status checks to pass before
+  merging" juga aktif di branch protection `main` -- tidak ada tool yang bisa mengecek
+  ini langsung dari sesi Claude Code, perlu dicek manual oleh Reno lewat GitHub
+  Settings > Branches.
+
 ### Sesi 22 Juli 2026 (lanjutan) — Prioritas #3 (sebagian): contract test otorisasi
 
 - **`lib/authz-rpc.contract.test.ts`** (baru): 31 test Vitest mengunci 5 fungsi otorisasi
