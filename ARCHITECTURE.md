@@ -125,6 +125,30 @@ sesungguhnya" di komentar `lib/roles.ts`.
 `submit_presensi_rfid`/`daftarkan_kartu_rfid`/`cabut_kartu_rfid` (kiosk RFID, struktur
 siap belum aktif — lihat §11)
 
+> **Bug fix 24 Juli 2026 — GRANT SELECT hilang di `pengajuan_izin_presensi`.**
+> Tabel ini punya RLS policy yang benar (`pengajuan_izin_select_sendiri`,
+> `pengajuan_izin_select_pengurus`), tapi tidak pernah dapat **table-level GRANT SELECT**
+> untuk role `authenticated` — Postgres cek GRANT dulu sebelum RLS dievaluasi, jadi
+> query manapun ke tabel ini (`components/PengajuanIzinPanel.tsx` sisi Generus,
+> `app/(dashboard)/absensi/page.tsx` sisi Pengurus) selalu gagal
+> `permission denied for table pengajuan_izin_presensi` sebelum RLS sempat jalan. Akibatnya
+> fitur "Pengajuan Izin Presensi" rusak total di kedua sisi sejak awal dibuat (tabel kosong,
+> 0 baris — tidak ada satupun pengajuan yang pernah berhasil tersimpan lewat alur normal,
+> meski `ajukan_izin_presensi` RPC-nya sendiri berfungsi karena `SECURITY DEFINER` bypass
+> GRANT tabel).
+>
+> **Fix**: `GRANT SELECT ON public.pengajuan_izin_presensi TO authenticated;` — sengaja
+> **hanya SELECT**, bukan INSERT/UPDATE/DELETE. INSERT & UPDATE tetap wajib lewat RPC
+> (`ajukan_izin_presensi`/`proses_izin_presensi`) karena keduanya punya efek samping
+> penting (insert baris `absensi` + kirim notifikasi) yang harus tetap atomik — memberi
+> GRANT langsung akan membuka jalur bypass validasi & efek samping itu.
+>
+> Diverifikasi lewat simulasi RLS penuh (`SET LOCAL ROLE authenticated` + `request.jwt.claims`
+> memakai user sungguhan) untuk sisi Generus maupun Pengurus — keduanya sukses tanpa error
+> setelah fix. Root cause murni GRANT database (tidak ter-track git, tidak ada folder migrasi
+> di repo ini) — **tidak berkaitan dengan perubahan kode manapun**, ditemukan lewat testing
+> manual PR #12 tapi bug-nya sendiri sudah ada sejak tabel ini dibuat.
+
 **Approval workflow** (PPG untuk kegiatan/pengumuman Daerah, Bendahara untuk
 reimbursement): `approve_kegiatan`, `reject_kegiatan`, `approve_pengumuman`,
 `reject_pengumuman`, `proses_reimbursement`, plus trigger
