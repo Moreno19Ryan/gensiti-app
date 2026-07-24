@@ -6,6 +6,8 @@ import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { Absensi } from '@/lib/types'
 import { isPPG } from '@/lib/roles'
+import { logAudit } from '@/lib/audit'
+import { exportToPDF, exportToExcel, ExportColumn } from '@/lib/export'
 import ProfilHeader from '@/components/ProfilHeader'
 
 // Sub-halaman "Riwayat Absensi" -- dipecah dari tab "Presensi" lama di
@@ -21,6 +23,7 @@ export default function RiwayatAbsensiPage() {
 
   const [riwayatPresensi, setRiwayatPresensi] = useState<Absensi[]>([])
   const [loading, setLoading] = useState(true)
+  const [exporting, setExporting] = useState(false)
 
   const loadRiwayatPresensi = useCallback(async (userId: string) => {
     setLoading(true)
@@ -59,11 +62,71 @@ export default function RiwayatAbsensiPage() {
     hadir: 'Hadir', tidak_hadir: 'Tidak Hadir', izin: 'Izin', sakit: 'Sakit',
   }
 
+  // Export riwayat pribadi -- pakai helper lib/export.ts yang sudah dipakai di modul lain
+  // (Keuangan, Presensi, Generus, Kegiatan), dibatasi ke data yang SUDAH di-fetch & di-scope
+  // ke user_id sendiri di loadRiwayatPresensi() di atas -- tidak ada query tambahan.
+  const exportColumns: ExportColumn[] = [
+    { header: 'Kegiatan', key: 'kegiatan', width: 32 },
+    { header: 'Tanggal', key: 'tanggal', width: 20 },
+    { header: 'Status', key: 'status', width: 14, isBadge: true },
+  ]
+  const buildExportRows = () => riwayatPresensi.map(r => ({
+    kegiatan: r.kegiatan?.nama_kegiatan || 'Kegiatan',
+    tanggal: r.waktu_absen
+      ? new Date(r.waktu_absen).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : '-',
+    status: r.status ? label[r.status] : '-',
+  }))
+  const handleExportPDF = async () => {
+    if (riwayatPresensi.length === 0 || exporting) return
+    setExporting(true)
+    try {
+      exportToPDF({
+        title: 'Riwayat Absensi',
+        subtitle: user.nama_lengkap,
+        columns: exportColumns,
+        rows: buildExportRows(),
+        fileName: `Riwayat-Absensi-${new Date().toISOString().slice(0, 10)}`,
+      })
+      await logAudit(user, 'EXPORT', 'Riwayat Absensi', `PDF -- ${riwayatPresensi.length} baris`)
+    } finally {
+      setExporting(false)
+    }
+  }
+  const handleExportExcel = async () => {
+    if (riwayatPresensi.length === 0 || exporting) return
+    setExporting(true)
+    try {
+      await exportToExcel({
+        title: 'Riwayat Absensi',
+        subtitle: user.nama_lengkap,
+        columns: exportColumns,
+        rows: buildExportRows(),
+        fileName: `Riwayat-Absensi-${new Date().toISOString().slice(0, 10)}`,
+      })
+      await logAudit(user, 'EXPORT', 'Riwayat Absensi', `Excel -- ${riwayatPresensi.length} baris`)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div className="max-w-lg mx-auto space-y-5">
       <ProfilHeader title="Riwayat Absensi" backHref="/profil" />
 
       <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6">
+        {!loading && riwayatPresensi.length > 0 && (
+          <div className="flex justify-end gap-2 mb-4">
+            <button onClick={handleExportPDF} disabled={exporting}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition disabled:opacity-50">
+              📄 PDF
+            </button>
+            <button onClick={handleExportExcel} disabled={exporting}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition disabled:opacity-50">
+              📊 Excel
+            </button>
+          </div>
+        )}
         {loading ? (
           <div className="text-center py-8 text-slate-400">
             <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />

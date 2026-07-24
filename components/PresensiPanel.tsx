@@ -9,6 +9,7 @@ import QRCode from 'qrcode'
 import QrScanner from 'qr-scanner'
 import { RFID_PRESENSI_READY } from '@/lib/rfid'
 import RfidKioskInput from './RfidKioskInput'
+import { submitPresensiOffline, getJumlahAntrean } from '@/lib/offline-queue'
 
 interface Props {
   kegiatan: Kegiatan
@@ -76,6 +77,7 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
   const [loadingCheckinSendiri, setLoadingCheckinSendiri] = useState(false)
   const [scannerAktif, setScannerAktif] = useState(false)
   const [scannerError, setScannerError] = useState<string | null>(null)
+  const [jumlahAntrean, setJumlahAntrean] = useState(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const scannerRef = useRef<QrScanner | null>(null)
@@ -105,6 +107,18 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     cekStatusKehadiran()
   }, [cekStatusKehadiran])
+
+  // Tampilkan jumlah antrean presensi offline (lib/offline-queue.ts) -- polling ringan (cuma
+  // baca IndexedDB, bukan network) supaya badge "X antrean" ikut turun begitu flushAntrean
+  // global (lib/user-context.tsx) berhasil mengirim ulang saat online kembali.
+  useEffect(() => {
+    let cancelled = false
+    const refresh = () => getJumlahAntrean().then((n) => { if (!cancelled) setJumlahAntrean(n) })
+    refresh()
+    const interval = setInterval(refresh, 5000)
+    window.addEventListener('online', refresh)
+    return () => { cancelled = true; clearInterval(interval); window.removeEventListener('online', refresh) }
+  }, [])
 
   // Hitung mundur tampilan detik -- setSisaDetik(0) di sini menyinkronkan dgn `expiredAt`
   // yang hilang/null (external signal), bukan derived state dari props/state React lain.
@@ -171,12 +185,23 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canOpenPresensi, isAktif])
 
-  const submitCheckinDenganKode = async (kodeUntukDikirim: string) => {
-    const { error } = await supabase.rpc('submit_presensi', {
+  // Titik-buta-offline: kalau koneksi putus saat presensi (rentan terjadi di lokasi acara
+  // dengan sinyal lemah), submitPresensiOffline menyimpan permintaan ke antrean lokal
+  // (IndexedDB) alih-alih langsung gagal -- otomatis dikirim ulang saat online lagi (lihat
+  // lib/user-context.tsx). `queued: true` di sini TETAP dianggap sukses dari sudut pandang
+  // Generus (kartunya sudah "dipegang" sistem), bukan error yang perlu di-retry manual.
+  const submitCheckinDenganKode = async (kodeUntukDikirim: string): Promise<{ queued: boolean }> => {
+    // p_waktu_scan diambil SAAT INI (bukan saat flush nanti) -- supaya waktu_absen yang
+    // tercatat di database tetap waktu generus benar-benar tap/scan, bukan waktu antrean
+    // akhirnya berhasil disinkronkan (bisa selisih lama kalau sinyal lama pulih).
+    const hasil = await submitPresensiOffline('submit_presensi', {
       p_kegiatan_id: kegiatan.id,
       p_kode: kodeUntukDikirim,
+      p_waktu_scan: new Date().toISOString(),
     })
-    if (error) throw error
+    if (hasil.error) throw new Error(hasil.error)
+    if (hasil.queued) setJumlahAntrean((n) => n + 1)
+    return { queued: hasil.queued }
   }
 
   const submitCheckin = async () => {
@@ -189,9 +214,11 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
     setStatusCheckin('idle')
     setPesanCheckin(null)
     try {
-      await submitCheckinDenganKode(inputKode.trim())
+      const { queued } = await submitCheckinDenganKode(inputKode.trim())
       setStatusCheckin('sukses')
-      setPesanCheckin('Absensi berhasil dicatat. Terima kasih!')
+      setPesanCheckin(queued
+        ? 'Sinyal terputus -- absensi disimpan di perangkat & akan otomatis terkirim saat online kembali.'
+        : 'Absensi berhasil dicatat. Terima kasih!')
       setSudahHadir(true)
       setInputKode('')
     } catch (e) {
@@ -221,9 +248,11 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
     setStatusCheckin('idle')
     setPesanCheckin(null)
     try {
-      await submitCheckinDenganKode(payload.kode)
+      const { queued } = await submitCheckinDenganKode(payload.kode)
       setStatusCheckin('sukses')
-      setPesanCheckin('Absensi berhasil dicatat. Terima kasih!')
+      setPesanCheckin(queued
+        ? 'Sinyal terputus -- absensi disimpan di perangkat & akan otomatis terkirim saat online kembali.'
+        : 'Absensi berhasil dicatat. Terima kasih!')
       setSudahHadir(true)
     } catch (e) {
       setStatusCheckin('gagal')
@@ -287,9 +316,11 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
     setStatusCheckin('idle')
     setPesanCheckin(null)
     try {
-      await submitCheckinDenganKode(kode)
+      const { queued } = await submitCheckinDenganKode(kode)
       setStatusCheckin('sukses')
-      setPesanCheckin('Kehadiran Anda berhasil dicatat. Terima kasih!')
+      setPesanCheckin(queued
+        ? 'Sinyal terputus -- kehadiran disimpan di perangkat & akan otomatis terkirim saat online kembali.'
+        : 'Kehadiran Anda berhasil dicatat. Terima kasih!')
       setSudahHadir(true)
     } catch (e) {
       setStatusCheckin('gagal')
@@ -332,6 +363,11 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
 
   return (
     <div className="mt-3 pt-3 border-t border-slate-100">
+      {jumlahAntrean > 0 && (
+        <div className="mb-2 bg-amber-50 text-amber-700 text-xs rounded-xl px-3 py-2 text-center font-medium">
+          📶 {jumlahAntrean} presensi menunggu sinkronisasi -- terkirim otomatis saat online
+        </div>
+      )}
       {canOpenPresensi ? (
         <div className="space-y-2">
           {!isAktif ? (

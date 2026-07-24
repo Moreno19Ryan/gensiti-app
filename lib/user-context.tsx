@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, useRef, ReactNode } fro
 import { supabase } from './supabase'
 import { getUserProfile } from './auth'
 import { UserProfile } from './types'
+import { flushAntrean } from './offline-queue'
 
 // Satu "kehadiran" presence per user -- dilacak lewat channel.track() di bawah, dipakai
 // utk menghitung onlineCount (global) sekaligus onlineCountScoped (lihat di bawah).
@@ -68,38 +69,19 @@ export function UserProvider({ children }: { children: ReactNode }) {
     return false
   }
 
+  // finally menjamin setLoading(false) tetap jalan walau getSession()/signOut() melempar
+  // exception tak terduga (mis. localStorage diblokir browser) -- tanpa ini, gate render di
+  // DashboardLayout (`if (loading) return <LoadingSpinner fullScreen />`) bisa macet selamanya
+  // di spinner alih-alih cuma sekali render kosong, jauh lebih buruk dari flash yang dicegah.
   const loadUser = async () => {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (session?.user) {
-      const profile = await getUserProfile(session.user.id)
-      if (profile) {
-        const masihValid = await checkSessionMasihValid(profile)
-        if (!masihValid) {
-          setUser(null)
-          setLoading(false)
-          return
-        }
-      }
-      setUser(profile)
-    } else {
-      setUser(null)
-    }
-    setLoading(false)
-  }
-
-  // Data-fetching on mount (bukan derived state) -- lihat catatan serupa di dashboard/page.tsx.
-  // Disable per-baris supaya perilaku persis sama, tidak restrukturisasi auth flow yang kritikal.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadUser()
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
       if (session?.user) {
         const profile = await getUserProfile(session.user.id)
         if (profile) {
           const masihValid = await checkSessionMasihValid(profile)
           if (!masihValid) {
             setUser(null)
-            setLoading(false)
             return
           }
         }
@@ -107,7 +89,33 @@ export function UserProvider({ children }: { children: ReactNode }) {
       } else {
         setUser(null)
       }
+    } finally {
       setLoading(false)
+    }
+  }
+
+  // Data-fetching on mount (bukan derived state) -- lihat catatan serupa di dashboard/page.tsx.
+  // Disable per-baris supaya perilaku persis sama, tidak restrukturisasi auth flow yang kritikal.
+  useEffect(() => {
+    loadUser()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      try {
+        if (session?.user) {
+          const profile = await getUserProfile(session.user.id)
+          if (profile) {
+            const masihValid = await checkSessionMasihValid(profile)
+            if (!masihValid) {
+              setUser(null)
+              return
+            }
+          }
+          setUser(profile)
+        } else {
+          setUser(null)
+        }
+      } finally {
+        setLoading(false)
+      }
     })
     return () => subscription.unsubscribe()
   }, [])
@@ -128,6 +136,22 @@ export function UserProvider({ children }: { children: ReactNode }) {
       }
     }, 30_000)
     return () => clearInterval(interval)
+  }, [user?.id])
+
+  // Antrean presensi offline (lib/offline-queue.ts) -- coba kuras begitu user siap (menutup
+  // kemungkinan ada antrean tersisa dari sesi sebelumnya yang terputus sebelum sempat sync)
+  // DAN setiap kali browser mendeteksi koneksi kembali. Sengaja digantung di sini (provider
+  // tunggal di root), bukan di tiap PresensiPanel/RfidKioskInput -- supaya tidak ada beberapa
+  // instance memicu flush paralel yang sama saat lebih dari satu kartu kegiatan terbuka.
+  // Digerbang oleh user?.id supaya tidak pernah mencoba flush sebelum sesi login dipastikan
+  // siap (kalau tidak, RPC akan ditolak dgn "Anda harus login" yang keliru dianggap penolakan
+  // sementara, padahal itemnya sendiri sebenarnya valid).
+  useEffect(() => {
+    if (!user?.id) return
+    flushAntrean()
+    const handleOnline = () => flushAntrean()
+    window.addEventListener('online', handleOnline)
+    return () => window.removeEventListener('online', handleOnline)
   }, [user?.id])
 
   // Presence tracking - aktif di semua halaman saat user login
