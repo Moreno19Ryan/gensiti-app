@@ -64,7 +64,12 @@ const navItems: NavItem[] = [
   // (canManageMembers/canViewGenerusData), dan toggle fitur 'data-generus' tetap independen
   // (lihat useFeatureAccess 'data-generus' di dalam halaman) supaya Super Admin masih bisa
   // mematikan tab Biodata per jenjang tanpa mematikan menu ini sepenuhnya.
-  { href: '/generus', label: 'Data Generus', icon: '👥', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, menuKey: 'generus' },
+  // 'ppg' ditambahkan ke roles (sebelumnya tidak ada) -- PPG sudah lama berhak LIHAT Data
+  // Generus di backend (RLS anggota_select mengizinkan tingkatan ppg tanpa syarat, dan
+  // canViewGenerusData() di lib/roles.ts eksplisit menyebut PPG boleh melihat), tapi menu ini
+  // tidak pernah menyertakan 'ppg' di array roles-nya sehingga tidak pernah muncul di sidebar.
+  // Ditemukan lewat audit navigasi (lihat WISHLIST_ASSESSMENT.md bagian B2).
+  { href: '/generus', label: 'Data Generus', icon: '👥', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], hideForGenerus: true, menuKey: 'generus' },
   { href: '/kegiatan', label: 'Kegiatan', icon: '📅', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], menuKey: 'kegiatan' },
   { href: '/absensi', label: 'Absensi', icon: '✅', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, requiresPresensiAccess: true, menuKey: 'absensi' },
   { href: '/keuangan', label: 'Keuangan', icon: '💰', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, menuKey: 'keuangan' },
