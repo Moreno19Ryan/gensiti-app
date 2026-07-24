@@ -67,7 +67,7 @@ review dan approve arah + contoh kontennya.
 | Data kosong | "Tidak ada data" | "Belum ada apa-apa di sini, masih sepi" |
 | Konfirmasi hapus | "Yakin ingin menghapus?" | "Yakin nih mau dihapus? Nanti nyesel lho" |
 | Kegiatan selesai | "Kegiatan telah berakhir" | "Kegiatannya udah kelar, sampai jumpa di kegiatan berikutnya!" |
-| Sinyal terputus | "Koneksi terputus" | "Sinyalnya lagi ngambek nih, tenang aja datanya aman kok" |
+| Sinyal terputus | "Koneksi terputus" | "Sinyal lagi kurang stabil nih, tenang aja datanya aman kok" |
 
 ---
 
@@ -81,17 +81,80 @@ review dan approve arah + contoh kontennya.
 
 ---
 
-## Contoh Pesan Motivasi (Draft Awal — Perlu Direview & Diperluas)
+## Pesan Motivasi (Daftar Terkurasi — 35 Variasi)
 
-Catatan: ini draft awal orisinal untuk memberi gambaran gaya, bukan daftar 
-final. Sebaiknya diperluas jadi puluhan variasi lewat sesi brainstorm 
-terpisah supaya tidak cepat terasa berulang bagi user.
+Hasil brainstorm & review (bukan draft lagi) — dikelompokkan per gaya supaya 
+pemilihan random tetap terasa konsisten nadanya dalam satu grup, sekaligus 
+memudahkan penambahan/pengurangan di kemudian hari.
 
-- "Yuk mulai hari dengan niat baik — sisanya, GENSITI yang bantu catat!"
-- "Hadir bukan cuma soal absen, tapi soal semangat kebersamaan."
-- "Satu langkah kecil hari ini, satu kebiasaan baik untuk seterusnya."
-- "Istirahat boleh, tapi jangan lupa balik lagi ya!"
+**Gaya ringan/lucu** (cocok generus lebih muda)
+- "Absen dulu, baru boleh scroll HP lagi ya"
+- "Semangat kayak sinyal WiFi rumah — full bar terus!"
+- "Hari ini udah senyum belum? Kalau belum, mulai dari sini aja"
+- "Rajin itu nular lho, kamu bisa jadi 'sumber virus' kebaikan"
+- "Jangan cuma jadi generus yang aktif di grup WA doang, hehe"
+- "Kalau niat udah kuat, alasan males otomatis kalah"
+- "GENSITI setia nungguin kamu, masa kamu nggak setia balik?"
+
+**Gaya santai/umum** (netral, aman untuk semua usia)
 - "Konsisten itu keren — kayak kamu yang buka app ini hari ini."
+- "Satu langkah kecil hari ini, satu kebiasaan baik untuk seterusnya."
+- "Yuk mulai hari dengan niat baik — sisanya, GENSITI yang bantu catat!"
+- "Setiap kehadiran itu bukti kamu peduli sama kebersamaan."
+- "Semangat menjalani hari, semoga berkah selalu menyertai."
+- "Kadang yang kecil justru yang paling berarti — kayak absen hari ini."
+- "Terus berproses, hasil baik pasti mengikuti."
+- "Hari ini adalah kesempatan baru untuk jadi lebih baik."
+- "Kebersamaan itu dimulai dari hal sederhana — hadir aja dulu."
+- "Langkahmu hari ini, jejak baik untuk esok."
+
+**Gaya reflektif/menyentuh** (cocok untuk yang lebih dewasa)
+- "Istirahat boleh, tapi jangan lupa balik lagi ya!"
+- "Hadir bukan cuma soal absen, tapi soal semangat kebersamaan."
+- "Kadang kita cuma butuh diingatkan, bukan dipaksa — ini pengingatnya."
+- "Waktu yang kamu luangkan untuk kebaikan, tidak pernah sia-sia."
+- "Perjalanan panjang dimulai dari niat yang sederhana."
+- "Yang penting bukan seberapa sempurna, tapi seberapa istiqomah."
+- "Setiap usaha kecil, tetap punya nilai di mata-Nya."
+- "Semoga langkahmu hari ini membawa keberkahan."
+- "Kadang lelah itu wajar, tapi jangan sampai berhenti ya."
+- "Terima kasih sudah meluangkan waktu untuk hadir hari ini."
+
+**Gaya semangat/motivational** (energik, cocok pembuka hari)
+- "Bangkit, bergerak, dan jadi versi terbaik hari ini!"
+- "Yuk buktikan, generus juga bisa jadi teladan!"
+- "Hari baru, semangat baru, cerita baru untuk diukir."
+- "Jangan tunggu sempurna untuk mulai — mulai aja dulu."
+- "Kamu lebih kuat dari rasa males pagi ini, buktikan!"
+- "Setiap kegiatan adalah kesempatan untuk belajar hal baru."
+- "Ayo jadi generasi yang aktif, bukan cuma jadi penonton."
+- "Semangat itu menular — mulai dari kamu dulu ya!"
+
+---
+
+## Pantun (Opsional, Momen Santai Saja)
+
+Pantun cocok secara budaya (akrab di telinga generus Indonesia, tidak 
+terasa "maksa gaul"), tapi khusus dipakai di momen santai — jangan 
+ditempel di pesan penting/serius, karena polanya gampang jatuh ke nada 
+receh kalau salah tempat.
+
+- "Pergi ke pasar beli talas, jangan lupa mampir ke warung. Kalau hadir 
+  jangan malas, biar hati jadi tenang."
+- "Bunga melati di tepi jalan, wanginya semerbak sampai ke hati. 
+  Kehadiranmu bukan paksaan, tapi bukti kepedulian sejati."
+- "Ke sawah menanam padi, jangan lupa bawa cangkul. Konsisten itu kunci, 
+  biar hasil tidak mudah luntur."
+- "Air jernih di dalam gelas, diminum sambil duduk santai. Kebersamaan 
+  itu terasa jelas, kalau semua saling menyapai."
+- "Layang-layang terbang tinggi, ditiup angin dari selatan. Semangat 
+  jangan sampai mati, teruslah jadi generus pilihan."
+
+**Soal gombalan — sengaja TIDAK dipakai.** Gombalan bernuansa romantis/
+flirty, kurang pas untuk konteks organisasi keagamaan dengan rentang usia 
+campuran (termasuk anak SMP) — risiko disalahartikan antar generus yang 
+belum tentu saling kenal dekat. Diganti candaan ringan non-romantis (lihat 
+kategori "ringan/lucu" di atas).
 
 ---
 
@@ -111,9 +174,34 @@ terpisah supaya tidak cepat terasa berulang bagi user.
 
 ---
 
+## Ide Tambahan (Backlog Terpisah — Beda Kelas Effort dari Microcopy)
+
+Muncul dari sesi brainstorm, tapi butuh kerja teknis nyata (bukan sekadar 
+tambahan teks) — dicatat di sini supaya tidak hilang, tapi sengaja dipisah 
+dari daftar konten di atas yang sudah siap pakai:
+
+- **Perayaan streak kehadiran** — belum ada perhitungan "hadir berturut-turut" 
+  di skema/RPC manapun sekarang, perlu dibangun dari nol. Hati-hati juga soal 
+  nuansa kompetisi (lihat diskusi gamifikasi di `WISHLIST_ASSESSMENT.md` B1).
+- **"Welcome back" setelah lama tidak aktif** — sinyal yang ada sekarang 
+  (`active_session_created_at`, waktu login terakhir lewat form) tidak cukup 
+  akurat untuk ini, karena user dengan "Ingat saya" aktif bisa tetap login 
+  berminggu-minggu tanpa re-login walau rutin buka app. Butuh kolom 
+  "aktivitas terakhir" baru yang di-update tiap kunjungan.
+- **Ucapan hari besar keagamaan** (Ramadhan, Idul Fitri, dst) — bukan setup 
+  sekali jadi, tanggal Hijriah bergeser ±11 hari tiap tahun, perlu daftar 
+  tanggal yang di-maintain ulang setiap tahun.
+- **Variasi sapaan per hari (Jumat/Senin)** — ini yang paling ringan, murni 
+  logika tanggal di client, tidak butuh data baru.
+- **Nama panggilan di sapaan dashboard** — sudah siap pakai sebenarnya: 
+  `nama_panggilan` sudah tersedia di data user, dashboard sekarang masih 
+  pakai nama lengkap. Tinggal ganti field, bukan pekerjaan besar.
+
+---
+
 ## Langkah Selanjutnya
 
-Setelah Claude Code memberi usulan detail + contoh konten tambahan, 
-sebaiknya direview dulu bersama (bisa juga melibatkan pengurus lain kalau 
-memungkinkan) sebelum masuk ke implementasi kode — supaya nadanya benar-benar 
-pas untuk komunitas GENSITI, bukan cuma "terdengar asik" secara umum.
+Konten di atas (pesan motivasi, pantun, microcopy, sapaan waktu) sudah 
+final & siap diimplementasikan. Item di "Ide Tambahan" di atas perlu 
+di-scope terpisah (effort & keputusan produknya beda kelas) sebelum masuk 
+antrian kerja.
