@@ -254,24 +254,142 @@ dipikirkan sebelum ini masuk roadmap resmi.
 
 ## B2 — Personalisasi Dashboard per Role
 
-**Status: SUDAH SEBAGIAN BESAR ADA — wishlist agak understate ini.**
+**Klarifikasi scope (dari Reno):** bukan soal ISI/konten Dashboard (itu
+sudah oke, lihat temuan konten di bawah) — fokusnya soal SELURUH
+navigasi aplikasi: menu, sidebar, dan fitur yang muncul harus konsisten
+dengan hak akses role, dan menu yang tidak boleh diakses seharusnya
+tidak muncul sama sekali (bukan cuma diblokir kalau dipaksa akses).
+
+### Temuan konten Dashboard (assessment awal, tetap berlaku)
+
 `app/(dashboard)/dashboard/page.tsx` sudah personalisasi konten
 berdasarkan role login: PPG lihat antrean approval Daerahnya, Bendahara
 lihat `reimbursementPending` + saldo bulan ini, konten manager (Ketua/
 Wakil/Sekretaris) lihat status approval kegiatan/pengumumannya sendiri,
 Team IT lihat health metrics. Bukan dashboard generik satu-untuk-semua.
+Ini bagian yang **sudah oke**, tidak diaudit ulang di bawah.
 
-**Yang mungkin masih dimaksud wishlist (kalau lebih dari yang sudah ada):**
-"ringkasan kelompoknya langsung" untuk Ketua Kelompok — perlu klarifikasi
-konkret apa yang dianggap kurang, karena dari kode yang ada, personalisasi
-per-role based **sudah jalan**. Kalau yang dimaksud adalah widget
-ringkasan tambahan (grafik tren kehadiran kelompok, dll — bukan cuma
-angka), itu Kecil–Menengah (nambah card ke halaman yang sudah
-personalized, bukan membangun ulang).
+### Audit Navigasi (Sidebar) — hasil lengkap
 
-**Rekomendasi:** minta contoh konkret "dashboard idealnya kelihatan
-seperti apa" sebelum dianggap sebagai item roadmap — supaya effort-nya
-bisa dinilai akurat, bukan dari premis yang sudah separuh keliru.
+**1. Apakah render menu 100% berdasarkan `feature_toggles` + gate
+`lib/roles.ts`, atau ada yang hardcoded?**
+
+**Jawab: sudah deklaratif penuh, tidak ada hardcoding yang salah.**
+Seluruh sidebar (`app/(dashboard)/layout.tsx` baris 39–89, array
+`navItems`) dirender lewat satu filter (baris 230–237):
+
+```
+navItems.filter(item => {
+  if (!tingkatan || !item.roles.includes(tingkatan)) return false
+  if (item.requiresKvs && !canManageMembers && !(item.allowTeamIT && isTeamIT(user))) return false
+  if (item.requiresPresensiAccess && !canManagePresensi) return false
+  if (item.hideForGenerus && isGenerus) return false
+  if (item.menuKey && !isFeatureEnabled(featureToggles, item.menuKey, tingkatan)) return false
+  return true
+})
+```
+
+Cuma **2 menu** yang tampil ke SEMUA role tanpa syarat & tanpa `menuKey`
+(tidak bisa dimatikan lewat Pengaturan Fitur): **Dashboard** dan
+**Notifikasi**. Ini disengaja & didokumentasikan (komentar baris 34–35:
+"Menu tanpa menuKey ... selalu tampil, tidak pernah bisa dimatikan") —
+masuk akal, setiap user login butuh dashboard+notifikasi. Bukan bug.
+
+**2. Peta per role: seharusnya vs kode nyata**
+
+Dicek langsung ke database production (`SELECT DISTINCT tingkatan,
+nama_role`) — role-nya bukan cuma 5 tingkatan datar, tapi 19 role
+bernama di dalamnya (Ketua/Wakil Ketua/Sekretaris/Bendahara + macam-macam
+seksi di tiap jenjang). Gate menu sebagian mengecek `tingkatan`
+(jenjang), sebagian lagi mengecek `nama_role` spesifik di dalamnya
+(lewat `canManageMembers`/`canManagePresensi` — keduanya cuma meloloskan
+nama_role yang mengandung "ketua"/"sekretaris").
+
+| Menu | Kelompok/Desa/Daerah — Ketua/Wkl Ketua/Sekretaris | Kelompok/Desa/Daerah — Bendahara & pengurus lain* | PPG | Super Admin |
+|---|---|---|---|---|
+| Dashboard | ✅ | ✅ | ✅ | ✅ |
+| Dashboard PPG | – | – | ✅ | – |
+| Catatan Pembinaan | ✅ | ✅ | ✅ | – (disengaja) |
+| Data Pembina | ✅ | ✅ | ✅ | ✅ |
+| Data Generus | ✅ | ✅ (lihat saja, edit terkunci) | **❌ — lihat Temuan #1** | ✅ |
+| Kegiatan | ✅ | ✅ | ✅ | ✅ |
+| Absensi | ✅ | ❌ (disengaja — lihat `canManagePresensi`) | – (tidak relevan, roles array) | ✅ (read-only) |
+| Keuangan | ✅ (kalau Bendahara) / via reimbursement (kalau bukan) | ✅ (Bendahara langsung) | – | ✅ |
+| Pengumuman | ✅ | ✅ | ✅ | ✅ |
+| Dokumen | ✅ | ✅ | ✅ | ✅ |
+| Notifikasi | ✅ | ✅ | ✅ | ✅ |
+| Organisasi & Role | – | – | – | ✅ |
+| Backup Data | – | – | – | ✅ |
+| Monitoring & Log | ✅ (Audit Log) | ❌ Audit Log / ✅ Kesehatan **kalau Team IT** | – (roles array tidak termasuk ppg) | ✅ semua tab |
+| Pengaturan Fitur | – | – | – | ✅ |
+
+\*"pengurus lain" = Bendahara, Kemandirian/Keputrian-setara (di DB:
+Penerobos, Seksi Kegiatan Rutin, Team PDD, Team IT — semua di jenjang
+Daerah saat ini).
+
+**Absensi disengaja disembunyikan dari Bendahara/pengurus lain** — dicek
+ke `lib/roles.ts` (`canManagePresensi`, baris 118–124): komentarnya
+eksplisit "Bendahara dan pengurus lain ... tetap bisa self check-in
+seperti Generus biasa", jadi mereka memang tidak dimaksudkan mengelola
+rekap Absensi lewat menu ini. **Bukan bug.**
+
+**3. Kebocoran — ditemukan 1, dicek 2 kandidat lain (keduanya aman)**
+
+**🔴 Temuan #1 (nyata) — PPG punya akses backend penuh ke "Data Generus"
+tapi TIDAK PERNAH diberi jalan masuk lewat sidebar.**
+
+Dicek 3 lapis, semuanya konsisten mengizinkan PPG:
+- RLS tabel `generus` (`anggota_select` policy, dicek langsung ke DB):
+  `get_user_tingkatan() = 'ppg'` diberi akses SELECT **tanpa syarat**,
+  setara `super_admin`/`daerah` (bukan discoped ke desa/kelompok tertentu).
+- Query di `app/(dashboard)/generus/page.tsx` (baris 232–233): filter
+  `.eq('kelompok_id', ...)`/`.eq('desa_id', ...)` hanya jalan kalau user
+  punya `kelompok_id`/`desa_id` — PPG tidak punya keduanya (null), jadi
+  otomatis dapat data **tanpa filter** (unrestricted), sama seperti SA.
+- Fungsi `canViewGenerusData()` di `lib/roles.ts` (baris 65–81) —
+  **docstring-nya sendiri secara eksplisit menyebut** "menu Data Generus
+  ... serta PPG boleh melihat".
+
+**Tapi:** nav item `/generus` (`layout.tsx` baris 67) di-set
+`roles: ['super_admin', 'daerah', 'desa', 'kelompok']` — **'ppg' tidak
+ada di array ini.** Jadi PPG tidak pernah melihat menu "Data Generus" di
+sidebar sama sekali, padahal backend (RLS + query + fungsi permission)
+semuanya sudah siap dan setuju PPG boleh akses.
+
+**Dampak:** rendah dari sisi keamanan (bukan kebocoran ke pihak yang
+tidak berhak — justru sebaliknya, yang berhak malah tidak dapat jalan
+masuk), tapi nyata dari sisi kegunaan — kalau PPG memang perlu
+cross-reference data Generus (mis. saat menulis Catatan Pembinaan), dia
+harus tahu URL `/generus` persis & mengetiknya manual, atau tidak
+sengaja menemukannya lewat Global Search (yang search box-nya sendiri
+tampil untuk semua role, termasuk PPG, tanpa syarat — `layout.tsx` baris
+392–394). Kemungkinan besar ini murni array `roles` yang belum
+diperbarui saat menu "Data Generus" dan "Data Pembina" dipisah, bukan
+keputusan produk yang disengaja — tapi ini sebaiknya dikonfirmasi ke
+Reno, bukan diasumsikan sepihak.
+
+**✅ Dicek, TERNYATA AMAN — 2 kandidat kebocoran lain:**
+- **URL hasil Global Search untuk kategori "Generus"** menunjuk ke
+  `/data-generus` (bukan `/generus`) — sekilas kelihatan seperti link
+  mati/ketinggalan zaman. Dicek isi `app/(dashboard)/data-generus/page.tsx`:
+  ternyata memang **redirect shim yang disengaja** (12 baris,
+  `router.replace('/generus')`, komentarnya eksplisit: "menjaga
+  bookmark/link lama tetap jalan"). Jalan seperti mestinya, cuma 1 hop
+  redirect ekstra.
+- **Team IT Daerah bisa lihat tab "Email Log"** di Monitoring & Log,
+  padahal komentar kode cuma menyebut dia sengaja dibuka utk tab
+  "Kesehatan Sistem". Dicek: gate Email Log (`isDaerah = tingkatan ===
+  'daerah'`) memang berbasis JENJANG bukan nama_role spesifik, dan RLS
+  `email_log` juga sudah lama mengizinkan seluruh tingkatan `daerah`
+  (bukan cuma Ketua/Sekretaris) — konsisten dengan pola yang sama di
+  seluruh app, bukan celah baru. Email Log juga murni data status
+  pengiriman (bukan data pribadi sensitif). **Bukan bug**, hanya cakupan
+  "Team IT" sedikit lebih luas dari yang tersirat di komentar.
+
+**Effort untuk menutup Temuan #1: Kecil.** Perbaikannya cuma menambah
+`'ppg'` ke array `roles` milik nav item `/generus` (satu baris di
+`layout.tsx`) — tidak perlu perubahan RLS/database sama sekali (backend
+sudah benar), murni menyambungkan UI yang tertinggal.
 
 ---
 
@@ -350,7 +468,7 @@ yang sudah ada — bukan membangun sistem export baru.
 | A6 | Visibilitas pasif SUDAH ADA, tinggal tambah proaktif | Menengah |
 | A7 | Data sudah dicatat, belum ada yg membaca | Kecil–Menengah |
 | B1 | Belum ada sama sekali | Besar + perlu diskusi non-teknis |
-| B2 | Sebagian besar SUDAH ADA, wishlist agak understate | Perlu klarifikasi scope dulu |
+| B2 | Konten dashboard SUDAH ADA. Audit navigasi: gate sidebar 100% deklaratif (tidak ada hardcoding salah), 1 kebocoran nyata ditemukan (PPG tak ada jalan ke "Data Generus" walau backend mengizinkan) | Kecil (1 baris di `layout.tsx`) |
 | B3 | SUDAH DIBANGUN, rollout baru 21% (10/47 file) | Menengah, mekanis |
 | B4 | Belum ada, tapi bisa contek pola B3 | Menengah |
 | B5 | Separuh jalan (view ada, export belum) | Kecil |
