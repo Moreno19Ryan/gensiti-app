@@ -123,7 +123,16 @@ sesungguhnya" di komentar `lib/roles.ts`.
 (self check-in generus), `ajukan_izin_presensi`, `proses_izin_presensi`,
 `auto_alpha_generus_kegiatan_selesai` (trigger auto-alpha saat kegiatan selesai),
 `submit_presensi_rfid`/`daftarkan_kartu_rfid`/`cabut_kartu_rfid` (kiosk RFID, struktur
-siap belum aktif — lihat §11)
+siap belum aktif — lihat §11). `submit_presensi` & `submit_presensi_rfid` menerima
+parameter opsional **`p_waktu_scan`** (ditambahkan 22 Juli 2026 — diverifikasi ulang
+langsung ke `pg_proc` production, bukan cuma dari pesan commit git, karena repo ini
+tidak punya folder migrasi) — dipakai oleh antrean offline
+([lib/offline-queue.ts](lib/offline-queue.ts), §10/§11) supaya `waktu_absen` yang
+tercatat adalah waktu generus benar-benar tap/scan, bukan waktu antrean akhirnya
+berhasil disinkronkan setelah sinyal pulih. Nilainya di-*clamp*: dipakai apa adanya
+kalau masih masuk akal (-24 jam s/d +5 menit dari waktu server), di luar rentang itu
+fallback ke `now()`. Signature lama (tanpa parameter ini) sudah dihapus dari database,
+tidak ada overload ganda yang ambigu.
 
 **Approval workflow** (PPG untuk kegiatan/pengumuman Daerah, Bendahara untuk
 reimbursement): `approve_kegiatan`, `reject_kegiatan`, `approve_pengumuman`,
@@ -289,16 +298,27 @@ tidak perlu perubahan kode lain.
   (§6): Ketua/Wakil Ketua/Sekretaris jenjang manapun + Super Admin, dengan scope Desa/
   Kelompok ditegakkan di RPC (bukan cuma UI). Dipanggil dari tombol "Kartu RFID" di modal
   Detail Generus (`app/(dashboard)/generus/page.tsx`).
-- **`submit_presensi_rfid(p_kegiatan_id, p_kode, p_kartu_uid)`**: variasi `submit_presensi`
-  dengan satu beda kunci — identitas peserta dicari lewat `kartu_rfid_uid`, **bukan**
-  `auth.uid()`, karena yang login di reader adalah Pengurus, bukan pemilik kartu.
+- **`submit_presensi_rfid(p_kegiatan_id, p_kode, p_kartu_uid, p_waktu_scan)`**: variasi
+  `submit_presensi` dengan beda kunci — identitas peserta dicari lewat `kartu_rfid_uid`,
+  **bukan** `auth.uid()`, karena yang login di reader adalah Pengurus, bukan pemilik kartu.
   Konsekuensinya, otorisasi PEMANGGIL disamakan dengan `generate_kode_presensi` (Ketua/
   Wapon/Sekretaris + scope kegiatan) supaya cuma device yang dioperasikan Pengurus resmi
-  yang bisa men-tap-kan kartu orang lain. Semua validasi bisnis lain (kode aktif & belum
-  kedaluwarsa, kegiatan `ongoing`, scope alamat sambung, `target_peserta`, anti-duplikasi,
-  PPG dikecualikan) identik dengan `submit_presensi` supaya kedua jalur presensi selalu
-  konsisten. `absensi.keterangan` diisi `'RFID check-in'` (beda dari `'Self check-in'`)
-  untuk keperluan rekap/audit.
+  yang bisa men-tap-kan kartu orang lain. Validasi bisnis lain (kegiatan `ongoing`, scope
+  alamat sambung, `target_peserta`, anti-duplikasi, PPG dikecualikan) identik dengan
+  `submit_presensi` — **KECUALI cek kode presensi**, yang sengaja DILONGGARKAN khusus di
+  sini (diubah 22 Juli 2026, isi fungsi diverifikasi ulang langsung ke production): RFID
+  hanya mensyaratkan `kode_presensi_aktif IS NOT NULL` + `p_kode` tidak kosong — **tidak
+  lagi** mengharuskan `p_kode` sama dengan kode yang aktif SAAT INI ataupun belum
+  kedaluwarsa (beda dari `submit_presensi`/QR-manual di §10 yang tetap wajib keduanya,
+  TIDAK ikut dilonggarkan). Alasan: RFID sudah digerbang login + role + scope Pengurus di
+  atas, jadi kode presensi di jalur ini murni penanda "sesi presensi sedang dibuka" (tidak
+  pernah ditampilkan ke publik untuk di-screenshot, beda dari QR yang butuh rotasi 5 menit
+  sebagai proteksi anti-penyalahgunaan) — pelonggaran ini supaya kartu yang di-tap saat
+  sinyal offline tetap tercatat walau kode presensinya sempat rotasi beberapa kali sebelum
+  antrean ([lib/offline-queue.ts](lib/offline-queue.ts)) berhasil disinkronkan. `p_waktu_scan`
+  sama seperti dijelaskan di §4 — waktu tap asli dari device, di-*clamp* -24 jam s/d +5
+  menit dari waktu server. `absensi.keterangan` diisi `'RFID check-in'` (beda dari
+  `'Self check-in'`) untuk keperluan rekap/audit.
 - **`components/RfidKioskInput.tsx`**: dirender di `PresensiPanel.tsx` sisi Pengurus saat
   `RFID_PRESENSI_READY && kegiatan.presensi_metode_rfid`. Input tersembunyi auto-focus
   menerima ketikan reader USB mode "keyboard wedge" (UID + Enter), auto-clear & re-focus
