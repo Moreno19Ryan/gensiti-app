@@ -73,5 +73,10 @@ export async function POST(req: NextRequest) {
     tableStatus[table] = { count: data?.length || 0 }
   }
 
+  // Catat waktu backup terakhir -- dipakai reminder mingguan (pg_cron
+  // `reminder-backup-belum-dilakukan`, RPC `send_reminder_backup_belum_dilakukan`)
+  // supaya Super Admin diingatkan kalau sudah lama tidak backup.
+  await supabaseAdmin.from('system_config').update({ last_backup_at: new Date().toISOString() }).eq('id', true)
+
   return NextResponse.json({ data: result, tableStatus, hadError })
 }
