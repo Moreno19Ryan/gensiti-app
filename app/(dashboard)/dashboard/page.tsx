@@ -102,17 +102,33 @@ function LiveClock() {
   )
 }
 
-// Sapaan singkat berdasarkan jam device (waktu lokal browser, sama seperti LiveClock di atas
-// -- bukan waktu server) -- lihat PANDUAN_TONE_VOICE_GENSITI.md "Contoh Sapaan Berdasarkan
-// Waktu". Sengaja hanya fragmen kedua (bukan "Selamat pagi!" penuh) supaya menyambung wajar
-// setelah "Assalamualaikum," yang sudah jadi pembuka -- menghindari 2 salam bertumpuk.
-function getSapaanWaktu(): string {
+// Info sapaan berdasarkan jam device (waktu lokal browser, sama seperti LiveClock di atas --
+// bukan waktu server) -- frasa persis dari PANDUAN_TONE_VOICE_GENSITI.md "Contoh Sapaan
+// Berdasarkan Waktu" (utuh, bukan dipotong -- revisi setelah feedback Reno: versi potongan
+// sebelumnya tidak kebaca sebagai sapaan waktu sama sekali di layar).
+function getWaktuInfo(): { label: string; emoji: string; frasa: string; warna: string } {
   const jam = new Date().getHours()
-  if (jam >= 4 && jam < 10) return 'Semangat mulai hari ya'
-  if (jam >= 10 && jam < 15) return 'Jangan lupa istirahat sejenak'
-  if (jam >= 15 && jam < 18) return 'Enaknya buka GENSITI dulu'
-  if (jam >= 18 && jam < 22) return 'Cocok buat cek kegiatan besok'
-  return 'Masih melek? Jangan lupa istirahat ya'
+  if (jam >= 4 && jam < 10) return { label: 'Pagi', emoji: '☀️', frasa: 'Semangat mulai hari ya', warna: 'from-amber-400 to-orange-400' }
+  if (jam >= 10 && jam < 15) return { label: 'Siang', emoji: '🌤️', frasa: 'Jangan lupa istirahat sejenak', warna: 'from-sky-400 to-blue-500' }
+  if (jam >= 15 && jam < 18) return { label: 'Sore', emoji: '🌇', frasa: 'Enaknya buka GENSITI dulu', warna: 'from-orange-400 to-rose-400' }
+  if (jam >= 18 && jam < 22) return { label: 'Malam', emoji: '🌙', frasa: 'Cocok buat cek kegiatan besok', warna: 'from-indigo-500 to-purple-500' }
+  return { label: 'Larut Malam', emoji: '🌌', frasa: 'Masih melek? Jangan lupa istirahat ya', warna: 'from-slate-600 to-indigo-700' }
+}
+
+// Card terpisah khusus sapaan waktu -- emoji & gradasi warna beda tiap periode, supaya
+// terasa "hidup" (permintaan Reno setelah versi pertama dianggap kurang -- teks sapaan
+// waktu yang cuma disisipkan di subtitle banner tidak kelihatan sebagai sapaan sama sekali).
+function SapaanWaktuCard() {
+  const info = getWaktuInfo()
+  return (
+    <div className={`rounded-[18px] p-4 text-white bg-gradient-to-r ${info.warna} flex items-center gap-3 shadow-sm`}>
+      <span className="text-3xl shrink-0">{info.emoji}</span>
+      <div className="min-w-0">
+        <p className="text-xs font-semibold uppercase tracking-wide text-white/80">Selamat {info.label}</p>
+        <p className="text-sm font-medium mt-0.5">{info.frasa}</p>
+      </div>
+    </div>
+  )
 }
 
 const PESAN_MOTIVASI_SESSION_KEY = 'gensiti_pesan_motivasi'
@@ -677,13 +693,16 @@ export default function DashboardPage() {
           <div className="min-w-0">
             <p className="text-white/80 text-sm font-medium">Assalamualaikum,</p>
             <h2 className="text-xl sm:text-2xl font-extrabold mt-0.5 truncate">{user?.generus?.nama_panggilan || user?.nama_lengkap}</h2>
-            <p className="text-white/80 text-sm mt-1">{user?.role?.nama_role} &middot; {getSapaanWaktu()}</p>
+            <p className="text-white/80 text-sm mt-1">{user?.role?.nama_role} &middot; Sistem GENSITI</p>
           </div>
           <LiveClock />
         </div>
       </div>
 
-      {user && user.role?.tingkatan !== 'super_admin' && <PesanMotivasiCard user={user} />}
+      <div className={`grid gap-3 sm:gap-4 ${user && user.role?.tingkatan !== 'super_admin' ? 'sm:grid-cols-2' : ''}`}>
+        <SapaanWaktuCard />
+        {user && user.role?.tingkatan !== 'super_admin' && <PesanMotivasiCard user={user} />}
+      </div>
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
         {statCards.map((card) => (
