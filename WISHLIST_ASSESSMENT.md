@@ -482,3 +482,23 @@ ulang dengan info ini — beberapa item yang ditandai "Tinggi/Sedang" di
 sana ternyata quick win (A2, A7, B5), sementara A4 (yang di dokumen asal
 tidak diberi urutan eksplisit selain "Kritis") kemungkinan butuh effort
 paling besar dan paling banyak keputusan produk yang belum diambil.
+
+---
+
+## Status Implementasi (update pasca-assessment)
+
+Tabel Ringkasan di atas adalah snapshot temuan **saat assessment
+dilakukan** (sengaja tidak diubah, jadi catatan historis). Item yang sudah
+benar-benar dikerjakan sejak itu:
+
+| Item | Status | Commit/PR | Catatan |
+|---|---|---|---|
+| B2 | ✅ Selesai | PR #12 | Fix navigasi PPG -- 1 baris di `layout.tsx`, `/generus` ditambahkan ke `roles` array |
+| B5 | ✅ Selesai | PR #12 | Tombol export PDF/Excel di `profil/riwayat-absensi` |
+| A1 | ✅ Selesai | `260aad3` | `RUNBOOK_RECOVERY_SUPER_ADMIN.md` -- 4 skenario recovery lewat Supabase Dashboard |
+| A3 | ✅ Selesai (Opsi B: reminder) | `a195537` | Reminder mingguan pg_cron kalau backup manual >30 hari -- BUKAN backup otomatis (Opsi C ditunda, butuh keputusan scope akses storage terpisah) |
+| A2 | ✅ Selesai sebagian | `254e168` | Card rate-limit (gap #2) selesai penuh. Sentry (gap #1): link-out ke Sentry Issues selesai, live error count DITUNDA (butuh `SENTRY_AUTH_TOKEN`/`SENTRY_ORG`/`SENTRY_PROJECT` diisi dulu di Vercel) |
+| A7 | ✅ Selesai (versi read-only) | `254e168` | Sama dengan card A2 gap #2 di atas -- versi notifikasi aktif (push/email kalau threshold tercapai) belum dikerjakan, masih opsi terpisah kalau dibutuhkan |
+
+Item lain di tabel Ringkasan (A4, A5, A6, B1, B3 sisa rollout, B4) masih
+dalam status assessment awal, belum ada perubahan kode.

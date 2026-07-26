@@ -1,9 +1,13 @@
 # Rencana Migrasi Otorisasi ke RPC / Edge Function (Prioritas #2)
 
-> **Status: Fase 0+1+2 SELESAI. Fase 3: `/api/generus` (GET+PATCH) LIVE. Endpoint terakhir
-> `/api/users` PATCH (non-password) menunggu spot-check.** Tiap endpoint mengubah jalur
-> produksi (~82 user aktif), jadi dialihkan satu per satu & butuh spot-check live di preview
-> sebelum merge ke `main`. Rujukan: [NATIVE_READINESS_AUDIT.md](NATIVE_READINESS_AUDIT.md)
+> **Status: Fase 0+1+2+3 SELESAI TOTAL** (dikonfirmasi ulang 24 Juli 2026 -- baris ini
+> sebelumnya tertinggal, endpoint terakhir sebenarnya sudah live sejak PR #10). Ketiga
+> endpoint (`GET`/`PATCH /api/generus`, `PATCH /api/users` non-password) sudah jadi wrapper
+> tipis pemanggil RPC, terverifikasi lewat kode aktual di `main` -- bukan cuma dokumen ini.
+> **Fase 4** (Edge Function utk operasi yang butuh GoTrue -- buat akun, ganti password,
+> resolve-login) **BELUM dikerjakan**, sesuai rencana awal: sengaja ditunda sampai proyek
+> Flutter benar-benar mulai (lihat §4 Strategi Rollout & `NATIVE_READINESS_AUDIT.md` baris
+> Prioritas #2), bukan terlewat/lupa. Rujukan: [NATIVE_READINESS_AUDIT.md](NATIVE_READINESS_AUDIT.md)
 > kategori A.1/A.2 dan prioritas #2.
 
 Tanggal: 20 Juli 2026 (dibuat), 21 Juli 2026 (Fase 0+1 dieksekusi).
@@ -136,8 +140,9 @@ pendekatan sekaligus.
    dalam SATU transaksi, jadi sinkron `login_username` + update generus ATOMIK. Sudah
    di-spot-check tulis di preview & health-check produksi bersih (32x status 200, 0 error
    4xx/5xx).
-3. ⏳ **`PATCH /api/users` (non-password) -> `update_user_profile` -- menunggu spot-check
-   live.** Beda dari #1/#2 -- ini **HYBRID**, bukan 100% RPC: field non-password (nama/no_hp/
+3. ✅ **`PATCH /api/users` (non-password) -> `update_user_profile` -- LIVE di produksi**
+   (PR #10, commit `08832c4`, 22 Juli 2026, dikonfirmasi ada di `main` 24 Juli 2026). Beda
+   dari #1/#2 -- ini **HYBRID**, bukan 100% RPC: field non-password (nama/no_hp/
    role/scope/is_active/avatar/archive/restore) dialihkan ke RPC, tapi `password` TETAP di
    route via GoTrue Admin API (`auth.admin.updateUserById`) karena RPC Postgres murni tak bisa
    mengubah password auth (lihat §2 kendala teknis). **RPC dipanggil LEBIH DULU** (bahkan kalau
@@ -156,8 +161,9 @@ pendekatan sekaligus.
    kini identik ("...ke jenjang \"desa\". Role yang boleh Anda tetapkan: kelompok."), DAN 2
    skenario baru khusus gerbang password (payload kosong dari caller tak berwenang -> ditolak;
    dari diri sendiri -> lolos) -- semua via `BEGIN...ROLLBACK`. `typecheck`/`lint`/`test`/
-   `build` sukses. **Belum diverifikasi:** round-trip live (termasuk ganti password nyata) --
-   perlu spot-check manual di preview SEBELUM merge.
+   `build` sukses. Sudah live di produksi (lihat referensi commit di atas) -- kode
+   `app/api/users/route.ts` saat ini dikonfirmasi memanggil `update_user_profile` lewat
+   `userClient(token).rpc(...)`, bukan lagi logika TS lama.
 
 ---
 
