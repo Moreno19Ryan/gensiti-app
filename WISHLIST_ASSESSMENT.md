@@ -499,6 +499,8 @@ benar-benar dikerjakan sejak itu:
 | A3 | ✅ Selesai (Opsi B: reminder) | `a195537` | Reminder mingguan pg_cron kalau backup manual >30 hari -- BUKAN backup otomatis (Opsi C ditunda, butuh keputusan scope akses storage terpisah) |
 | A2 | ✅ Selesai sebagian | `254e168` | Card rate-limit (gap #2) selesai penuh. Sentry (gap #1): link-out ke Sentry Issues selesai, live error count DITUNDA (butuh `SENTRY_AUTH_TOKEN`/`SENTRY_ORG`/`SENTRY_PROJECT` diisi dulu di Vercel) |
 | A7 | ✅ Selesai (versi read-only) | `254e168` | Sama dengan card A2 gap #2 di atas -- versi notifikasi aktif (push/email kalau threshold tercapai) belum dikerjakan, masih opsi terpisah kalau dibutuhkan |
+| A6 | ✅ Selesai (versi eskalasi manual, bukan auto-approve) | PR #18 | Ketua bisa ambil alih Setujui/Tolak reimbursement kalau Bendahara belum proses >3 hari, + reminder proaktif harian ke approver kegiatan/pengumuman/reimbursement. Opsi auto-approve yang sempat diusulkan DITOLAK (risiko governance keuangan) -- desain final tetap butuh aksi manual manusia. Detail di HANDOFF.md Sesi 26 Juli 2026 |
+| B3 | ✅ Selesai (rollout 100%) | PR #16 | Sinkronisasi toggle diperbaiki (`useSyncExternalStore`) + rollout `dark:` ke seluruh 30 file yang genuinely butuh (bukan 37 seperti perkiraan awal -- global CSS override di `globals.css` sudah mengcover mayoritas styling dasar, cuma aksen warna non-slate yang perlu disentuh manual) |
 
-Item lain di tabel Ringkasan (A4, A5, A6, B1, B3 sisa rollout, B4) masih
-dalam status assessment awal, belum ada perubahan kode.
+Item lain di tabel Ringkasan (A4, A5, B1, B4) masih dalam status assessment
+awal, belum ada perubahan kode.
