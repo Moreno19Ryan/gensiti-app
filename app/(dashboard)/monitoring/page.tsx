@@ -32,11 +32,11 @@ import { useFeatureAccess } from '@/lib/feature-toggles'
 type Tab = 'kesehatan' | 'audit' | 'email' | 'sesi' | 'maintenance'
 
 const tingkatanColor: Record<string, string> = {
-  super_admin: 'bg-red-100 text-red-700',
-  daerah: 'bg-purple-100 text-purple-700',
-  desa: 'bg-blue-100 text-blue-700',
-  kelompok: 'bg-green-100 text-green-700',
-  ppg: 'bg-amber-100 text-amber-700',
+  super_admin: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  daerah: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  desa: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  kelompok: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  ppg: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
 }
 
 export default function MonitoringPage() {
@@ -220,29 +220,29 @@ function KesehatanTab() {
     <div className="space-y-4">
       <div className="flex justify-end">
         <a href="https://generus-bekasi-timur.sentry.io" target="_blank" rel="noopener noreferrer"
-          className="text-xs font-medium text-blue-600 hover:text-blue-700">
+          className="text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
           Buka Sentry Issues ↗
         </a>
       </div>
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-          <div className="text-2xl font-black text-blue-600">{stats.totalUserAktif}</div>
+          <div className="text-2xl font-black text-blue-600 dark:text-blue-400">{stats.totalUserAktif}</div>
           <div className="text-slate-500 text-sm">Pengguna Aktif</div>
           <div className="text-slate-400 text-xs">{stats.totalUserNonaktif} nonaktif</div>
         </div>
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-          <div className="text-2xl font-black text-emerald-600">{stats.sesiAktifCount}</div>
+          <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400">{stats.sesiAktifCount}</div>
           <div className="text-slate-500 text-sm">Sesi Tersimpan</div>
           <div className="text-slate-400 text-xs">Belum logout -- beda dari &quot;Pengguna Online&quot; di Dashboard (itu real-time, ini token belum dikosongkan)</div>
         </div>
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-          <div className={`text-2xl font-black ${emailErrorRate > 10 ? 'text-red-600' : emailErrorRate > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>{emailErrorRate}%</div>
+          <div className={`text-2xl font-black ${emailErrorRate > 10 ? 'text-red-600 dark:text-red-400' : emailErrorRate > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>{emailErrorRate}%</div>
           <div className="text-slate-500 text-sm">Error Rate Email</div>
           <div className="text-slate-400 text-xs">{stats.emailFailed} gagal dari {emailTotal}</div>
         </div>
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-          <div className="text-2xl font-black text-amber-600">{stats.emailPending}</div>
+          <div className="text-2xl font-black text-amber-600 dark:text-amber-400">{stats.emailPending}</div>
           <div className="text-slate-500 text-sm">Email Menunggu</div>
           <div className="text-slate-400 text-xs">status pending</div>
         </div>
@@ -285,7 +285,7 @@ function KesehatanTab() {
         )}
       </div>
 
-      <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700">
+      <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-300">
         💡 Indikator teknis murni (jumlah akun, status sesi, keberhasilan pengiriman email) -- bukan data organisasi atau keuangan, sesuai cakupan pengelola sistem (Super Admin & Team IT).
       </div>
     </div>
@@ -347,9 +347,9 @@ function AuditTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user
   }
 
   const statusColor: Record<string, string> = {
-    success: 'bg-green-100 text-green-700',
-    error: 'bg-red-100 text-red-700',
-    warning: 'bg-yellow-100 text-yellow-700',
+    success: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    error: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    warning: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
   }
 
   return (
@@ -394,7 +394,7 @@ function AuditTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user
             </div>
             {hasActiveFilter && (
               <button onClick={resetFilters}
-                className="px-3 py-2 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl transition font-medium">
+                className="px-3 py-2 text-xs text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-50 rounded-xl transition font-medium dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-900/20">
                 Reset filter
               </button>
             )}
@@ -471,9 +471,9 @@ const tipeLabel: Record<string, string> = {
 }
 
 const emailStatusColor: Record<EmailStatus, string> = {
-  sent: 'bg-green-100 text-green-700',
-  failed: 'bg-red-100 text-red-700',
-  pending: 'bg-amber-100 text-amber-700',
+  sent: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  failed: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  pending: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
 }
 
 const emailStatusLabel: Record<EmailStatus, string> = {
@@ -601,7 +601,7 @@ function EmailTab() {
                         {emailStatusLabel[e.status]}
                       </span>
                       {e.status === 'failed' && (
-                        <span className="ml-2 text-xs text-blue-500 hover:underline">Lihat error</span>
+                        <span className="ml-2 text-xs text-blue-500 dark:text-blue-400 hover:underline">Lihat error</span>
                       )}
                     </td>
                   </tr>
@@ -627,7 +627,7 @@ function EmailTab() {
               </div>
               <div>
                 <p className="text-xs text-slate-400">Pesan Error</p>
-                <p className="text-red-600 font-mono text-xs bg-red-50 p-3 rounded-xl border border-red-100 break-words">
+                <p className="text-red-600 font-mono text-xs bg-red-50 p-3 rounded-xl border border-red-100 break-words dark:text-red-400 dark:bg-red-900/20 dark:border-red-800">
                   {detailError.error_message || 'Tidak ada detail error tercatat.'}
                 </p>
               </div>
@@ -704,7 +704,7 @@ function SesiTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user'
 
   return (
     <div className="space-y-3">
-      <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700">
+      <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-300">
         💡 Daftar ini hanya menampilkan pengguna yang pernah login lewat form login sejak fitur sesi tunggal aktif. Paksa logout akan mengosongkan sesi tersebut -- pengguna otomatis keluar di perangkat manapun dalam waktu singkat, TANPA menonaktifkan akunnya.
       </div>
 
@@ -739,7 +739,7 @@ function SesiTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user'
                     <div className="font-medium text-slate-800 flex items-center gap-2">
                       {r.nama_lengkap}
                       {r.id === user.id && (
-                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700">Sesi Anda</span>
+                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Sesi Anda</span>
                       )}
                     </div>
                     <div className="text-slate-400 text-xs">{r.login_username || r.email}</div>
@@ -755,7 +755,7 @@ function SesiTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user'
                       : '-'}
                   </td>
                   <td className="px-4 py-3">
-                    <button onClick={() => setConfirmTarget(r)} className="text-red-500 hover:text-red-700 text-xs font-medium">
+                    <button onClick={() => setConfirmTarget(r)} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-xs font-medium">
                       Paksa Logout
                     </button>
                   </td>
@@ -769,7 +769,7 @@ function SesiTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user'
       <Modal open={!!confirmTarget} onClose={() => setConfirmTarget(null)} title="Paksa Logout Sesi?" size="sm">
         <div className="space-y-4">
           {confirmTarget?.id === user.id ? (
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm">
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300">
               ⚠️ Ini adalah sesi login Anda sendiri. Melanjutkan akan membuat Anda otomatis keluar dari sistem dalam waktu singkat dan harus login ulang.
             </div>
           ) : (
@@ -981,7 +981,7 @@ function MaintenanceTab({ user }: { user: NonNullable<ReturnType<typeof useUser>
 
   return (
     <div className="space-y-4">
-      <div className={`rounded-2xl p-5 border ${config.maintenance_mode ? 'bg-amber-50 border-amber-200' : hasSchedule ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-100'}`}>
+      <div className={`rounded-2xl p-5 border ${config.maintenance_mode ? 'bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800' : hasSchedule ? 'bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800' : 'bg-white border-slate-100'}`}>
         <div className="flex items-center gap-3 mb-1">
           <span className="text-2xl">{config.maintenance_mode ? '🛠️' : hasSchedule ? '🗓️' : '✅'}</span>
           <div>
@@ -996,7 +996,7 @@ function MaintenanceTab({ user }: { user: NonNullable<ReturnType<typeof useUser>
                   : 'Semua pengguna dapat mengakses aplikasi seperti biasa.'}
             </p>
             {hasSchedule && countdown && (
-              <p className="text-indigo-600 text-xs font-semibold mt-1">⏳ {countdown}</p>
+              <p className="text-indigo-600 dark:text-indigo-400 text-xs font-semibold mt-1">⏳ {countdown}</p>
             )}
           </div>
         </div>
@@ -1056,7 +1056,7 @@ function MaintenanceTab({ user }: { user: NonNullable<ReturnType<typeof useUser>
         </div>
       </div>
 
-      <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700">
+      <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-300">
         💡 Jadwalkan memberi jeda supaya pengguna sempat menyimpan pekerjaan sebelum sistem terblokir -- email peringatan terkirim segera, lalu blocking aktif otomatis saat waktunya tiba. Berguna saat melakukan operasi berisiko (restore backup manual, migrasi skema database). Super Admin tidak pernah ikut terblokir. Perubahan status terdeteksi pengguna lain dalam ±15 detik.
       </div>
 
