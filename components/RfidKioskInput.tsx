@@ -99,13 +99,13 @@ export default function RfidKioskInput({ kegiatanId, kode, onCheckin }: Props) {
         className="absolute inset-0 z-10 w-full h-full opacity-0 cursor-default disabled:cursor-wait"
       />
       <div className={`rounded-xl p-4 text-center border-2 transition-colors ${
-        focused ? 'bg-green-50 border-green-400' : 'bg-amber-50 border-amber-400 animate-pulse'
+        focused ? 'bg-green-50 border-green-400 dark:bg-green-900/20 dark:border-green-700' : 'bg-amber-50 border-amber-400 animate-pulse dark:bg-amber-900/20 dark:border-amber-700'
       }`}>
-        <p className={`text-sm font-semibold ${focused ? 'text-green-700' : 'text-amber-700'}`}>
+        <p className={`text-sm font-semibold ${focused ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'}`}>
           {focused ? '🟢 Kiosk siap -- tap kartu Generus ke reader' : '⚠️ Kiosk terjeda -- klik kartu ini untuk lanjut'}
         </p>
         {jumlahAntrean > 0 && (
-          <p className="text-[11px] text-amber-600 mt-1">📶 {jumlahAntrean} antrean menunggu sinkronisasi</p>
+          <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">📶 {jumlahAntrean} antrean menunggu sinkronisasi</p>
         )}
       </div>
     </div>
