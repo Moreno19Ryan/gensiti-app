@@ -501,6 +501,7 @@ benar-benar dikerjakan sejak itu:
 | A7 | ✅ Selesai (versi read-only) | `254e168` | Sama dengan card A2 gap #2 di atas -- versi notifikasi aktif (push/email kalau threshold tercapai) belum dikerjakan, masih opsi terpisah kalau dibutuhkan |
 | A6 | ✅ Selesai (versi eskalasi manual, bukan auto-approve) | PR #18 | Ketua bisa ambil alih Setujui/Tolak reimbursement kalau Bendahara belum proses >3 hari, + reminder proaktif harian ke approver kegiatan/pengumuman/reimbursement. Opsi auto-approve yang sempat diusulkan DITOLAK (risiko governance keuangan) -- desain final tetap butuh aksi manual manusia. Detail di HANDOFF.md Sesi 26 Juli 2026 |
 | B3 | ✅ Selesai (rollout 100%) | PR #16 | Sinkronisasi toggle diperbaiki (`useSyncExternalStore`) + rollout `dark:` ke seluruh 30 file yang genuinely butuh (bukan 37 seperti perkiraan awal -- global CSS override di `globals.css` sudah mengcover mayoritas styling dasar, cuma aksen warna non-slate yang perlu disentuh manual) |
+| B4 | ✅ Selesai (Ukuran Teks + Kontras Tinggi) | PR #20 | `lib/accessibility.ts` (`useTextSize`/`useHighContrast`, pola `useSyncExternalStore` sama seperti `lib/dark-mode.ts`) + CSS pendukung di `globals.css`. Sekaligus menu sidebar baru "Pengaturan" yang mengonsolidasikan Mode Gelap (dipindah dari Profil), Ukuran Teks, Kontras Tinggi, Ganti Bahasa (placeholder "Segera Hadir", BUKAN i18n sungguhan -- di luar scope), dan Versi Aplikasi |
 
-Item lain di tabel Ringkasan (A4, A5, B1, B4) masih dalam status assessment
+Item lain di tabel Ringkasan (A4, A5, B1) masih dalam status assessment
 awal, belum ada perubahan kode.

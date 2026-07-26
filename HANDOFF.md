@@ -61,9 +61,9 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
-### Sesi 26 Juli 2026 — Tone/voice, A6 (eskalasi approval), B3 (Mode Gelap rollout penuh), fix PPG di Data Generus
+### Sesi 26 Juli 2026 — Tone/voice, A6 (eskalasi approval), B3 (Mode Gelap rollout penuh), fix PPG di Data Generus, B4 (Aksesibilitas) + menu Pengaturan
 
-Empat PR berurutan (#15-#18), semua sudah di-merge ke `main`. Ringkasan per PR:
+Enam PR berurutan (#15-#20), semua sudah di-merge ke `main`. Ringkasan per PR:
 
 **PR #15 -- Tone/voice: pesan motivasi, sapaan waktu & nama panggilan di Dashboard**
 - Fase A (fondasi data): tabel baru `pesan_motivasi` (40 baris seed, teks
@@ -162,15 +162,55 @@ Empat PR berurutan (#15-#18), semua sudah di-merge ke `main`. Ringkasan per PR:
   PostgREST) sesuai catatan lama di file yg sama soal filter negasi pada
   relasi nested/embedded.
 
-Semua 4 PR diverifikasi `tsc --noEmit` + `eslint` + `npm run test` (49
+**PR #19 -- Dokumentasi (HANDOFF/ARCHITECTURE/WISHLIST_ASSESSMENT), tanpa perubahan kode**
+- Menyelaraskan 3 dokumen ini dgn hasil PR #15-#18 yang sempat tertunda
+  ("nanti saja") -- ditulis begitu ketiga PR itu selesai di-merge.
+
+**PR #20 -- B4: Menu Pengaturan (Ukuran Teks, Kontras Tinggi) + pindahkan Mode Gelap dari Profil**
+- Assessment awal di [WISHLIST_ASSESSMENT.md §B4](WISHLIST_ASSESSMENT.md).
+  Reno minta diperluas sekalian: bukan cuma Ukuran Teks + Kontras Tinggi,
+  tapi juga menu sidebar baru "Pengaturan" yang mengumpulkan SEMUA preferensi
+  tampilan aplikasi jadi satu tempat.
+- `lib/accessibility.ts` (baru) -- `useTextSize()` & `useHighContrast()`,
+  mencontek persis pola `useSyncExternalStore` dari `lib/dark-mode.ts`
+  (satu key `localStorage` + class di `<html>` per fitur, listener set
+  supaya semua komponen yang pakai hook ini sinkron real-time). Dipanggil
+  juga (tanpa render toggle) di `app/(dashboard)/layout.tsx` supaya class-nya
+  diterapkan begitu dashboard mount, terlepas dari halaman mana yang dibuka
+  duluan -- sama seperti Mode Gelap.
+- `app/globals.css` -- `html.text-size-besar`/`.text-size-lebih-besar`
+  men-scale `font-size` ROOT saja (semua ukuran teks Tailwind berbasis
+  `rem`, otomatis ikut proporsional tanpa sentuh tiap kelas satu-satu);
+  `.high-contrast` mem-override warna teks/border jadi lebih tajam,
+  independen dari `.dark` (selector 2-3 class spesifik supaya menang saat
+  kedua mode aktif bersamaan) + outline focus lebih tebal.
+- `app/(dashboard)/pengaturan/page.tsx` (baru) -- menu sidebar baru, terbuka
+  utk semua jenjang termasuk Generus biasa (sama seperti Notifikasi). Isi:
+  Mode Gelap (dipindah dari Profil), Ukuran Teks (3 level), Kontras Tinggi,
+  Ganti Bahasa, Versi Aplikasi.
+- **Keputusan scope eksplisit soal Ganti Bahasa**: Reno awalnya minta
+  "sekalian" ditambah ganti bahasa di menu Pengaturan. Diangkat ke Reno
+  dulu bahwa i18n sungguhan (ekstraksi string, locale switching) di luar
+  cakupan sesi ini -- disepakati taruh placeholder **"Segera Hadir"**
+  (disabled, non-fungsional) drpd dikerjakan penuh atau dihilangkan total.
+- `app/(dashboard)/profil/page.tsx` -- Mode Gelap, Bahasa, dan Versi
+  Aplikasi (yang sebelumnya sudah ada di sini sbg placeholder/display)
+  dihapus dari sini supaya tidak ada 2 tempat berbeda utk pengaturan yang
+  sama; diganti 1 link "Tampilan & Aksesibilitas" menuju `/pengaturan`.
+
+Semua 6 PR diverifikasi `tsc --noEmit` + `eslint` + `npm run test` (49
 lulus) sebelum tiap commit/merge. `npm run build` gagal di sandbox
 pengembangan (tidak ada `.env.local`, bukan disebabkan perubahan kode) --
 diverifikasi lewat preview deployment Vercel per PR sebagai gantinya.
 
-**Belum dikerjakan (di luar cakupan sesi ini):** B4 (Aksesibilitas -- ukuran
-teks & kontras, mirror pola B3), dan verifikasi visual manual langsung di
-browser oleh Reno (Claude Code tidak bisa klik-klik UI nyata -- lihat
-`CLAUDE.md` prinsip #5).
+**Belum dikerjakan (di luar cakupan sesi ini):** A4 (redesain single-session
+ke multi-device -- Besar, sudah ada analisis desain lengkap di
+`NATIVE_READINESS_AUDIT.md`), A5 (Tampilan Sesi Aktif -- direkomendasikan
+digabung ke A4, gap-nya identik), B1 (Gamifikasi Ringan -- Besar + perlu
+diskusi non-teknis dgn Reno soal bentuknya dulu sebelum coding). Juga
+verifikasi visual manual langsung di browser oleh Reno (Claude Code tidak
+bisa klik-klik UI nyata -- lihat `CLAUDE.md` prinsip #5), termasuk kombinasi
+Mode Gelap + Kontras Tinggi + Ukuran Teks dari PR #20.
 
 ### Sesi 24 Juli 2026 (lanjutan 2) — A1, A3 (Opsi B), A2/A7 dari `WISHLIST_ASSESSMENT.md`
 
