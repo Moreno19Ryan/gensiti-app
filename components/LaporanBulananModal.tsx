@@ -766,7 +766,7 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
-          {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm mb-4">{error}</div>}
+          {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm mb-4 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">{error}</div>}
 
           {loading ? (
             <div className="h-full flex items-center justify-center text-slate-400">
@@ -781,20 +781,20 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
           ) : (
             <div className="space-y-4">
               {ringkasanOtomatis && (
-                <div className="bg-blue-50 rounded-xl px-4 py-3 flex items-start gap-2.5">
-                  <span className="text-blue-500 shrink-0 mt-0.5">✨</span>
-                  <p className="text-sm text-blue-800 leading-relaxed">{ringkasanOtomatis}</p>
+                <div className="bg-blue-50 rounded-xl px-4 py-3 flex items-start gap-2.5 dark:bg-blue-900/20">
+                  <span className="text-blue-500 dark:text-blue-400 shrink-0 mt-0.5">✨</span>
+                  <p className="text-sm text-blue-800 dark:text-blue-300 leading-relaxed">{ringkasanOtomatis}</p>
                 </div>
               )}
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="bg-white rounded-xl p-4 border border-slate-100 sm:col-span-1">
                   <p className="text-xs text-slate-400 mb-1.5">Tingkat kehadiran</p>
-                  <p className="text-3xl font-bold text-green-600">
+                  <p className="text-3xl font-bold text-green-600 dark:text-green-400">
                     {deltaKehadiran.pctSekarang !== null ? `${deltaKehadiran.pctSekarang}%` : '-'}
                   </p>
                   {deltaKehadiran.delta !== null && (
-                    <p className={`text-xs mt-1.5 ${deltaKehadiran.delta > 0 ? 'text-green-600' : deltaKehadiran.delta < 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                    <p className={`text-xs mt-1.5 ${deltaKehadiran.delta > 0 ? 'text-green-600 dark:text-green-400' : deltaKehadiran.delta < 0 ? 'text-red-500 dark:text-red-400' : 'text-slate-400'}`}>
                       {deltaKehadiran.delta > 0 ? `↗ naik ${deltaKehadiran.delta}%` : deltaKehadiran.delta < 0 ? `↘ turun ${Math.abs(deltaKehadiran.delta)}%` : 'stabil'} dari {BULAN_LABEL[bulan - 2]}
                     </p>
                   )}
@@ -803,15 +803,15 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
                   )}
                 </div>
                 <div className="bg-white rounded-xl p-4 border border-slate-100">
-                  <p className="text-2xl font-bold text-amber-600">{totalKehadiran.izin}</p>
+                  <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{totalKehadiran.izin}</p>
                   <p className="text-xs text-slate-400 mt-0.5">Izin</p>
                 </div>
                 <div className="bg-white rounded-xl p-4 border border-slate-100">
-                  <p className="text-2xl font-bold text-purple-600">{totalKehadiran.sakit}</p>
+                  <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{totalKehadiran.sakit}</p>
                   <p className="text-xs text-slate-400 mt-0.5">Sakit</p>
                 </div>
                 <div className="bg-white rounded-xl p-4 border border-slate-100">
-                  <p className="text-2xl font-bold text-red-600">{totalKehadiran.tidak_hadir}</p>
+                  <p className="text-2xl font-bold text-red-600 dark:text-red-400">{totalKehadiran.tidak_hadir}</p>
                   <p className="text-xs text-slate-400 mt-0.5">Alpha</p>
                 </div>
               </div>
@@ -932,9 +932,9 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
                               <span className="text-xs text-slate-400 shrink-0 hidden sm:inline">rata² 6bln: {u.rataPctHadirHistori}%</span>
                             )}
                             {u.perluPerhatian ? (
-                              <span className="text-xs bg-red-50 text-red-600 px-2 py-0.5 rounded-md shrink-0">Perlu perhatian</span>
+                              <span className="text-xs bg-red-50 text-red-600 px-2 py-0.5 rounded-md dark:bg-red-900/20 dark:text-red-400 shrink-0">Perlu perhatian</span>
                             ) : (
-                              <span className="text-xs bg-green-50 text-green-600 px-2 py-0.5 rounded-md shrink-0">Baik</span>
+                              <span className="text-xs bg-green-50 text-green-600 px-2 py-0.5 rounded-md dark:bg-green-900/20 dark:text-green-400 shrink-0">Baik</span>
                             )}
                           </button>
                           {isExpanded && (
@@ -1085,9 +1085,9 @@ export default function LaporanBulananModal({ open, onClose, user, scope }: Prop
                                     {r.total === 0 ? (
                                       <span className="text-xs text-slate-400">Belum ada data</span>
                                     ) : r.perluPerhatian ? (
-                                      <span className="text-xs bg-red-50 text-red-600 px-2 py-0.5 rounded-md">Perlu perhatian</span>
+                                      <span className="text-xs bg-red-50 text-red-600 px-2 py-0.5 rounded-md dark:bg-red-900/20 dark:text-red-400">Perlu perhatian</span>
                                     ) : (
-                                      <span className="text-xs bg-green-50 text-green-600 px-2 py-0.5 rounded-md">Baik</span>
+                                      <span className="text-xs bg-green-50 text-green-600 px-2 py-0.5 rounded-md dark:bg-green-900/20 dark:text-green-400">Baik</span>
                                     )}
                                   </td>
                                 </tr>
