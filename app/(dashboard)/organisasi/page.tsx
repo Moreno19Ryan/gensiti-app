@@ -41,11 +41,11 @@ const TINGKATAN_OPTIONS: { value: Tingkatan; label: string }[] = [
 ]
 
 const tingkatanBadgeColor: Record<string, string> = {
-  super_admin: 'bg-purple-100 text-purple-700',
-  daerah: 'bg-blue-100 text-blue-700',
-  desa: 'bg-green-100 text-green-700',
-  kelompok: 'bg-amber-100 text-amber-700',
-  ppg: 'bg-pink-100 text-pink-700',
+  super_admin: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  daerah: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  desa: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  kelompok: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  ppg: 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400',
 }
 
 export default function OrganisasiPage() {
@@ -221,7 +221,7 @@ export default function OrganisasiPage() {
             key={t.key}
             onClick={() => setTab(t.key)}
             className={`px-4 py-2.5 text-sm font-medium border-b-2 transition ${
-              tab === t.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+              tab === t.key ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >
             {t.label}
@@ -261,8 +261,8 @@ export default function OrganisasiPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-3">
-                          <button onClick={() => openEditDesa(d)} className="text-blue-600 hover:text-blue-800 text-xs font-medium">Edit</button>
-                          <button onClick={() => { setDesaDeleteTarget(d); setDesaDeleteError('') }} className="text-red-500 hover:text-red-700 text-xs font-medium">Hapus</button>
+                          <button onClick={() => openEditDesa(d)} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-xs font-medium">Edit</button>
+                          <button onClick={() => { setDesaDeleteTarget(d); setDesaDeleteError('') }} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-xs font-medium">Hapus</button>
                         </div>
                       </td>
                     </tr>
@@ -274,7 +274,7 @@ export default function OrganisasiPage() {
 
           <Modal open={desaModalOpen} onClose={() => setDesaModalOpen(false)} title={desaEditTarget ? `Edit Desa: ${desaEditTarget.nama_desa}` : 'Tambah Desa'} size="sm">
             <div className="space-y-4">
-              {desaError && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{desaError}</div>}
+              {desaError && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">{desaError}</div>}
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Nama Desa *</label>
                 <input value={desaForm.nama_desa} onChange={e => setDesaForm({ nama_desa: e.target.value })}
@@ -293,7 +293,7 @@ export default function OrganisasiPage() {
 
           <Modal open={!!desaDeleteTarget} onClose={() => setDesaDeleteTarget(null)} title="Hapus Desa?" size="sm">
             <div className="space-y-4">
-              {desaDeleteError && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{desaDeleteError}</div>}
+              {desaDeleteError && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">{desaDeleteError}</div>}
               <p className="text-sm text-slate-600">
                 Yakin ingin menghapus desa <strong>{desaDeleteTarget?.nama_desa}</strong>? Aksi ini tidak dapat dibatalkan.
               </p>
@@ -339,8 +339,8 @@ export default function OrganisasiPage() {
                       <td className="px-4 py-3 text-slate-600 text-xs">{k.desa?.nama_desa || '-'}</td>
                       <td className="px-4 py-3">
                         <div className="flex gap-3">
-                          <button onClick={() => openEditKelompok(k)} className="text-blue-600 hover:text-blue-800 text-xs font-medium">Edit</button>
-                          <button onClick={() => { setKelompokDeleteTarget(k); setKelompokDeleteError('') }} className="text-red-500 hover:text-red-700 text-xs font-medium">Hapus</button>
+                          <button onClick={() => openEditKelompok(k)} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-xs font-medium">Edit</button>
+                          <button onClick={() => { setKelompokDeleteTarget(k); setKelompokDeleteError('') }} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-xs font-medium">Hapus</button>
                         </div>
                       </td>
                     </tr>
@@ -352,7 +352,7 @@ export default function OrganisasiPage() {
 
           <Modal open={kelompokModalOpen} onClose={() => setKelompokModalOpen(false)} title={kelompokEditTarget ? `Edit Kelompok: ${kelompokEditTarget.nama_kelompok}` : 'Tambah Kelompok'} size="sm">
             <div className="space-y-4">
-              {kelompokError && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{kelompokError}</div>}
+              {kelompokError && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">{kelompokError}</div>}
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Nama Kelompok *</label>
                 <input value={kelompokForm.nama_kelompok} onChange={e => setKelompokForm(f => ({ ...f, nama_kelompok: e.target.value }))}
@@ -378,7 +378,7 @@ export default function OrganisasiPage() {
 
           <Modal open={!!kelompokDeleteTarget} onClose={() => setKelompokDeleteTarget(null)} title="Hapus Kelompok?" size="sm">
             <div className="space-y-4">
-              {kelompokDeleteError && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{kelompokDeleteError}</div>}
+              {kelompokDeleteError && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">{kelompokDeleteError}</div>}
               <p className="text-sm text-slate-600">
                 Yakin ingin menghapus kelompok <strong>{kelompokDeleteTarget?.nama_kelompok}</strong>? Aksi ini tidak dapat dibatalkan.
               </p>
@@ -538,8 +538,8 @@ function RoleTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user'
                       <span className="text-xs text-slate-300 italic">Permanen (sistem)</span>
                     ) : (
                       <div className="flex gap-3">
-                        <button onClick={() => openEdit(r)} className="text-blue-600 hover:text-blue-800 text-xs font-medium">Edit</button>
-                        <button onClick={() => { setDeleteTarget(r); setDeleteError('') }} className="text-red-500 hover:text-red-700 text-xs font-medium">Hapus</button>
+                        <button onClick={() => openEdit(r)} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-xs font-medium">Edit</button>
+                        <button onClick={() => { setDeleteTarget(r); setDeleteError('') }} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-xs font-medium">Hapus</button>
                       </div>
                     )}
                   </td>
@@ -553,7 +553,7 @@ function RoleTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user'
       {/* Modal Tambah/Edit */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editTarget ? `Edit Role: ${editTarget.nama_role}` : 'Tambah Role'} size="sm">
         <div className="space-y-4">
-          {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
+          {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">{error}</div>}
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Nama Role *</label>
             <input value={form.nama_role} onChange={e => setForm(f => ({ ...f, nama_role: e.target.value }))}
@@ -587,7 +587,7 @@ function RoleTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user'
       {/* Modal Konfirmasi Hapus */}
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Hapus Role?" size="sm">
         <div className="space-y-4">
-          {deleteError && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{deleteError}</div>}
+          {deleteError && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">{deleteError}</div>}
           <p className="text-sm text-slate-600">
             Yakin ingin menghapus role <strong>{deleteTarget?.nama_role}</strong>?
             {deleteTarget?._userCount ? ` Role ini masih dipakai oleh ${deleteTarget._userCount} pengguna.` : ' Aksi ini tidak dapat dibatalkan.'}
