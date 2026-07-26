@@ -31,6 +31,14 @@ export default function NotifikasiProfilPage() {
   const [pushLoading, setPushLoading] = useState(false)
   const [pushMsg, setPushMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
 
+  // Toggle pesan motivasi (PANDUAN_TONE_VOICE_GENSITI.md) -- tersimpan langsung tiap diklik
+  // (pola sama seperti toggle push di atas), BUKAN lewat tombol "Simpan Preferensi" di bawah
+  // karena beda tabel/mekanisme simpan (RPC set_tampilkan_pesan_motivasi, bukan upsert
+  // email_preferensi -- tulis-langsung ke users dikunci RLS ke super_admin saja).
+  const [tampilkanMotivasi, setTampilkanMotivasi] = useState(true)
+  const [motivasiLoading, setMotivasiLoading] = useState(false)
+  const [motivasiMsg, setMotivasiMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+
   const loadNotifPref = useCallback(async (userId: string) => {
     const { data } = await supabase
       .from('email_preferensi')
@@ -53,6 +61,7 @@ export default function NotifikasiProfilPage() {
     if (isSuperAdmin) { router.replace('/profil'); return }
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadNotifPref(user.id)
+    setTampilkanMotivasi(user.tampilkan_pesan_motivasi)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, isSuperAdmin])
 
@@ -82,6 +91,20 @@ export default function NotifikasiProfilPage() {
     } finally {
       setPushLoading(false)
     }
+  }
+
+  const handleToggleMotivasi = async () => {
+    if (!user) return
+    setMotivasiLoading(true)
+    setMotivasiMsg(null)
+    const next = !tampilkanMotivasi
+    const { error } = await supabase.rpc('set_tampilkan_pesan_motivasi', { p_aktif: next })
+    if (error) {
+      setMotivasiMsg({ type: 'err', text: 'Gagal menyimpan: ' + error.message })
+    } else {
+      setTampilkanMotivasi(next)
+    }
+    setMotivasiLoading(false)
   }
 
   const saveNotifPref = async () => {
@@ -124,7 +147,7 @@ export default function NotifikasiProfilPage() {
 
       <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6 space-y-4">
         {msg && (
-          <div className={`p-3 rounded-xl text-sm ${msg.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+          <div className={`p-3 rounded-xl text-sm ${msg.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400' : 'bg-red-50 border border-red-200 text-red-700 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400'}`}>
             {msg.text}
           </div>
         )}
@@ -153,11 +176,35 @@ export default function NotifikasiProfilPage() {
             </button>
           </div>
           {pushMsg && (
-            <p className={`text-xs ${pushMsg.type === 'ok' ? 'text-emerald-600' : 'text-red-500'}`}>{pushMsg.text}</p>
+            <p className={`text-xs ${pushMsg.type === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>{pushMsg.text}</p>
           )}
         </div>
 
-        <p className="text-xs text-slate-500 bg-blue-50 p-3 rounded-xl border border-blue-100">
+        {/* Toggle pesan motivasi/pantun di Dashboard -- tersimpan langsung tiap diklik,
+            terpisah dari preferensi email di bawah (PANDUAN_TONE_VOICE_GENSITI.md). */}
+        <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 space-y-2">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-slate-700 dark:text-slate-200">Pesan Motivasi di Dashboard</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Tampilkan 1 pesan/pantun penyemangat setiap kali Anda membuka Dashboard. Matikan kalau Anda lebih suka tampilan yang lebih formal.
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={motivasiLoading}
+              onClick={handleToggleMotivasi}
+              className={`shrink-0 relative w-11 h-6 rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${tampilkanMotivasi ? 'bg-blue-600' : 'bg-slate-200 dark:bg-slate-600'}`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${tampilkanMotivasi ? 'translate-x-5' : 'translate-x-0'}`} />
+            </button>
+          </div>
+          {motivasiMsg && (
+            <p className="text-xs text-red-500 dark:text-red-400">{motivasiMsg.text}</p>
+          )}
+        </div>
+
+        <p className="text-xs text-slate-500 bg-blue-50 p-3 rounded-xl border border-blue-100 dark:bg-blue-900/20 dark:border-blue-800">
           Atur jenis notifikasi email yang ingin Anda terima dari GENSITI. Perubahan berlaku untuk pengiriman email berikutnya.
         </p>
         <div className="divide-y divide-slate-100 dark:divide-slate-700">

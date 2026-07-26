@@ -153,17 +153,17 @@ export default function PengumumanPage() {
   const fmt = (t: string) => new Date(t).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
 
   const tingkatanBadge: Record<string, string> = {
-    semua: 'bg-blue-100 text-blue-700',
-    daerah: 'bg-purple-100 text-purple-700',
-    desa: 'bg-green-100 text-green-700',
-    kelompok: 'bg-orange-100 text-orange-700',
+    semua: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    daerah: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+    desa: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    kelompok: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
   }
 
   // Badge status approval PPG -- hanya relevan utk pengumuman tingkat Daerah.
   const approvalLabel: Record<string, { label: string; color: string }> = {
-    menunggu_ppg: { label: '⏳ Menunggu Persetujuan PPG', color: 'bg-amber-100 text-amber-700' },
-    disetujui: { label: '✓ Disetujui PPG', color: 'bg-green-100 text-green-700' },
-    ditolak: { label: '✕ Ditolak PPG', color: 'bg-red-100 text-red-600' },
+    menunggu_ppg: { label: '⏳ Menunggu Persetujuan PPG', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+    disetujui: { label: '✓ Disetujui PPG', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+    ditolak: { label: '✕ Ditolak PPG', color: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' },
   }
 
   const filteredData = data
@@ -229,8 +229,8 @@ export default function PengumumanPage() {
       ) : filteredData.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
           <div className="text-4xl mb-2">📢</div>
-          <p>{search || filterTingkatan ? 'Tidak ada pengumuman yang cocok' : 'Belum ada pengumuman'}</p>
-          {canCreate && !search && <button onClick={openAdd} className="mt-3 text-blue-600 text-sm font-medium hover:underline">+ Buat sekarang</button>}
+          <p>{search || filterTingkatan ? 'Nggak ada pengumuman yang cocok nih' : 'Belum ada pengumuman nih'}</p>
+          {canCreate && !search && <button onClick={openAdd} className="mt-3 text-blue-600 dark:text-blue-400 text-sm font-medium hover:underline">+ Buat sekarang</button>}
         </div>
       ) : (
         <div className="space-y-3">
@@ -253,17 +253,17 @@ export default function PengumumanPage() {
                   <p className="text-slate-500 text-sm line-clamp-2">{p.isi}</p>
                   <p className="text-slate-400 text-xs mt-2">{fmt(p.tanggal_publish)}</p>
                   {p.tingkatan === 'daerah' && p.status_approval === 'ditolak' && p.catatan_ppg && (
-                    <div className="mt-2 p-2 bg-red-50 border border-red-100 rounded-lg text-xs text-red-600">
+                    <div className="mt-2 p-2 bg-red-50 border border-red-100 rounded-lg text-xs text-red-600 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
                       <span className="font-medium">Catatan PPG:</span> {p.catatan_ppg}
                     </div>
                   )}
                 </div>
                 {canCreate && (
                   <div className="flex gap-2 shrink-0">
-                    <button onClick={() => toggleActive(p)} className={`text-xs font-medium ${p.is_active ? 'text-slate-400 hover:text-slate-600' : 'text-green-600 hover:text-green-800'}`}>
+                    <button onClick={() => toggleActive(p)} className={`text-xs font-medium ${p.is_active ? 'text-slate-400 hover:text-slate-600' : 'text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300'}`}>
                       {p.is_active ? 'Nonaktifkan' : 'Aktifkan'}
                     </button>
-                    <button onClick={() => openEdit(p)} className="text-blue-600 hover:text-blue-800 font-medium text-xs">Edit</button>
+                    <button onClick={() => openEdit(p)} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium text-xs">Edit</button>
                     <button onClick={() => handleDelete(p.id)} className="text-red-400 hover:text-red-600 font-medium text-xs">Hapus</button>
                   </div>
                 )}

@@ -163,8 +163,8 @@ export default function BackupDataPage() {
   const statusIcon = (s: TableStatus['status']) => {
     if (s === 'pending') return <span className="text-slate-300">○</span>
     if (s === 'loading') return <div className="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-    if (s === 'done') return <span className="text-green-500">✓</span>
-    return <span className="text-red-500">✕</span>
+    if (s === 'done') return <span className="text-green-500 dark:text-green-400">✓</span>
+    return <span className="text-red-500 dark:text-red-400">✕</span>
   }
 
   return (
@@ -175,9 +175,9 @@ export default function BackupDataPage() {
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
-        <div className="flex items-start gap-3 mb-4 p-3 bg-amber-50 border border-amber-100 rounded-xl">
+        <div className="flex items-start gap-3 mb-4 p-3 bg-amber-50 border border-amber-100 rounded-xl dark:bg-amber-900/20 dark:border-amber-800">
           <span className="text-xl shrink-0">⚠️</span>
-          <p className="text-xs text-amber-700">
+          <p className="text-xs text-amber-700 dark:text-amber-400">
             File backup berisi seluruh data organisasi termasuk data pribadi pengguna (nama, email, no. HP, alamat).
             Simpan di tempat aman dan jangan dibagikan sembarangan. File ini tidak mengandung password akun
             (password dikelola terpisah oleh sistem autentikasi Supabase, tidak pernah tersimpan di tabel data).
@@ -200,7 +200,7 @@ export default function BackupDataPage() {
         </button>
 
         {lastBackup && !running && (
-          <p className="text-xs text-green-600 mt-3">
+          <p className="text-xs text-green-600 dark:text-green-400 mt-3">
             ✓ Backup terakhir berhasil dibuat {lastBackup.time} -- {lastBackup.totalRows} baris total ({lastBackup.fileName})
           </p>
         )}
@@ -215,7 +215,7 @@ export default function BackupDataPage() {
                   {p.label}
                 </span>
                 {p.status === 'done' && <span className="text-slate-400">{p.count} baris</span>}
-                {p.status === 'error' && <span className="text-red-500 truncate max-w-[120px]" title={p.error}>gagal</span>}
+                {p.status === 'error' && <span className="text-red-500 dark:text-red-400 truncate max-w-[120px]" title={p.error}>gagal</span>}
               </div>
             ))}
           </div>

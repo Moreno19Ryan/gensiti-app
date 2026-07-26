@@ -93,9 +93,9 @@ export default function PengajuanIzinPanel({ kegiatan, user }: Props) {
   // lagi kalau masih menunggu (mencegah spam pengajuan berulang, RPC juga sudah menolak ini).
   if (statusLokal) {
     const badge = {
-      menunggu: { label: '⏳ Izin Anda sedang menunggu persetujuan pengurus', color: 'bg-amber-50 text-amber-700 border-amber-100' },
-      disetujui: { label: '✓ Izin Anda disetujui pengurus', color: 'bg-green-50 text-green-700 border-green-100' },
-      ditolak: { label: '✕ Izin Anda ditolak pengurus', color: 'bg-red-50 text-red-600 border-red-100' },
+      menunggu: { label: '⏳ Izin Anda sedang menunggu persetujuan pengurus', color: 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800' },
+      disetujui: { label: '✓ Izin Anda disetujui pengurus', color: 'bg-green-50 text-green-700 border-green-100 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' },
+      ditolak: { label: '✕ Izin Anda ditolak pengurus', color: 'bg-red-50 text-red-600 border-red-100 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800' },
     }[statusLokal.status]
 
     return (
@@ -116,7 +116,7 @@ export default function PengajuanIzinPanel({ kegiatan, user }: Props) {
       <div className="mt-3 pt-3 border-t border-slate-100">
         <button
           onClick={() => { setModalOpen(true); setErrorMsg(null) }}
-          className="w-full py-2 border border-amber-200 bg-amber-50 text-amber-700 rounded-xl text-sm font-medium hover:bg-amber-100 transition"
+          className="w-full py-2 border border-amber-200 bg-amber-50 text-amber-700 rounded-xl text-sm font-medium hover:bg-amber-100 transition dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/40"
         >
           📋 Ajukan Izin Tidak Hadir
         </button>
@@ -136,7 +136,7 @@ export default function PengajuanIzinPanel({ kegiatan, user }: Props) {
           </div>
           <p className="text-xs text-slate-400">Pengajuan izin akan ditinjau oleh Ketua/Wakil Ketua/Sekretaris sebelum resmi tercatat.</p>
           {errorMsg && (
-            <div className="p-2.5 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600">{errorMsg}</div>
+            <div className="p-2.5 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">{errorMsg}</div>
           )}
           <div className="flex gap-3 pt-2 border-t border-slate-100">
             <button onClick={() => setModalOpen(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { isPengurus, isBendahara, canManageKontenOrganisasi, isTeamIT } from '@/lib/roles'
+import { UserProfile } from '@/lib/types'
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -97,6 +98,68 @@ function LiveClock() {
     <div className="text-right shrink-0">
       <div className="text-lg sm:text-2xl font-mono font-bold tabular-nums">{formatTime(now)}</div>
       <div className="text-blue-200 text-xs sm:text-sm mt-0.5 hidden sm:block">{formatDate(now)}</div>
+    </div>
+  )
+}
+
+// Info sapaan berdasarkan jam device (waktu lokal browser, sama seperti LiveClock di atas --
+// bukan waktu server) -- frasa persis dari PANDUAN_TONE_VOICE_GENSITI.md "Contoh Sapaan
+// Berdasarkan Waktu" (utuh, bukan dipotong -- revisi setelah feedback Reno: versi potongan
+// sebelumnya tidak kebaca sebagai sapaan waktu sama sekali di layar).
+function getWaktuInfo(): { label: string; emoji: string; frasa: string; warna: string } {
+  const jam = new Date().getHours()
+  if (jam >= 4 && jam < 10) return { label: 'Pagi', emoji: '☀️', frasa: 'Semangat mulai hari ya', warna: 'from-amber-400 to-orange-400' }
+  if (jam >= 10 && jam < 15) return { label: 'Siang', emoji: '🌤️', frasa: 'Jangan lupa istirahat sejenak', warna: 'from-sky-400 to-blue-500' }
+  if (jam >= 15 && jam < 18) return { label: 'Sore', emoji: '🌇', frasa: 'Enaknya buka GENSITI dulu', warna: 'from-orange-400 to-rose-400' }
+  if (jam >= 18 && jam < 22) return { label: 'Malam', emoji: '🌙', frasa: 'Cocok buat cek kegiatan besok', warna: 'from-indigo-500 to-purple-500' }
+  return { label: 'Larut Malam', emoji: '🌌', frasa: 'Masih melek? Jangan lupa istirahat ya', warna: 'from-slate-600 to-indigo-700' }
+}
+
+// Card terpisah khusus sapaan waktu -- emoji & gradasi warna beda tiap periode, supaya
+// terasa "hidup" (permintaan Reno setelah versi pertama dianggap kurang -- teks sapaan
+// waktu yang cuma disisipkan di subtitle banner tidak kelihatan sebagai sapaan sama sekali).
+function SapaanWaktuCard() {
+  const info = getWaktuInfo()
+  return (
+    <div className={`rounded-[18px] p-4 text-white bg-gradient-to-r ${info.warna} flex items-center gap-3 shadow-sm`}>
+      <span className="text-3xl shrink-0">{info.emoji}</span>
+      <div className="min-w-0">
+        <p className="text-xs font-semibold uppercase tracking-wide text-white/80">Selamat {info.label}</p>
+        <p className="text-sm font-medium mt-0.5">{info.frasa}</p>
+      </div>
+    </div>
+  )
+}
+
+const PESAN_MOTIVASI_SESSION_KEY = 'gensiti_pesan_motivasi'
+
+// Card pesan motivasi random -- 1x per sesi browser (di-cache sessionStorage, bukan
+// di-random ulang tiap render/navigasi, sesuai prinsip "frekuensi wajar" di panduan).
+// Sengaja TIDAK mengecek pengumuman duka yang sedang tayang -- tabel `pengumuman` tidak
+// punya kolom kategori/jenis utk membedakan itu, jadi tidak bisa dideteksi otomatis dgn
+// skema sekarang (lihat catatan di PANDUAN_TONE_VOICE_GENSITI.md).
+function PesanMotivasiCard({ user }: { user: UserProfile }) {
+  const [pesan, setPesan] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (user.tampilkan_pesan_motivasi === false) return
+    const cached = sessionStorage.getItem(PESAN_MOTIVASI_SESSION_KEY)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (cached) { setPesan(cached); return }
+    supabase.from('pesan_motivasi').select('teks').then(({ data }) => {
+      if (!data || data.length === 0) return
+      const pilihan = data[Math.floor(Math.random() * data.length)].teks
+      sessionStorage.setItem(PESAN_MOTIVASI_SESSION_KEY, pilihan)
+      setPesan(pilihan)
+    })
+  }, [user.tampilkan_pesan_motivasi])
+
+  if (user.tampilkan_pesan_motivasi === false || !pesan) return null
+
+  return (
+    <div className="bg-amber-50 border border-amber-100 rounded-[18px] px-4 py-3 flex items-center gap-2.5">
+      <span className="text-lg shrink-0">✨</span>
+      <p className="text-amber-800 text-sm">{pesan}</p>
     </div>
   )
 }
@@ -481,37 +544,37 @@ export default function DashboardPage() {
 
   const quickActions = isPPGUser
     ? [
-        { href: '/ppg', label: 'Dashboard PPG', icon: '🛡️', color: 'hover:bg-purple-50 hover:border-purple-200' },
-        { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200' },
-        { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200' },
-        { href: '/catatan-pembinaan', label: 'Catatan Pembinaan', icon: '📝', color: 'hover:bg-emerald-50 hover:border-emerald-200' },
+        { href: '/ppg', label: 'Dashboard PPG', icon: '🛡️', color: 'hover:bg-purple-50 hover:border-purple-200 dark:hover:bg-purple-900/20 dark:hover:border-purple-800' },
+        { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200 dark:hover:bg-indigo-900/20 dark:hover:border-indigo-800' },
+        { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200 dark:hover:bg-orange-900/20 dark:hover:border-orange-800' },
+        { href: '/catatan-pembinaan', label: 'Catatan Pembinaan', icon: '📝', color: 'hover:bg-emerald-50 hover:border-emerald-200 dark:hover:bg-emerald-900/20 dark:hover:border-emerald-800' },
       ]
     : isSuper
     ? [
-        { href: '/generus', label: 'Data Generus', icon: '👥', color: 'hover:bg-blue-50 hover:border-blue-200' },
-        { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200' },
+        { href: '/generus', label: 'Data Generus', icon: '👥', color: 'hover:bg-blue-50 hover:border-blue-200 dark:hover:bg-blue-900/20 dark:hover:border-blue-800' },
+        { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200 dark:hover:bg-indigo-900/20 dark:hover:border-indigo-800' },
         { href: '/organisasi', label: 'Organisasi', icon: '🏛️', color: 'hover:bg-violet-50 hover:border-violet-200' },
-        { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200' },
+        { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200 dark:hover:bg-orange-900/20 dark:hover:border-orange-800' },
       ]
     : isGenerusBiasaUser
     ? [
-        { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200' },
+        { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200 dark:hover:bg-indigo-900/20 dark:hover:border-indigo-800' },
         { href: '/absensi', label: 'Absensi', icon: '✅', color: 'hover:bg-teal-50 hover:border-teal-200' },
-        { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200' },
-        { href: '/profil', label: 'Profil Saya', icon: '👤', color: 'hover:bg-blue-50 hover:border-blue-200' },
+        { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200 dark:hover:bg-orange-900/20 dark:hover:border-orange-800' },
+        { href: '/profil', label: 'Profil Saya', icon: '👤', color: 'hover:bg-blue-50 hover:border-blue-200 dark:hover:bg-blue-900/20 dark:hover:border-blue-800' },
       ]
     : isGenericPengurus
     ? [
-        { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200' },
-        { href: '/keuangan', label: 'Ajukan Reimbursement', icon: '🧾', color: 'hover:bg-emerald-50 hover:border-emerald-200' },
-        { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200' },
-        { href: '/profil', label: 'Profil Saya', icon: '👤', color: 'hover:bg-blue-50 hover:border-blue-200' },
+        { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200 dark:hover:bg-indigo-900/20 dark:hover:border-indigo-800' },
+        { href: '/keuangan', label: 'Ajukan Reimbursement', icon: '🧾', color: 'hover:bg-emerald-50 hover:border-emerald-200 dark:hover:bg-emerald-900/20 dark:hover:border-emerald-800' },
+        { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200 dark:hover:bg-orange-900/20 dark:hover:border-orange-800' },
+        { href: '/profil', label: 'Profil Saya', icon: '👤', color: 'hover:bg-blue-50 hover:border-blue-200 dark:hover:bg-blue-900/20 dark:hover:border-blue-800' },
       ]
     : [
-        { href: '/generus', label: 'Data Generus', icon: '👥', color: 'hover:bg-blue-50 hover:border-blue-200' },
-        { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200' },
-        { href: '/keuangan', label: 'Keuangan', icon: '💰', color: 'hover:bg-emerald-50 hover:border-emerald-200' },
-        { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200' },
+        { href: '/generus', label: 'Data Generus', icon: '👥', color: 'hover:bg-blue-50 hover:border-blue-200 dark:hover:bg-blue-900/20 dark:hover:border-blue-800' },
+        { href: '/kegiatan', label: 'Kegiatan', icon: '📅', color: 'hover:bg-indigo-50 hover:border-indigo-200 dark:hover:bg-indigo-900/20 dark:hover:border-indigo-800' },
+        { href: '/keuangan', label: 'Keuangan', icon: '💰', color: 'hover:bg-emerald-50 hover:border-emerald-200 dark:hover:bg-emerald-900/20 dark:hover:border-emerald-800' },
+        { href: '/pengumuman', label: 'Pengumuman', icon: '📢', color: 'hover:bg-orange-50 hover:border-orange-200 dark:hover:bg-orange-900/20 dark:hover:border-orange-800' },
       ]
 
   const statCards = [
@@ -629,11 +692,16 @@ export default function DashboardPage() {
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="text-white/80 text-sm font-medium">Assalamualaikum,</p>
-            <h2 className="text-xl sm:text-2xl font-extrabold mt-0.5 truncate">{user?.nama_lengkap}</h2>
+            <h2 className="text-xl sm:text-2xl font-extrabold mt-0.5 truncate">{user?.generus?.nama_panggilan || user?.nama_lengkap}</h2>
             <p className="text-white/80 text-sm mt-1">{user?.role?.nama_role} &middot; Sistem GENSITI</p>
           </div>
           <LiveClock />
         </div>
+      </div>
+
+      <div className={`grid gap-3 sm:gap-4 ${user && user.role?.tingkatan !== 'super_admin' ? 'sm:grid-cols-2' : ''}`}>
+        <SapaanWaktuCard />
+        {user && user.role?.tingkatan !== 'super_admin' && <PesanMotivasiCard user={user} />}
       </div>
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
@@ -695,7 +763,7 @@ export default function DashboardPage() {
                 <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
               </div>
             ) : !generusInsight?.kegiatanMendatang.length ? (
-              <div className="py-8 text-center text-slate-400 text-sm">Belum ada kegiatan mendatang</div>
+              <div className="py-8 text-center text-slate-400 text-sm">Belum ada kegiatan mendatang, cek lagi nanti ya</div>
             ) : (
               <div className="divide-y divide-slate-100">
                 {generusInsight.kegiatanMendatang.map((k) => (
@@ -719,7 +787,7 @@ export default function DashboardPage() {
                 <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
               </div>
             ) : !generusInsight?.pengumumanTerbaru.length ? (
-              <div className="py-8 text-center text-slate-400 text-sm">Belum ada pengumuman aktif</div>
+              <div className="py-8 text-center text-slate-400 text-sm">Belum ada pengumuman baru nih</div>
             ) : (
               <div className="divide-y divide-slate-100">
                 {generusInsight.pengumumanTerbaru.map((p) => (

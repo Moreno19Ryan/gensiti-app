@@ -53,10 +53,10 @@ export default function RiwayatAbsensiPage() {
   if (!user || blocked) return null
 
   const badge: Record<string, string> = {
-    hadir: 'bg-green-100 text-green-700',
-    tidak_hadir: 'bg-red-100 text-red-600',
-    izin: 'bg-amber-100 text-amber-700',
-    sakit: 'bg-purple-100 text-purple-700',
+    hadir: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    tidak_hadir: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
+    izin: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    sakit: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
   }
   const label: Record<string, string> = {
     hadir: 'Hadir', tidak_hadir: 'Tidak Hadir', izin: 'Izin', sakit: 'Sakit',
@@ -133,7 +133,7 @@ export default function RiwayatAbsensiPage() {
           </div>
         ) : riwayatPresensi.length === 0 ? (
           <div className="text-center py-8 text-slate-400">
-            <p className="text-sm">Belum ada riwayat absensi</p>
+            <p className="text-sm">Belum ada riwayat absensi nih</p>
           </div>
         ) : (
           <div className="divide-y divide-slate-100 dark:divide-slate-700">

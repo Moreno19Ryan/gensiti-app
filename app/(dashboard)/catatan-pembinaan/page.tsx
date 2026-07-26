@@ -147,14 +147,14 @@ export default function CatatanPembinaanPage() {
       ) : data.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
           <div className="text-4xl mb-2">📝</div>
-          <p>Belum ada catatan pembinaan</p>
+          <p>Belum ada catatan pembinaan yang ditulis</p>
         </div>
       ) : (
         <div className="grid gap-3">
           {data.map(c => (
             <div key={c.id} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
               <div className="flex items-center gap-2 flex-wrap mb-2">
-                <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">{targetLabel(c)}</span>
+                <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-xs font-medium dark:bg-purple-900/30 dark:text-purple-400">{targetLabel(c)}</span>
                 <h3 className="font-semibold text-slate-800">{c.judul}</h3>
               </div>
               <p className="text-slate-600 text-sm whitespace-pre-line">{c.isi}</p>
@@ -215,7 +215,7 @@ export default function CatatanPembinaanPage() {
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none" />
             </div>
 
-            {errorMsg && <p className="text-xs text-red-500">{errorMsg}</p>}
+            {errorMsg && <p className="text-xs text-red-500 dark:text-red-400">{errorMsg}</p>}
 
             <div className="flex gap-3 pt-2 border-t border-slate-100">
               <button onClick={() => setFormOpen(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">

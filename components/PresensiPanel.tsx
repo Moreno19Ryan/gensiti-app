@@ -217,8 +217,8 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
       const { queued } = await submitCheckinDenganKode(inputKode.trim())
       setStatusCheckin('sukses')
       setPesanCheckin(queued
-        ? 'Sinyal terputus -- absensi disimpan di perangkat & akan otomatis terkirim saat online kembali.'
-        : 'Absensi berhasil dicatat. Terima kasih!')
+        ? 'Sinyal lagi kurang stabil nih -- tenang aja, absensimu udah kesimpen di HP dan bakal otomatis terkirim pas online lagi.'
+        : 'Mantap, kamu udah tercatat hadir!')
       setSudahHadir(true)
       setInputKode('')
     } catch (e) {
@@ -251,8 +251,8 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
       const { queued } = await submitCheckinDenganKode(payload.kode)
       setStatusCheckin('sukses')
       setPesanCheckin(queued
-        ? 'Sinyal terputus -- absensi disimpan di perangkat & akan otomatis terkirim saat online kembali.'
-        : 'Absensi berhasil dicatat. Terima kasih!')
+        ? 'Sinyal lagi kurang stabil nih -- tenang aja, absensimu udah kesimpen di HP dan bakal otomatis terkirim pas online lagi.'
+        : 'Mantap, kamu udah tercatat hadir!')
       setSudahHadir(true)
     } catch (e) {
       setStatusCheckin('gagal')
@@ -319,8 +319,8 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
       const { queued } = await submitCheckinDenganKode(kode)
       setStatusCheckin('sukses')
       setPesanCheckin(queued
-        ? 'Sinyal terputus -- kehadiran disimpan di perangkat & akan otomatis terkirim saat online kembali.'
-        : 'Kehadiran Anda berhasil dicatat. Terima kasih!')
+        ? 'Sinyal lagi kurang stabil nih -- tenang aja, kehadiranmu udah kesimpen dan bakal otomatis terkirim pas online lagi.'
+        : 'Mantap, kehadiran kamu udah tercatat!')
       setSudahHadir(true)
     } catch (e) {
       setStatusCheckin('gagal')
@@ -364,7 +364,7 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
   return (
     <div className="mt-3 pt-3 border-t border-slate-100">
       {jumlahAntrean > 0 && (
-        <div className="mb-2 bg-amber-50 text-amber-700 text-xs rounded-xl px-3 py-2 text-center font-medium">
+        <div className="mb-2 bg-amber-50 text-amber-700 text-xs rounded-xl px-3 py-2 text-center font-medium dark:bg-amber-900/20 dark:text-amber-400">
           📶 {jumlahAntrean} presensi menunggu sinkronisasi -- terkirim otomatis saat online
         </div>
       )}
@@ -398,7 +398,7 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
               <button
                 onClick={mulaiAtauRotasiPresensi}
                 disabled={loadingAksi}
-                className="mt-3 text-xs text-blue-600 hover:underline font-medium"
+                className="mt-3 text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium"
               >
                 Perbarui kode sekarang
               </button>
@@ -414,14 +414,14 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
               }}
             />
           )}
-          {errorMsg && <p className="text-xs text-red-500">{errorMsg}</p>}
+          {errorMsg && <p className="text-xs text-red-500 dark:text-red-400">{errorMsg}</p>}
 
           {/* Pengurus yang membuka sesi ini tetap wajib presensi sebagai peserta kegiatan --
               tombol terpisah dari panel kontrol QR di atas, supaya jelas ini mencatat
               kehadiran DIRI SENDIRI, bukan aksi mengelola presensi orang lain. */}
           {isAktif && (
             sudahHadir ? (
-              <div className="bg-green-50 text-green-700 text-sm rounded-xl px-3 py-2 text-center font-medium">
+              <div className="bg-green-50 text-green-700 text-sm rounded-xl px-3 py-2 text-center font-medium dark:bg-green-900/20 dark:text-green-400">
                 ✓ Anda sudah tercatat hadir
               </div>
             ) : (
@@ -435,13 +435,13 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
             )
           )}
           {pesanCheckin && (
-            <p className={`text-xs ${statusCheckin === 'sukses' ? 'text-green-600' : 'text-red-500'}`}>{pesanCheckin}</p>
+            <p className={`text-xs ${statusCheckin === 'sukses' ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>{pesanCheckin}</p>
           )}
         </div>
       ) : (
         <div className="space-y-2">
           {sudahHadir ? (
-            <div className="bg-green-50 text-green-700 text-sm rounded-xl px-3 py-2 text-center font-medium">
+            <div className="bg-green-50 text-green-700 text-sm rounded-xl px-3 py-2 text-center font-medium dark:bg-green-900/20 dark:text-green-400">
               ✓ Anda sudah tercatat hadir
             </div>
           ) : scannerAktif ? (
@@ -477,7 +477,7 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
               </div>
               <button
                 onClick={() => setModeInputManual(false)}
-                className="w-full text-xs text-blue-600 hover:underline font-medium"
+                className="w-full text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium"
               >
                 ← Kembali ke scan QR
               </button>
@@ -490,17 +490,17 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
               >
                 📷 Scan QR Absensi
               </button>
-              {scannerError && <p className="text-xs text-red-500">{scannerError}</p>}
+              {scannerError && <p className="text-xs text-red-500 dark:text-red-400">{scannerError}</p>}
               <button
                 onClick={() => setModeInputManual(true)}
-                className="w-full text-xs text-slate-400 hover:text-blue-600 hover:underline"
+                className="w-full text-xs text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:underline"
               >
                 Kamera tidak bisa? Masukkan kode manual
               </button>
             </div>
           )}
           {pesanCheckin && (
-            <p className={`text-xs ${statusCheckin === 'sukses' ? 'text-green-600' : 'text-red-500'}`}>{pesanCheckin}</p>
+            <p className={`text-xs ${statusCheckin === 'sukses' ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>{pesanCheckin}</p>
           )}
         </div>
       )}

@@ -8,6 +8,7 @@ import { signOut } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { isGenerusBiasa, canManageMembers as checkCanManageMembers, canManagePresensi as checkCanManagePresensi, isTeamIT } from '@/lib/roles'
 import { loadFeatureToggles, isFeatureEnabled, FeatureToggle } from '@/lib/feature-toggles'
+import { useDarkMode } from '@/lib/dark-mode'
 import GlobalSearch from '@/components/GlobalSearch'
 import LoadingSpinner from '@/components/LoadingSpinner'
 
@@ -99,7 +100,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { user, loading } = useUser()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
-  const [darkMode, setDarkMode] = useState(false)
+  const [darkMode, toggleDarkMode] = useDarkMode()
   const [confirmLogout, setConfirmLogout] = useState(false)
   // Mode Perawatan Sistem -- null = belum dicek (jangan render apapun dulu supaya non-SA
   // tidak sempat "mengintip" dashboard sebelum redirect). Super Admin dikecualikan total
@@ -124,12 +125,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const savedCollapse = localStorage.getItem('gensiti_sidebar_collapsed')
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (savedCollapse === 'true') setCollapsed(true)
-
-    const savedDark = localStorage.getItem('gensiti_dark_mode')
-    const isDark = savedDark === 'true'
-    setDarkMode(isDark)
-    if (isDark) document.documentElement.classList.add('dark')
-    else document.documentElement.classList.remove('dark')
   }, [])
 
   useEffect(() => {
@@ -199,14 +194,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     localStorage.setItem('gensiti_sidebar_collapsed', String(next))
   }
 
-  const toggleDarkMode = () => {
-    const next = !darkMode
-    setDarkMode(next)
-    localStorage.setItem('gensiti_dark_mode', String(next))
-    if (next) document.documentElement.classList.add('dark')
-    else document.documentElement.classList.remove('dark')
-  }
-
   const handleSignOut = async () => {
     setConfirmLogout(false)
     await signOut()
@@ -214,7 +201,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   if (loading || (user && maintenanceOk === null)) {
-    return <LoadingSpinner label="Memuat..." fullScreen />
+    return <LoadingSpinner label="Sabar ya, lagi disiapin..." fullScreen />
   }
 
   if (!user) return null
