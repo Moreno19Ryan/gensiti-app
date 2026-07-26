@@ -61,6 +61,117 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 26 Juli 2026 — Tone/voice, A6 (eskalasi approval), B3 (Mode Gelap rollout penuh), fix PPG di Data Generus
+
+Empat PR berurutan (#15-#18), semua sudah di-merge ke `main`. Ringkasan per PR:
+
+**PR #15 -- Tone/voice: pesan motivasi, sapaan waktu & nama panggilan di Dashboard**
+- Fase A (fondasi data): tabel baru `pesan_motivasi` (40 baris seed, teks
+  penyemangat/pantun) + kolom `users.tampilkan_pesan_motivasi` (default
+  `true`) + RPC `set_tampilkan_pesan_motivasi` (`SECURITY DEFINER`, hanya
+  menyentuh `auth.uid()` sendiri -- tulis langsung ke `users` tetap terkunci
+  Super Admin lewat RLS, jadi toggle preferensi butuh RPC khusus).
+- Fase B (Dashboard UI): `SapaanWaktuCard` (kartu terpisah, emoji & gradasi
+  warna beda tiap periode waktu -- pagi/siang/sore/malam/larut malam, frasa
+  persis dari `PANDUAN_TONE_VOICE_GENSITI.md`) + `PesanMotivasiCard` (random
+  1x per sesi browser via `sessionStorage`, respek toggle, disembunyikan
+  utk Super Admin). Toggle baru "Pesan Motivasi di Dashboard" di
+  `profil/notifikasi/page.tsx`.
+- Fase C (microcopy audit menyeluruh): pesan loading/empty-state/error
+  diperhalus di ~15 halaman (Dashboard, Kegiatan, Absensi, Dokumen, Generus,
+  Catatan Pembinaan, Pengumuman, Monitoring, GlobalSearch, login, dst.) --
+  polanya konsisten dgn suara GENSITI di panduan, bukan perubahan fungsional.
+- Diperluas ke **email otomatis & subjek notifikasi** (3 lapisan, atas
+  permintaan eksplisit "biar generus tertarik untuk membacanya"): subjek
+  emoji-aware untuk pengumuman/kegiatan/approval/reminder H-1/reminder
+  laporan, badan email `build_email_html` cabang `reminder` diperhalus,
+  footer email (satu sumber, dipakai semua tipe email) diperlunak. Migrasi
+  `tone_voice_email_notifikasi` (`CREATE OR REPLACE` 6 fungsi, tidak ada
+  perubahan skema).
+- Bug ditemukan & diperbaiki selama testing: kartu pesan motivasi sempat
+  "hilang" -- ternyata bukan bug, user sendiri tidak sengaja mematikan
+  toggle-nya saat uji coba (dikonfirmasi lewat `get_logs` + query langsung
+  ke baris user, bukan asumsi).
+
+**PR #18 -- A6: Eskalasi approval reimbursement yang nyangkut**
+- Assessment awal & desain lengkap ada di
+  [WISHLIST_ASSESSMENT.md §A6](WISHLIST_ASSESSMENT.md). Desain final BUKAN
+  auto-approve (opsi awal yang diusulkan, ditolak eksplisit krn risiko
+  governance keuangan -- lihat diskusi) -- tetap perlu aksi manual manusia.
+- Backend (migrasi terpisah, diverifikasi lewat `BEGIN...ROLLBACK`
+  multi-skenario dgn identitas user nyata sebelum deploy): `proses_reimbursement`
+  diperluas menerima 2 tier caller (Bendahara ATAU Ketua di jenjang sama
+  kalau sudah >3 hari nyangkut), + 2 RPC reminder baru
+  (`send_reminder_approval_kegiatan_pengumuman`/`send_reminder_approval_reimbursement`)
+  + 2 cron harian 08:00 WIB. **Bug ditemukan & diperbaiki sendiri** (bukan
+  laporan user) selama verifikasi: reminder reimbursement awalnya salah pakai
+  pola broadcast ala notifikasi kegiatan (`tingkatan='daerah'` lihat semua) --
+  seharusnya otorisasi sungguhan (scope caller harus PERSIS sama dgn
+  pengajuan), diperbaiki migrasi susulan `fix_scope_reminder_approval_reimbursement`.
+- Frontend (`app/(dashboard)/keuangan/page.tsx`): badge "⚡ Sudah >3 hari
+  menunggu Bendahara -- Anda bisa ambil alih" + tombol Setujui/Tolak utk
+  Ketua yang eligible, `bisaKetuaAmbilAlih()` di client mirror persis gate
+  RPC (client cuma menentukan tampilan, bukan sumber otorisasi).
+- Detail lengkap di [ARCHITECTURE.md §4](ARCHITECTURE.md#4-fungsi--rpc-database-schema-public-65-fungsi).
+
+**PR #16 -- B3: Mode Gelap, sinkronisasi toggle & rollout penuh**
+- **Bug sinkronisasi ditemukan & diperbaiki** (laporan user: ikon mode gelap
+  di header tidak sinkron dgn toggle di menu Profil): dua `useState` terpisah
+  yang masing-masing baca `localStorage` sekali saat mount, tidak saling
+  memberi tahu. Diperbaiki dgn hook bersama `lib/dark-mode.ts` berbasis
+  `useSyncExternalStore` (React 18+) sebagai satu-satunya sumber kebenaran --
+  toggle di satu tempat langsung ter-refleksi di semua komponen yang pakai
+  hook ini, tanpa reload.
+- **Rollout ke seluruh aplikasi** (assessment awal di
+  [WISHLIST_ASSESSMENT.md §B3](WISHLIST_ASSESSMENT.md) memperkirakan ~37
+  file tersisa dari klaim 47 total -- ternyata jauh lebih sedikit yang
+  BENAR-BENAR butuh sentuhan: `app/globals.css` sudah override warna dasar
+  Tailwind (`bg-white`, `border-slate-*`, `text-slate-*`, input, table,
+  shadow) secara global lewat `.dark` class, jadi mayoritas styling otomatis
+  ikut gelap TANPA perlu kelas `dark:` eksplisit. Yang genuinely perlu
+  disentuh murni **aksen warna non-slate** -- badge status, box info/warning
+  berwarna, link, hover state). Metodologi: grep pola
+  `(bg|border|text|hover:)-{warna}-{angka}` per file, exclude yang sudah
+  ada `dark:`, patch dgn konvensi warna konsisten (`bg-{c}-100` →
+  `dark:bg-{c}-900/30`, dst.), verifikasi `tsc`/`eslint`/test tiap file.
+  Tombol solid berwarna + teks putih, spinner, dan `focus:ring` SENGAJA
+  dibiarkan apa adanya (kontras sudah cukup di kedua mode).
+- **30 file disentuh** (29 commit): seluruh halaman `app/(dashboard)/*`,
+  semua sub-halaman Profil, komponen bersama (`PresensiPanel`,
+  `PengajuanIzinPanel`, `LaporanBulananModal`, `RfidKioskInput`,
+  `GlobalSearch`), plus halaman publik (`login`, `lupa-password`).
+- **Konflik merge ditemukan & diperbaiki**: branch sempat dibuat dari commit
+  `main` yang lebih lama (sebelum PR #15 merge), sehingga wording microcopy
+  Fase C (PR #15) bentrok dgn kelas `dark:` yang ditambahkan di baris yang
+  sama pada 6 file (`dokumen`, `generus`, `kegiatan`, `keuangan`,
+  `pengumuman`, `profil/notifikasi`). Diselesaikan dgn merge `main` terbaru
+  + resolusi manual per-file (selalu pertahankan wording terbaru + tambahkan
+  `dark:`), termasuk fitur baru "Pesan Motivasi di Dashboard" toggle
+  (dari PR #15) yang belum ada dark-mode-treated sebelumnya -- ikut
+  dirapikan sekalian saat resolusi konflik.
+
+**PR #17 -- Fix: kecualikan PPG dari daftar Data Generus**
+- Bug ditemukan lewat laporan user (akun "RIZAL FIRDAUS" muncul di menu
+  Data Generus, padahal PPG). Dikonfirmasi lewat query langsung ke DB
+  production: role-nya memang "PPG Bekasi Timur" (`tingkatan='ppg'`, aktif) --
+  bukan salah data, murni filter `loadData()` di
+  `app/(dashboard)/generus/page.tsx` yang cuma exclude `super_admin`, belum
+  exclude `ppg` (peninggalan dari sebelum menu "Data Pembina" jadi halaman
+  mandiri dgn kontrol akun+biodata lengkap sendiri). Fix 1 baris: tambah
+  `&& m.roles?.tingkatan !== 'ppg'`, filter tetap di client (bukan query
+  PostgREST) sesuai catatan lama di file yg sama soal filter negasi pada
+  relasi nested/embedded.
+
+Semua 4 PR diverifikasi `tsc --noEmit` + `eslint` + `npm run test` (49
+lulus) sebelum tiap commit/merge. `npm run build` gagal di sandbox
+pengembangan (tidak ada `.env.local`, bukan disebabkan perubahan kode) --
+diverifikasi lewat preview deployment Vercel per PR sebagai gantinya.
+
+**Belum dikerjakan (di luar cakupan sesi ini):** B4 (Aksesibilitas -- ukuran
+teks & kontras, mirror pola B3), dan verifikasi visual manual langsung di
+browser oleh Reno (Claude Code tidak bisa klik-klik UI nyata -- lihat
+`CLAUDE.md` prinsip #5).
+
 ### Sesi 24 Juli 2026 (lanjutan 2) — A1, A3 (Opsi B), A2/A7 dari `WISHLIST_ASSESSMENT.md`
 
 Urutan disepakati lewat sesi strategi Claude.ai: item ringan/berisiko-tinggi-
@@ -99,9 +210,7 @@ kalau-ditunda dulu (A1), baru item yang butuh keputusan tools (A3), baru item
 - Semua 3 item di atas diverifikasi lewat `BEGIN...ROLLBACK`/simulasi RLS
   penuh (identitas Super Admin + Generus, cek fail-closed) sebelum commit,
   plus `tsc`/`eslint`/`npm run test` (49 lulus) utk perubahan kode.
-- **Belum dilakukan**: keempat commit di atas (termasuk entri "Insiden" di
-  bawah) masih di branch `claude/gemini-gensiti-collaboration-1vrtvi`,
-  belum dibuka PR-nya -- menunggu instruksi Reno kapan mau dibuka.
+- Ketiga commit di atas sudah di-merge ke `main` lewat PR #14 (26 Juli 2026).
 
 ### Sesi 24 Juli 2026 — Insiden: 2 commit lolos ke main tanpa PR/review, branch protection diaktifkan
 

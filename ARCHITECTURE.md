@@ -78,6 +78,7 @@ punya gate sendiri, lihat §4).
 | `pengumuman` | Pengumuman — scope tingkatan, alur approval PPG utk tingkat Daerah |
 | `dokumen` | Dokumen — scope tingkatan, publik/privat |
 | `catatan_pembinaan` | Catatan pembinaan PPG ke Desa/Kelompok |
+| `pesan_motivasi` | Kumpulan teks pesan/pantun penyemangat (40 baris seed) -- ditampilkan random 1x per sesi browser di Dashboard, bisa dimatikan per user lewat `users.tampilkan_pesan_motivasi` (Profil > Notifikasi) |
 
 ### Keuangan
 | Tabel | Isi |
@@ -163,6 +164,21 @@ reimbursement): `approve_kegiatan`, `reject_kegiatan`, `approve_pengumuman`,
 `reject_pengumuman`, `proses_reimbursement`, plus trigger
 `set_status_approval_kegiatan`/`set_status_approval_pengumuman`
 
+> **Eskalasi approval yang nyangkut (A6, 26 Juli 2026).** `proses_reimbursement`
+> sekarang mengizinkan **dua** tier caller, bukan cuma Bendahara: `is_bendahara()`
+> ATAU (`get_user_nama_role() ilike '%ketua%'` DAN `pengajuan.created_at < now() -
+> interval '3 days'`) -- scope tingkatan caller tetap harus persis sama dengan
+> pengajuan (bukan pola broadcast "daerah lihat semua" seperti notifikasi
+> kegiatan/pengumuman, ini otorisasi sungguhan). Kalau Bendahara belum
+> memproses reimbursement dalam >3 hari, Ketua di jenjang yang sama sekarang
+> bisa ambil alih Setujui/Tolak langsung dari `app/(dashboard)/keuangan/page.tsx`
+> (badge "⚡ Sudah >3 hari menunggu Bendahara"). Kegiatan/pengumuman Daerah
+> TETAP eskalasi ke Super Admin (tidak berubah, PPG tetap approver utama).
+> Desain ini **bukan** auto-approve (opsi awal yang diusulkan, ditolak karena
+> risiko governance keuangan) -- approval tetap perlu aksi manual manusia,
+> sistem cuma membuka jalur pengambilalihan + reminder berkala. Lihat
+> `WISHLIST_ASSESSMENT.md` §A6 untuk assessment awal.
+
 **Auto-numbering** (nomor generus/kegiatan/dokumen/pengumuman/transaksi/kode
 desa-kelompok, format konsisten per scope): `fn_generate_nomor_generus`,
 `fn_generate_kode_kegiatan_v2`, `fn_generate_nomor_dokumen_v2`,
@@ -172,8 +188,17 @@ wrapper masing-masing (`trigger_fn_*`)
 
 **Notifikasi**: `notify_email`, `notify_inapp_scope`, `notify_push`, `notify_push_scope`,
 `build_email_html`, `send_reminder_h1_kegiatan` (H-1 kegiatan),
-`send_reminder_laporan_belum_diisi`, plus trigger `trg_notify_email_*` &
-`trg_notify_bendahara_reimbursement`
+`send_reminder_laporan_belum_diisi`,
+`send_reminder_approval_kegiatan_pengumuman`/`send_reminder_approval_reimbursement`
+(A6, cron harian 08:00 WIB -- reminder proaktif ke approver yang belum
+memproses, bukan cuma menunggu approver buka Dashboard sendiri),
+`set_tampilkan_pesan_motivasi` (toggle preferensi pesan motivasi per user,
+`SECURITY DEFINER` yang hanya menyentuh `auth.uid()` sendiri, tidak menerima
+parameter target user), plus trigger `trg_notify_email_*` &
+`trg_notify_bendahara_reimbursement`. **Tone/voice (26 Juli 2026):** subjek &
+isi email otomatis (pengumuman/kegiatan/approval/reminder) serta notifikasi
+in-app diperhalus mengikuti `PANDUAN_TONE_VOICE_GENSITI.md` -- lihat commit
+migrasi `tone_voice_email_notifikasi`.
 
 **Lainnya**: `global_search` (pencarian lintas modul), `enforce_single_super_admin`
 (trigger — Super Admin akun tunggal mutlak), `rls_auto_enable` (event trigger — RLS wajib
