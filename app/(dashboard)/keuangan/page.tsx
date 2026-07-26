@@ -35,9 +35,9 @@ const emptyPengajuanForm = {
 const KATEGORI_SEMUA = ['Iuran', 'Donasi', 'Bantuan', 'Operasional', 'Konsumsi', 'Transport', 'Perlengkapan', 'Lainnya']
 
 const statusPengajuanLabel: Record<string, { label: string; color: string }> = {
-  menunggu: { label: 'Menunggu Bendahara', color: 'bg-amber-100 text-amber-700' },
-  disetujui: { label: 'Disetujui', color: 'bg-green-100 text-green-700' },
-  ditolak: { label: 'Ditolak', color: 'bg-red-100 text-red-600' },
+  menunggu: { label: 'Menunggu Bendahara', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+  disetujui: { label: 'Disetujui', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+  ditolak: { label: 'Ditolak', color: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' },
 }
 
 // Halaman Keuangan -- sejak audit relasi hak akses lintas wilayah, HANYA Bendahara (jenjang
@@ -483,11 +483,11 @@ export default function KeuanganPage() {
       {(canManage || canAjukan) && (
         <div className="flex gap-2 border-b border-slate-200">
           <button onClick={() => setTab('transaksi')}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === 'transaksi' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === 'transaksi' ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
             Transaksi
           </button>
           <button onClick={() => setTab('reimbursement')}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition flex items-center gap-1.5 ${tab === 'reimbursement' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition flex items-center gap-1.5 ${tab === 'reimbursement' ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
             Pengajuan Reimbursement
             {pengajuanMenunggu.length > 0 && canManage && (
               <span className="px-1.5 py-0.5 bg-amber-500 text-white text-[10px] font-bold rounded-full">{pengajuanMenunggu.length}</span>
@@ -528,7 +528,7 @@ export default function KeuanganPage() {
                             {processingId === p.id ? '...' : '✓ Setujui'}
                           </button>
                           <button onClick={() => openTolak(p)} disabled={processingId === p.id}
-                            className="px-3 py-1.5 bg-white border border-red-200 text-red-500 text-xs font-medium rounded-lg hover:bg-red-50 transition disabled:opacity-50">
+                            className="px-3 py-1.5 bg-white border border-red-200 text-red-500 text-xs font-medium rounded-lg hover:bg-red-50 transition disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20">
                             ✕ Tolak
                           </button>
                         </div>
@@ -544,7 +544,7 @@ export default function KeuanganPage() {
                   <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
                     <div className="text-4xl mb-2">🧾</div>
                     <p>Belum ada pengajuan reimbursement</p>
-                    {canAjukan && <button onClick={openPengajuan} className="mt-3 text-blue-600 text-sm font-medium hover:underline">+ Ajukan sekarang</button>}
+                    {canAjukan && <button onClick={openPengajuan} className="mt-3 text-blue-600 dark:text-blue-400 text-sm font-medium hover:underline">+ Ajukan sekarang</button>}
                   </div>
                 ) : (
                   <div className="bg-white rounded-2xl shadow-sm border border-slate-100 divide-y divide-slate-100">
@@ -558,7 +558,7 @@ export default function KeuanganPage() {
                             </p>
                             <p className="text-sm text-slate-600 mt-1">{p.deskripsi}</p>
                             {p.status === 'ditolak' && p.catatan_bendahara && (
-                              <p className="text-xs text-red-500 mt-1">Alasan: {p.catatan_bendahara}</p>
+                              <p className="text-xs text-red-500 dark:text-red-400 mt-1">Alasan: {p.catatan_bendahara}</p>
                             )}
                           </div>
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${statusPengajuanLabel[p.status]?.color}`}>
@@ -605,7 +605,7 @@ export default function KeuanganPage() {
 
               {(dateFrom || dateTo || exportDesaId !== 'all' || exportKelompokId !== 'all' || exportKategori !== 'all') && (
                 <button onClick={() => { setDateFrom(''); setDateTo(''); setExportDesaId('all'); setExportKelompokId('all'); setExportKategori('all') }}
-                  className="text-xs text-blue-600 hover:underline">
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline">
                   Reset lingkup
                 </button>
               )}
@@ -617,15 +617,15 @@ export default function KeuanganPage() {
           <div className="grid grid-cols-3 gap-4">
             <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
               <p className="text-slate-500 text-sm">Pemasukan</p>
-              <p className="text-xl font-bold text-emerald-600 mt-1">{fmt(total.pemasukan)}</p>
+              <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{fmt(total.pemasukan)}</p>
             </div>
             <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
               <p className="text-slate-500 text-sm">Pengeluaran</p>
-              <p className="text-xl font-bold text-red-500 mt-1">{fmt(total.pengeluaran)}</p>
+              <p className="text-xl font-bold text-red-500 dark:text-red-400 mt-1">{fmt(total.pengeluaran)}</p>
             </div>
             <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
               <p className="text-slate-500 text-sm">Saldo</p>
-              <p className={`text-xl font-bold mt-1 ${saldo >= 0 ? 'text-blue-600' : 'text-red-500'}`}>{fmt(saldo)}</p>
+              <p className={`text-xl font-bold mt-1 ${saldo >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-500 dark:text-red-400'}`}>{fmt(saldo)}</p>
             </div>
           </div>
 
@@ -659,7 +659,7 @@ export default function KeuanganPage() {
               <div className="text-center py-12 text-slate-400">
                 <div className="text-4xl mb-2">💰</div>
                 <p>Belum ada transaksi</p>
-                {canManage && <button onClick={openAdd} className="mt-3 text-blue-600 text-sm font-medium hover:underline">+ Tambah sekarang</button>}
+                {canManage && <button onClick={openAdd} className="mt-3 text-blue-600 dark:text-blue-400 text-sm font-medium hover:underline">+ Tambah sekarang</button>}
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -685,18 +685,18 @@ export default function KeuanganPage() {
                           {new Date(k.tanggal).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${k.jenis === 'pemasukan' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${k.jenis === 'pemasukan' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'}`}>
                             {k.jenis}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-slate-600">{k.kategori || '-'}</td>
                         <td className="px-4 py-3 text-slate-600 max-w-xs truncate">{k.deskripsi || '-'}</td>
-                        <td className={`px-4 py-3 text-right font-semibold ${k.jenis === 'pemasukan' ? 'text-emerald-600' : 'text-red-500'}`}>
+                        <td className={`px-4 py-3 text-right font-semibold ${k.jenis === 'pemasukan' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
                           {k.jenis === 'pengeluaran' ? '-' : '+'}{fmt(Number(k.jumlah))}
                         </td>
                         {canManage && (
                           <td className="px-4 py-3 flex gap-3">
-                            <button onClick={() => openEdit(k)} className="text-blue-600 hover:text-blue-800 font-medium text-xs">Edit</button>
+                            <button onClick={() => openEdit(k)} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium text-xs">Edit</button>
                             <button onClick={() => handleDelete(k.id, `${k.jenis} - ${k.kategori}`)} className="text-red-400 hover:text-red-600 font-medium text-xs">Hapus</button>
                           </td>
                         )}
@@ -776,7 +776,7 @@ export default function KeuanganPage() {
           </div>
 
           {error && (
-            <div className="p-2.5 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600">{error}</div>
+            <div className="p-2.5 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">{error}</div>
           )}
 
           <div className="flex gap-3 pt-2 border-t border-slate-100">
@@ -826,7 +826,7 @@ export default function KeuanganPage() {
           </div>
 
           {pengajuanError && (
-            <div className="p-2.5 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600">{pengajuanError}</div>
+            <div className="p-2.5 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">{pengajuanError}</div>
           )}
 
           <div className="flex gap-3 pt-2 border-t border-slate-100">
