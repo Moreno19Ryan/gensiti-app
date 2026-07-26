@@ -130,6 +130,12 @@ export default function MonitoringPage() {
 
 // ============================= TAB: KESEHATAN SISTEM (SA only) =============================
 
+interface RateLimitRow {
+  bucket_key: string
+  jumlah: number
+  hit_terakhir: string
+}
+
 interface HealthStats {
   userByTingkatan: { tingkatan: string; label: string; count: number }[]
   totalUserAktif: number
@@ -138,6 +144,7 @@ interface HealthStats {
   emailFailed: number
   emailPending: number
   sesiAktifCount: number
+  rateLimitRows: RateLimitRow[]
 }
 
 function KesehatanTab() {
@@ -147,12 +154,15 @@ function KesehatanTab() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [{ data: roleAgg }, { count: userAktif }, { count: userNonaktif }, { data: emailAgg }, { count: sesiAktif }] = await Promise.all([
+      const [{ data: roleAgg }, { count: userAktif }, { count: userNonaktif }, { data: emailAgg }, { count: sesiAktif }, { data: rateLimitData }] = await Promise.all([
         supabase.from('users').select('roles:role_id(tingkatan, nama_role)').eq('is_active', true),
         supabase.from('users').select('id', { count: 'exact', head: true }).eq('is_active', true),
         supabase.from('users').select('id', { count: 'exact', head: true }).eq('is_active', false),
         supabase.from('email_log').select('status'),
         supabase.from('users').select('id', { count: 'exact', head: true }).not('active_session_token', 'is', null).eq('is_active', true),
+        // auth_rate_limit deny-all utk authenticated (lihat GRANT-nya) -- wajib lewat RPC,
+        // beda dari query lain di atas yang bisa langsung .from() krn RLS-nya sudah mengizinkan.
+        supabase.rpc('get_rate_limit_summary', { p_window_minutes: 60 }),
       ])
 
       const tingkatanLabel: Record<string, string> = { super_admin: 'Super Admin', daerah: 'Daerah', desa: 'Desa', kelompok: 'Kelompok', ppg: 'PPG' }
@@ -181,6 +191,7 @@ function KesehatanTab() {
         emailFailed,
         emailPending,
         sesiAktifCount: sesiAktif || 0,
+        rateLimitRows: (rateLimitData as RateLimitRow[]) || [],
       })
     } catch (err) {
       console.error('Gagal memuat kesehatan sistem:', err)
@@ -207,6 +218,13 @@ function KesehatanTab() {
 
   return (
     <div className="space-y-4">
+      <div className="flex justify-end">
+        <a href="https://generus-bekasi-timur.sentry.io" target="_blank" rel="noopener noreferrer"
+          className="text-xs font-medium text-blue-600 hover:text-blue-700">
+          Buka Sentry Issues ↗
+        </a>
+      </div>
+
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
           <div className="text-2xl font-black text-blue-600">{stats.totalUserAktif}</div>
@@ -248,6 +266,23 @@ function KesehatanTab() {
             )
           })}
         </div>
+      </div>
+
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+        <h3 className="font-semibold text-slate-700 mb-1">Rate Limit -- Percobaan Terbanyak (1 Jam Terakhir)</h3>
+        <p className="text-slate-400 text-xs mb-4">Percobaan login/reset password yang tercatat rate limiter, dikelompokkan per endpoint dan IP</p>
+        {stats.rateLimitRows.length === 0 ? (
+          <p className="text-slate-400 text-sm py-4 text-center">Tidak ada aktivitas rate-limit dalam 1 jam terakhir</p>
+        ) : (
+          <div className="space-y-1.5">
+            {stats.rateLimitRows.map(row => (
+              <div key={row.bucket_key} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-50 last:border-0">
+                <span className="font-mono text-slate-600 truncate">{row.bucket_key}</span>
+                <span className="font-semibold text-slate-700 shrink-0 ml-2">{row.jumlah}&times;</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700">
