@@ -10,6 +10,7 @@ import { useFeatureAccess } from '@/lib/feature-toggles'
 import { ExportOptions, exportToPDF } from '@/lib/export'
 import ExportPreviewModal from '@/components/ExportPreviewModal'
 import LaporanBulananModal from '@/components/LaporanBulananModal'
+import { toast } from '@/lib/toast'
 
 const statusLabel: Record<string, { label: string; color: string }> = {
   upcoming: { label: 'Akan Datang', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
@@ -326,7 +327,7 @@ export default function AbsensiPage() {
         .single()
 
       if (err) {
-        alert(`Gagal menyimpan koreksi kehadiran: ${err.message}`)
+        toast.gagal(`Gagal menyimpan koreksi kehadiran: ${err.message}`)
         return
       }
       if (saved) setAbsensiMap(prev => ({ ...prev, [generusId]: saved as Absensi }))
@@ -358,7 +359,7 @@ export default function AbsensiPage() {
         p_keputusan: keputusan,
       })
       if (err) {
-        alert(`Gagal memproses pengajuan izin: ${err.message}`)
+        toast.gagal(`Gagal memproses pengajuan izin: ${err.message}`)
         return
       }
       setPengajuanIzinList(prev => prev.filter(p => p.id !== pengajuan.id))
@@ -536,7 +537,7 @@ export default function AbsensiPage() {
   }
 
   const handleOpenPreview = () => {
-    if (!selectedKegiatan || scopedGenerus.length === 0) { alert('Tidak ada data Generus untuk diexport.'); return }
+    if (!selectedKegiatan || scopedGenerus.length === 0) { toast.info('Belum ada data Generus yang bisa diexport.'); return }
     setPreviewOpen(true)
   }
 
@@ -545,7 +546,7 @@ export default function AbsensiPage() {
   // Adaptasi dari sheet "PRINT ABSEN" pada laporan Excel PPG (5. JULI.xlsx) yang user
   // tunjukkan -- di sana formatnya per Kelompok dalam satu Desa, kolom H/I/A kosong siap cetak.
   const handlePrintLembarKosong = async () => {
-    if (!selectedKegiatan || scopedGenerus.length === 0) { alert('Tidak ada data Generus untuk dicetak.'); return }
+    if (!selectedKegiatan || scopedGenerus.length === 0) { toast.info('Belum ada data Generus yang bisa dicetak.'); return }
     const rows = scopedGenerus
       .slice()
       .sort((a, b) => (a.users?.nama_lengkap || '').localeCompare(b.users?.nama_lengkap || ''))

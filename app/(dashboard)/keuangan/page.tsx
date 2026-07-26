@@ -10,6 +10,8 @@ import { logAudit } from '@/lib/audit'
 import { isGenerusBiasa, isBendahara, canAjukanReimbursement } from '@/lib/roles'
 import { useFeatureAccess } from '@/lib/feature-toggles'
 import { ExportOptions } from '@/lib/export'
+import { toast } from '@/lib/toast'
+import { konfirmasi } from '@/lib/konfirmasi'
 
 interface DesaOpt { id: string; nama_desa: string }
 interface KelompokOpt { id: string; nama_kelompok: string; desa_id: string }
@@ -225,10 +227,19 @@ export default function KeuanganPage() {
   }
 
   const handleDelete = async (id: string, desc?: string) => {
-    if (!confirm('Hapus transaksi ini?')) return
+    const setuju = await konfirmasi({
+      judul: 'Hapus transaksi?',
+      pesan: desc
+        ? `Transaksi "${desc}" akan dihapus permanen dan tidak bisa dikembalikan.`
+        : 'Transaksi ini akan dihapus permanen dan tidak bisa dikembalikan.',
+      labelYa: 'Ya, Hapus',
+      destruktif: true,
+    })
+    if (!setuju) return
     const { error: err } = await supabase.from('keuangan').delete().eq('id', id)
-    if (err) { alert(`Gagal menghapus transaksi: ${err.message}`); return }
+    if (err) { toast.gagal(`Gagal menghapus transaksi: ${err.message}`); return }
     if (user) await logAudit(user, 'DELETE', 'Keuangan', desc || id, {}, id)
+    toast.sukses('Transaksi berhasil dihapus.')
     loadData()
   }
 
@@ -281,7 +292,12 @@ export default function KeuanganPage() {
   // keuangan (sbg pengeluaran) & kirim notifikasi in-app ke pengaju, dalam satu transaksi
   // atomik di database (bukan 2 langkah terpisah dari client yang rawan gagal separuh jalan).
   const handleAcc = async (p: PengajuanReimbursement) => {
-    if (!confirm(`Setujui pengajuan reimbursement Rp${p.jumlah.toLocaleString('id-ID')} ini? Transaksi akan otomatis tercatat di Keuangan.`)) return
+    const setuju = await konfirmasi({
+      judul: 'Setujui reimbursement?',
+      pesan: `Pengajuan sebesar Rp${p.jumlah.toLocaleString('id-ID')} akan disetujui, dan transaksinya otomatis tercatat sebagai pengeluaran di Keuangan.`,
+      labelYa: 'Ya, Setujui',
+    })
+    if (!setuju) return
     setProcessingId(p.id)
     try {
       const { error: err } = await supabase.rpc('proses_reimbursement', {
@@ -289,8 +305,9 @@ export default function KeuanganPage() {
         p_keputusan: 'disetujui',
         p_catatan: null,
       })
-      if (err) { alert(`Gagal menyetujui pengajuan: ${err.message}`); return }
+      if (err) { toast.gagal(`Gagal menyetujui pengajuan: ${err.message}`); return }
       if (user) await logAudit(user, 'UPDATE', 'Pengajuan Reimbursement', `Disetujui -- ${p.kategori} - Rp${p.jumlah}`, undefined, p.id)
+      toast.sukses(`Reimbursement Rp${p.jumlah.toLocaleString('id-ID')} disetujui dan sudah tercatat di Keuangan.`)
       loadPengajuan()
       loadData()
     } finally {
@@ -312,8 +329,9 @@ export default function KeuanganPage() {
         p_keputusan: 'ditolak',
         p_catatan: tolakCatatan || null,
       })
-      if (err) { alert(`Gagal menolak pengajuan: ${err.message}`); return }
+      if (err) { toast.gagal(`Gagal menolak pengajuan: ${err.message}`); return }
       if (user) await logAudit(user, 'UPDATE', 'Pengajuan Reimbursement', `Ditolak -- ${tolakTarget.kategori} - Rp${tolakTarget.jumlah}`, undefined, tolakTarget.id)
+      toast.sukses('Pengajuan ditolak. Pengaju otomatis mendapat notifikasi.')
       setTolakTarget(null)
       loadPengajuan()
     } finally {

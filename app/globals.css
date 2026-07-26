@@ -237,8 +237,56 @@ body {
 .animate-page-in {
   animation: page-fade-in 260ms ease-out;
 }
+
+/* Toast (components/ToastHost.tsx) & dialog konfirmasi (components/KonfirmasiHost.tsx).
+   Durasi sengaja pendek (180-220ms) dengan easing "keluar-cepat, mendarat-lembut"
+   (cubic-bezier di bawah setara ease-out yang sedikit memantul di ujung) -- gerakan yang
+   terlalu lama justru membuat aplikasi TERASA lambat, bukan canggih. Toast meluncur naik
+   sedikit saja (8px), bukan melayang jauh dari tepi layar. */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-toast-in {
+  animation: toast-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+.animate-dialog-in {
+  animation: dialog-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in {
+  animation: fade-in 180ms ease-out;
+}
+
+/* Satu blok reduced-motion untuk SEMUA animasi di atas -- pengguna yang menyalakan
+   "kurangi gerakan" di OS-nya tetap mendapat seluruh fungsionalitas, hanya tanpa
+   transisi. Konsisten dengan komitmen aksesibilitas di B4 (menu Pengaturan). */
 @media (prefers-reduced-motion: reduce) {
-  .animate-page-in {
+  .animate-page-in,
+  .animate-toast-in,
+  .animate-dialog-in,
+  .animate-fade-in {
     animation: none;
   }
 }
