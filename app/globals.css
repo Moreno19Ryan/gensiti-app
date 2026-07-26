@@ -137,6 +137,63 @@
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4) !important;
 }
 
+/* Ukuran Teks (aksesibilitas, menu Pengaturan) -- lib/accessibility.ts menaruh salah satu
+   class ini di <html>. Scaling font-size ROOT saja, bukan tiap kelas Tailwind satu-satu --
+   semua ukuran teks Tailwind (text-sm/base/lg/dst) berbasis rem, jadi otomatis ikut membesar
+   proporsional tanpa perlu sentuh tiap komponen. */
+html.text-size-besar {
+  font-size: 112.5%;
+}
+html.text-size-lebih-besar {
+  font-size: 125%;
+}
+
+/* Kontras Tinggi (aksesibilitas, menu Pengaturan) -- lib/accessibility.ts menaruh class
+   .high-contrast di <html>, independen dari .dark (bisa dipakai bareng mode terang ATAU
+   gelap). Menajamkan teks & border yang di mode normal sengaja dibuat lembut (abu-abu
+   pastel) supaya lebih mudah dibaca pengguna dengan penglihatan terbatas. Selector 2-3
+   class (mis. .high-contrast.dark .text-slate-800) sengaja dibuat LEBIH SPESIFIK dari
+   aturan .dark biasa di atas supaya menang saat keduanya aktif bersamaan. */
+.high-contrast:not(.dark) body {
+  color: #000000;
+}
+.high-contrast:not(.dark) .text-slate-800,
+.high-contrast:not(.dark) .text-slate-700 {
+  color: #000000 !important;
+}
+.high-contrast:not(.dark) .text-slate-600,
+.high-contrast:not(.dark) .text-slate-500,
+.high-contrast:not(.dark) .text-slate-400 {
+  color: #1e293b !important;
+}
+.high-contrast:not(.dark) .border-slate-100,
+.high-contrast:not(.dark) .border-slate-200 {
+  border-color: #000000 !important;
+}
+
+.high-contrast.dark body {
+  color: #ffffff;
+}
+.high-contrast.dark .text-slate-100,
+.high-contrast.dark .text-slate-800 {
+  color: #ffffff !important;
+}
+.high-contrast.dark .text-slate-700,
+.high-contrast.dark .text-slate-600,
+.high-contrast.dark .text-slate-500,
+.high-contrast.dark .text-slate-400 {
+  color: #e2e8f0 !important;
+}
+.high-contrast.dark .border-slate-100,
+.high-contrast.dark .border-slate-200 {
+  border-color: #ffffff !important;
+}
+
+.high-contrast *:focus-visible {
+  outline: 3px solid #2563eb !important;
+  outline-offset: 2px !important;
+}
+
 
 :root {
   --background: #f1f5f9;
