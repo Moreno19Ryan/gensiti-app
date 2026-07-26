@@ -151,14 +151,14 @@ export default function PengaturanFiturPage() {
         <p className="text-slate-400 text-sm">Aktifkan atau nonaktifkan menu tertentu per jenjang role</p>
       </div>
 
-      <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs leading-relaxed">
+      <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs leading-relaxed dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300">
         <strong>Perhatian:</strong> toggle berlaku per JENJANG wilayah (Daerah/Desa/Kelompok/PPG), bukan per jabatan.
         Mematikan sebuah menu untuk jenjang Kelompok akan berdampak ke <strong>semua orang</strong> di jenjang itu --
         termasuk Ketua Kelompok maupun Generus biasa yang biasanya bisa melihat menu tersebut (mis. Kegiatan, Pengumuman, Dokumen, Absensi).
         Toggle ini tidak berlaku untuk Super Admin.
       </div>
 
-      {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
+      {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">{error}</div>}
 
       {loading ? (
         <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
