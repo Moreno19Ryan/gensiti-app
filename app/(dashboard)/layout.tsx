@@ -12,6 +12,8 @@ import { useDarkMode } from '@/lib/dark-mode'
 import { useTextSize, useHighContrast } from '@/lib/accessibility'
 import GlobalSearch from '@/components/GlobalSearch'
 import LoadingSpinner from '@/components/LoadingSpinner'
+import ToastHost from '@/components/ToastHost'
+import KonfirmasiHost from '@/components/KonfirmasiHost'
 
 interface NavItem {
   href: string
@@ -420,6 +422,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {children}
         </div>
       </main>
+
+      {/* Dipasang sekali di sini -- semua halaman cukup memanggil toast.*() dari
+          lib/toast.ts dan konfirmasi() dari lib/konfirmasi.ts, tanpa perlu provider
+          atau state modal sendiri. */}
+      <ToastHost />
+      <KonfirmasiHost />
     </div>
   )
 }

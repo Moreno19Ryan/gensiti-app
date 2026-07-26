@@ -8,6 +8,8 @@ import Modal from '@/components/Modal'
 import { logAudit } from '@/lib/audit'
 import { canManageKontenOrganisasi } from '@/lib/roles'
 import { useFeatureAccess } from '@/lib/feature-toggles'
+import { toast } from '@/lib/toast'
+import { konfirmasi } from '@/lib/konfirmasi'
 
 interface DesaOpt { id: string; nama_desa: string }
 interface KelompokOpt { id: string; nama_kelompok: string; desa_id: string }
@@ -136,10 +138,23 @@ export default function PengumumanPage() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Hapus pengumuman ini?')) return
     const target = data.find(p => p.id === id)
-    await supabase.from('pengumuman').delete().eq('id', id)
+    const setuju = await konfirmasi({
+      judul: 'Hapus pengumuman?',
+      pesan: target?.judul
+        ? `Pengumuman "${target.judul}" akan dihapus permanen dan tidak lagi tampil bagi siapa pun.`
+        : 'Pengumuman ini akan dihapus permanen dan tidak lagi tampil bagi siapa pun.',
+      labelYa: 'Ya, Hapus',
+      destruktif: true,
+    })
+    if (!setuju) return
+    // Error dari delete sebelumnya SENGAJA diabaikan di sini (tidak dicek sama sekali),
+    // sehingga penghapusan yang ditolak RLS tetap terlihat "berhasil" bagi pengguna --
+    // ikut dibenahi saat mengganti confirm() bawaan browser.
+    const { error: err } = await supabase.from('pengumuman').delete().eq('id', id)
+    if (err) { toast.gagal(`Gagal menghapus pengumuman: ${err.message}`); return }
     if (user) await logAudit(user, 'DELETE', 'Pengumuman', target?.judul || id, undefined, id)
+    toast.sukses('Pengumuman berhasil dihapus.')
     loadData()
   }
 

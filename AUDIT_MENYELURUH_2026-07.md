@@ -9,9 +9,10 @@ project production `ccyqgcfjmzgkmkczuydv`, query `pg_proc`/`pg_policy`/
 `cron.job` sungguhan, dan grep atas isi repo. Bukan tebakan atau hasil baca
 sekilas. Query pembuktiannya disertakan supaya bisa dicek ulang.
 
-**Tidak ada satu pun perubahan yang diterapkan oleh dokumen ini.** Semua
-perbaikan database menunggu persetujuan eksplisit Reno per-perubahan
-(CLAUDE.md guardrail #3).
+**Status perubahan:** satu perbaikan keamanan (§1) sudah diterapkan **setelah
+persetujuan eksplisit Reno**, lengkap dengan bukti verifikasi sesudahnya.
+Semua temuan lain masih berupa rekomendasi dan **belum disentuh** — menunggu
+persetujuan per-perubahan sesuai CLAUDE.md guardrail #3.
 
 ---
 
@@ -20,7 +21,7 @@ perbaikan database menunggu persetujuan eksplisit Reno per-perubahan
 | Lapisan | Status | Catatan |
 |---|---|---|
 | **RLS coverage** | 🟢 Sangat baik | 24/24 tabel `public` punya RLS aktif. Tidak ada tabel telanjang. |
-| **Otorisasi RPC** | 🔴 **1 lubang nyata** | 3 fungsi cron bisa dipanggil publik → vektor spam email/push |
+| **Otorisasi RPC** | ✅ **Sudah ditutup** | 3 fungsi cron sempat bisa dipanggil publik → sudah diperbaiki & diverifikasi (§1) |
 | **Performa DB** | 🟡 Wajar untuk 82 user | 7 policy re-evaluasi `auth.uid()` per baris, 155 policy tumpang tindih |
 | **UI/UX** | 🟠 **Ini gap terbesar** | 16 dialog native `alert()`/`confirm()`, modal tanpa a11y, nol skeleton |
 | **Fondasi visual** | 🟢 Sudah baik | Dark mode 100%, aksesibilitas (B4), transisi di 35 file |
@@ -95,24 +96,49 @@ bekerja setiap kali ada approval yang menggantung.
 > itu, tapi lalai memeriksa siapa yang boleh **memanggil** fungsinya. Ini
 > kelas bug yang berbeda, dan saya melewatkannya.
 
-### Perbaikan yang diusulkan
+### Perbaikan — ✅ SUDAH DITERAPKAN (migrasi `kunci_fungsi_reminder_cron_dari_publik`)
 
-Semua cron berjalan sebagai `postgres` (diverifikasi lewat `cron.job` —
-kelima job memakai `username: postgres`), jadi mencabut hak `anon`/
-`authenticated` **tidak akan mengganggu penjadwalan sama sekali**:
+> **Jebakan yang hampir terlewat.** Usulan awal saya di draf dokumen ini
+> adalah `REVOKE EXECUTE ... FROM anon, authenticated`. **Itu tidak akan
+> berfungsi.** Pemeriksaan `p.proacl` menunjukkan ketiga fungsi bernilai
+> `NULL` — artinya memakai *default privilege* Postgres, dan default untuk
+> fungsi adalah `EXECUTE TO PUBLIC`. Jadi `anon` mendapat haknya **lewat
+> `PUBLIC`, bukan lewat grant langsung**. Perintah `REVOKE ... FROM anon`
+> akan berjalan sukses tanpa error sama sekali, tapi tidak mencabut apa pun —
+> jenis perbaikan palsu yang paling berbahaya, karena terlihat berhasil.
+>
+> Petunjuknya ada di database sendiri: `notify_email` sudah benar dengan ACL
+> eksplisit `postgres=X/postgres | service_role=X/postgres`, yang hanya bisa
+> terbentuk kalau `PUBLIC` dicabut.
+
+SQL yang benar-benar dijalankan:
 
 ```sql
-REVOKE EXECUTE ON FUNCTION public.send_reminder_approval_kegiatan_pengumuman() FROM anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.send_reminder_approval_reimbursement()       FROM anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.send_reminder_backup_belum_dilakukan()       FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.send_reminder_approval_kegiatan_pengumuman() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.send_reminder_approval_reimbursement()       FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.send_reminder_backup_belum_dilakukan()       FROM PUBLIC, anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION public.send_reminder_approval_kegiatan_pengumuman() TO service_role;
+GRANT EXECUTE ON FUNCTION public.send_reminder_approval_reimbursement()       TO service_role;
+GRANT EXECUTE ON FUNCTION public.send_reminder_backup_belum_dilakukan()       TO service_role;
 ```
 
-Risiko: **sangat rendah**. Tidak ada kode aplikasi yang memanggil ketiganya —
-`grep -rn "send_reminder" app lib components` hanya menemukan **satu
-komentar** di `app/api/backup/route.ts:77`, bukan pemanggilan sungguhan.
-Mudah di-rollback dengan `GRANT` kalau ternyata keliru.
+`GRANT` ke `service_role` sengaja ditambahkan agar polanya **identik** dengan
+`notify_email`/`notify_push` di subsistem yang sama — konsisten, dan kalau
+nanti ada tombol admin "kirim reminder sekarang" lewat API route service-role,
+tidak perlu migrasi ulang. Keamanannya tidak berkurang: service-role key
+hanya ada di server, tidak pernah dikirim ke browser.
 
-**Status: MENUNGGU PERSETUJUAN RENO.** Tidak saya jalankan.
+**Hasil verifikasi setelah diterapkan** (tiga sudut independen):
+
+| Bukti | Hasil |
+|---|---|
+| `has_function_privilege('anon', ...)` | `false` untuk ketiganya |
+| `proacl` sekarang | `postgres=X/postgres \| service_role=X/postgres` |
+| Pembanding: 2 fungsi reminder yang memang sudah benar sejak awal | ACL **identik** — konfirmasi kondisi target tepat |
+| Advisor Supabase `anon_security_definer_function_executable` | 28 → **25** (tepat −3) |
+| Advisor `authenticated_security_definer_function_executable` | 54 → **51** (tepat −3) |
+| `cron.job` | kelima job tetap `active: true`, tetap `username: postgres` |
 
 ---
 
@@ -303,8 +329,8 @@ Diurutkan berdasarkan (dampak ÷ risiko), bukan berdasarkan besarnya usaha.
 
 | # | Pekerjaan | Dampak | Risiko | Butuh persetujuan? |
 |---|---|---|---|---|
-| **1** | Cabut EXECUTE 3 fungsi cron (§1) | Tutup lubang nyata | Sangat rendah | ✅ **Ya — DB production** |
-| **2** | Toast + dialog konfirmasi berstyle, ganti 16 `alert`/`confirm` | Paling terlihat | Rendah | Tidak (murni kode) |
+| ~~1~~ | ~~Cabut EXECUTE 3 fungsi cron (§1)~~ | ✅ **SELESAI** — disetujui & diverifikasi | — | — |
+| ~~2~~ | ~~Toast + dialog konfirmasi berstyle, ganti 16 `alert`/`confirm`~~ | ✅ **SELESAI** — lihat §7 | — | — |
 | **3** | `Modal.tsx`: focus trap, Escape, `role="dialog"` | Melengkapi B4 | Rendah | Tidak |
 | **4** | Skeleton loader di halaman utama | "Efek menyenangkan" | Nol | Tidak |
 | **5** | `SET search_path` 2 fungsi presensi (§2a) | Kebersihan | Rendah | ✅ **Ya — DB production** |
@@ -330,6 +356,56 @@ Usulan saya: **kualitas gerakan, bukan kuantitas.** Toast yang meluncur
 mulus + skeleton yang berdenyut halus + modal yang muncul dengan skala
 lembut akan terasa jauh lebih canggih daripada sepuluh elemen yang
 bergerak bersamaan.
+
+---
+
+## 7. ✅ Yang sudah dikerjakan dari audit ini
+
+### §1 — Lubang keamanan RPC (migrasi `kunci_fungsi_reminder_cron_dari_publik`)
+
+Sudah diterapkan & diverifikasi. Detail lengkap beserta jebakan `PUBLIC` yang
+hampir terlewat ada di §1 di atas.
+
+### Fondasi UX — toast + dialog konfirmasi
+
+Menggantikan **seluruh 16** `alert()`/`confirm()` bawaan browser. Berkas baru:
+
+| Berkas | Peran |
+|---|---|
+| `lib/toast.ts` | Store toast (module-level + `useSyncExternalStore`) |
+| `lib/konfirmasi.ts` | Dialog konfirmasi berbasis Promise |
+| `components/ToastHost.tsx` | Penampil toast, dipasang sekali di layout |
+| `components/KonfirmasiHost.tsx` | Penampil dialog, lengkap dengan a11y |
+
+**Keputusan desain yang penting:** store-nya dibuat di level modul (meniru
+`lib/dark-mode.ts`), bukan React Context. Konsekuensinya `toast.gagal(x)` bisa
+dipanggil dari event handler mana pun tanpa hook dan tanpa provider — sehingga
+mengganti `alert(x)` benar-benar penggantian satu baris, bukan refactor
+struktural di lima halaman. `konfirmasi()` berbasis Promise dengan alasan yang
+sama: `if (!confirm(...))` cukup jadi `if (!await konfirmasi({...}))`.
+
+**Yang ikut membaik selain tampilan:**
+
+- **Mode Gelap tidak lagi bolong.** Sebelumnya 16 titik itu memaksa kotak putih
+  menyilaukan ke pengguna tema gelap — di situ kerja B3 praktis batal.
+- **Hierarki aksi.** Prop `destruktif` membedakan "Hapus permanen" (merah,
+  ikon peringatan) dari "Setujui reimbursement" (biru). Sebelumnya keduanya
+  tampil identik sebagai kotak abu-abu sistem.
+- **Pesan konfirmasi jadi spesifik.** Dari `"Hapus dokumen ini?"` menjadi
+  `"Dokumen \"Laporan Juni\" akan dihapus permanen dan tidak bisa dikembalikan."`
+- **Umpan balik sukses.** Sebelumnya aksi berhasil sama sekali senyap —
+  pengguna tidak tahu apakah tindakannya berhasil kecuali menebak dari daftar
+  yang berubah.
+- **Aksesibilitas dialog** — `role="dialog"`, `aria-modal`, focus trap,
+  tutup dengan Escape, dan pengembalian fokus. Pola di `KonfirmasiHost.tsx`
+  sengaja dibuat sebagai rujukan untuk membenahi `Modal.tsx` (item #3).
+- **Bug ikutan yang ditemukan & diperbaiki:** `pengumuman/page.tsx` sama
+  sekali tidak memeriksa error saat menghapus, sehingga penghapusan yang
+  ditolak RLS tetap terlihat "berhasil" bagi pengguna.
+
+Animasi sengaja ditahan di 180–220ms dengan easing `cubic-bezier(0.16, 1, 0.3, 1)`
+dan seluruhnya dinonaktifkan di bawah `prefers-reduced-motion` — konsisten
+dengan komitmen aksesibilitas B4.
 
 ---
 

@@ -7,6 +7,8 @@ import { logAudit } from '@/lib/audit'
 import { isGenerusBiasa, canManageKontenOrganisasi } from '@/lib/roles'
 import { useFeatureAccess } from '@/lib/feature-toggles'
 import Modal from '@/components/Modal'
+import { toast } from '@/lib/toast'
+import { konfirmasi } from '@/lib/konfirmasi'
 
 interface Dokumen {
   id: string
@@ -178,10 +180,19 @@ export default function DokumenPage() {
   }
 
   const handleDelete = async (id: string, judul?: string) => {
-    if (!confirm('Hapus dokumen ini?')) return
+    const setuju = await konfirmasi({
+      judul: 'Hapus dokumen?',
+      pesan: judul
+        ? `Dokumen "${judul}" akan dihapus permanen dan tidak bisa dikembalikan.`
+        : 'Dokumen ini akan dihapus permanen dan tidak bisa dikembalikan.',
+      labelYa: 'Ya, Hapus',
+      destruktif: true,
+    })
+    if (!setuju) return
     const { error: err } = await supabase.from('dokumen').delete().eq('id', id)
-    if (err) { alert(`Gagal menghapus dokumen: ${err.message}`); return }
+    if (err) { toast.gagal(`Gagal menghapus dokumen: ${err.message}`); return }
     if (user) await logAudit(user, 'DELETE', 'Dokumen', judul || id, {}, id)
+    toast.sukses('Dokumen berhasil dihapus.')
     loadData()
   }
 

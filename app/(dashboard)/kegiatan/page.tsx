@@ -12,6 +12,8 @@ import Modal from '@/components/Modal'
 import PresensiPanel from '@/components/PresensiPanel'
 import PengajuanIzinPanel from '@/components/PengajuanIzinPanel'
 import { exportToPDF, exportToExcel } from '@/lib/export'
+import { toast } from '@/lib/toast'
+import { konfirmasi } from '@/lib/konfirmasi'
 
 interface DesaOpt { id: string; nama_desa: string }
 interface KelompokOpt { id: string; nama_kelompok: string; desa_id: string }
@@ -266,11 +268,20 @@ export default function KegiatanPage() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Hapus kegiatan ini?')) return
     const target = data.find(k => k.id === id)
+    const setuju = await konfirmasi({
+      judul: 'Hapus kegiatan?',
+      pesan: target?.nama_kegiatan
+        ? `Kegiatan "${target.nama_kegiatan}" akan dihapus permanen, beserta data presensi yang menempel padanya.`
+        : 'Kegiatan ini akan dihapus permanen, beserta data presensi yang menempel padanya.',
+      labelYa: 'Ya, Hapus',
+      destruktif: true,
+    })
+    if (!setuju) return
     const { error: err } = await supabase.from('kegiatan').delete().eq('id', id)
-    if (err) { alert(`Gagal menghapus kegiatan: ${err.message}`); return }
+    if (err) { toast.gagal(`Gagal menghapus kegiatan: ${err.message}`); return }
     if (user) await logAudit(user, 'DELETE', 'Kegiatan', target?.nama_kegiatan || id, undefined, id)
+    toast.sukses('Kegiatan berhasil dihapus.')
     loadData()
   }
 
@@ -349,7 +360,7 @@ export default function KegiatanPage() {
   }
 
   const handleExportPDF = async () => {
-    if (filtered.length === 0) { alert('Tidak ada data untuk diexport.'); return }
+    if (filtered.length === 0) { toast.info('Belum ada data yang bisa diexport.'); return }
     setExporting(true)
     try {
       exportToPDF({
@@ -366,7 +377,7 @@ export default function KegiatanPage() {
   }
 
   const handleExportExcel = async () => {
-    if (filtered.length === 0) { alert('Tidak ada data untuk diexport.'); return }
+    if (filtered.length === 0) { toast.info('Belum ada data yang bisa diexport.'); return }
     setExporting(true)
     try {
       await exportToExcel({
