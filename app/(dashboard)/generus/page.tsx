@@ -12,6 +12,7 @@ import { RFID_PRESENSI_READY } from '@/lib/rfid'
 import Modal from '@/components/Modal'
 import PasswordInput from '@/components/PasswordInput'
 import { exportToPDF, exportToExcel } from '@/lib/export'
+import { SkeletonTable } from '@/components/Skeleton'
 
 interface Member {
   id: string
@@ -822,9 +823,7 @@ export default function DataGenerusPage() {
       </div>
 
       {loading ? (
-        <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
-          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
-        </div>
+        <SkeletonTable kolom={['Pengguna', 'No. Generus', 'Role', 'Desa / Kelompok', 'Status', 'Aksi']} />
       ) : filtered.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
           <div className="text-4xl mb-2">👥</div>
