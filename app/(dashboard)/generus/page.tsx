@@ -233,13 +233,17 @@ export default function DataGenerusPage() {
       else if (user?.desa_id) query = query.eq('desa_id', user.desa_id)
     }
 
-    // CATATAN: filter super_admin SENGAJA TIDAK dilakukan di query PostgREST (filter negasi
-    // pada embedded resource/relasi nested terbukti mengecualikan SEMUA baris di production).
-    // Dilakukan murni di client, yang cukup krn hasil query tetap dibatasi scope di atas.
+    // CATATAN: filter super_admin & ppg SENGAJA TIDAK dilakukan di query PostgREST (filter
+    // negasi pada embedded resource/relasi nested terbukti mengecualikan SEMUA baris di
+    // production). Dilakukan murni di client, yang cukup krn hasil query tetap dibatasi
+    // scope di atas. PPG dikecualikan dari daftar di sini krn sudah punya halaman
+    // manajemen akun+biodata sendiri yang lengkap (menu "Data Pembina") -- sebelumnya PPG
+    // ikut muncul di sini juga (peninggalan dari sebelum "Data Pembina" jadi menu mandiri),
+    // menyebabkan akun PPG bisa "dikelola ganda" dari 2 tempat berbeda yang membingungkan.
     const { data: rows, error: err } = await query
     if (err) console.error('Pengguna load error:', err)
     const filteredRows = (rows as unknown as Member[])?.filter(
-      m => m.roles?.tingkatan !== 'super_admin'
+      m => m.roles?.tingkatan !== 'super_admin' && m.roles?.tingkatan !== 'ppg'
     ) || []
     setData(filteredRows)
     setLoading(false)
