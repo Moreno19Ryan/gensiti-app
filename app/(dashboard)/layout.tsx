@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase'
 import { isGenerusBiasa, canManageMembers as checkCanManageMembers, canManagePresensi as checkCanManagePresensi, isTeamIT } from '@/lib/roles'
 import { loadFeatureToggles, isFeatureEnabled, FeatureToggle } from '@/lib/feature-toggles'
 import { useDarkMode } from '@/lib/dark-mode'
+import { useTextSize, useHighContrast } from '@/lib/accessibility'
 import GlobalSearch from '@/components/GlobalSearch'
 import LoadingSpinner from '@/components/LoadingSpinner'
 
@@ -77,6 +78,11 @@ const navItems: NavItem[] = [
   { href: '/pengumuman', label: 'Pengumuman', icon: '📢', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], menuKey: 'pengumuman' },
   { href: '/dokumen', label: 'Dokumen', icon: '📁', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], menuKey: 'dokumen' },
   { href: '/notifikasi', label: 'Notifikasi', icon: '🔔', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
+  // Pengaturan -- konsolidasi preferensi tampilan/aksesibilitas aplikasi (Mode Gelap, Ukuran
+  // Teks, Kontras Tinggi, Ganti Bahasa, Versi Aplikasi). Terbuka utk semua jenjang termasuk
+  // Generus biasa (sama seperti Notifikasi) -- tidak ada menuKey krn ini bukan menu data
+  // organisasi yang perlu bisa dimatikan Super Admin per jenjang.
+  { href: '/pengaturan', label: 'Pengaturan', icon: '⚙️', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
   // "Organisasi & Role" -- gabungan Desa/Kelompok (dulu /organisasi) + Role (dulu tab di
   // menu "Administrasi Sistem" yang sudah dihapus) supaya semua master data struktural ada
   // di satu menu. Tetap eksklusif Super Admin.
@@ -101,6 +107,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [darkMode, toggleDarkMode] = useDarkMode()
+  // Text size & kontras tinggi TIDAK punya toggle di topbar (kontrolnya ada di halaman
+  // /pengaturan) -- tapi hook-nya tetap dipanggil di sini supaya class-nya di <html>
+  // langsung diterapkan begitu dashboard mount, sama seperti Mode Gelap, terlepas dari
+  // halaman mana yang pertama kali dibuka.
+  useTextSize()
+  useHighContrast()
   const [confirmLogout, setConfirmLogout] = useState(false)
   // Mode Perawatan Sistem -- null = belum dicek (jangan render apapun dulu supaya non-SA
   // tidak sempat "mengintip" dashboard sebelum redirect). Super Admin dikecualikan total

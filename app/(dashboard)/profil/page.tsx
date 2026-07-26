@@ -7,7 +7,6 @@ import { supabase } from '@/lib/supabase'
 import { authFetch, signOut } from '@/lib/auth'
 import Modal from '@/components/Modal'
 import ProfilHeader from '@/components/ProfilHeader'
-import { useDarkMode } from '@/lib/dark-mode'
 import type { UserIdentity } from '@supabase/supabase-js'
 
 const APP_VERSION = '0.1.0'
@@ -57,8 +56,11 @@ function ListItem({ href, icon, iconBg, iconColor, label, value, badge, disabled
 // Halaman overview Profil -- gaya "Settings" mobile (kartu berisi daftar link/toggle),
 // bukan lagi tab tunggal. Sub-fitur yang butuh form/edit lebih dalam (Edit Profil, Data
 // Diri, Ganti Password, Riwayat Absensi, Notifikasi) dipindah ke halaman /profil/* masing-
-// masing -- HANYA Akun Google, foto profil, Mode Gelap, dan Keluar Aplikasi yang tetap
-// inline di sini (lihat komentar masing-masing kenapa).
+// masing -- HANYA Akun Google, foto profil, dan Keluar Aplikasi yang tetap inline di sini
+// (lihat komentar masing-masing kenapa). Mode Gelap, Ukuran Teks, Kontras Tinggi, Bahasa,
+// dan Versi Aplikasi sudah dipindah ke menu "Pengaturan" tersendiri (app/(dashboard)/
+// pengaturan/page.tsx) supaya semua preferensi tampilan aplikasi terkumpul di satu tempat,
+// terpisah dari halaman ini yang fokus ke data akun pribadi.
 export default function ProfilPage() {
   const { user, refresh } = useUser()
   const isSuperAdmin = user?.role?.tingkatan === 'super_admin'
@@ -81,11 +83,6 @@ export default function ProfilPage() {
   const [unlinkConfirm, setUnlinkConfirm] = useState(false)
   const [unlinking, setUnlinking] = useState(false)
 
-  // Mode Gelap -- pakai hook bersama lib/dark-mode.ts (useSyncExternalStore) supaya toggle
-  // dari sini ATAU dari ikon di layout.tsx (kanan atas) selalu sinkron real-time, tidak perlu
-  // reload. Sebelumnya masing-masing punya useState terpisah yang cuma baca localStorage
-  // sekali saat mount -- toggle di satu tempat tidak membuat yang lain re-render.
-  const [darkMode, toggleDarkMode] = useDarkMode()
   const [confirmLogout, setConfirmLogout] = useState(false)
 
   const loadGenerus = async (userId: string) => {
@@ -379,18 +376,15 @@ export default function ProfilPage() {
       <div>
         <p className="text-[12px] font-bold text-slate-400 uppercase tracking-wide px-1.5 pb-2">Preferensi</p>
         <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-[18px] divide-y divide-slate-100 dark:divide-slate-700 overflow-hidden">
-          <div className="flex items-center gap-3 px-4 py-3.5">
-            <div className="w-8 h-8 rounded-[9px] flex items-center justify-center shrink-0 bg-[#F0EBFB] dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z" /></svg>
-            </div>
-            <span className="flex-1 text-sm font-semibold text-slate-800 dark:text-slate-100">Mode Gelap</span>
-            <button
-              type="button" onClick={toggleDarkMode}
-              className={`shrink-0 relative w-11 h-6 rounded-full transition-colors ${darkMode ? 'bg-blue-600' : 'bg-slate-200 dark:bg-slate-600'}`}
-            >
-              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${darkMode ? 'translate-x-5' : 'translate-x-0'}`} />
-            </button>
-          </div>
+          {/* Mode Gelap, Ukuran Teks, Kontras Tinggi, Bahasa, dan Versi Aplikasi pindah ke
+              menu "Pengaturan" tersendiri -- link ini murni supaya tetap mudah ditemukan dari
+              halaman Profil. */}
+          <ListItem
+            href="/pengaturan"
+            iconBg="bg-[#F0EBFB] dark:bg-purple-900/30" iconColor="text-purple-600 dark:text-purple-400"
+            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" /></svg>}
+            label="Tampilan & Aksesibilitas"
+          />
           {!isSuperAdmin && (
             <ListItem
               href="/profil/notifikasi"
@@ -399,21 +393,11 @@ export default function ProfilPage() {
               label="Notifikasi"
             />
           )}
-          {/* Bahasa -- placeholder, belum ada fitur multi-bahasa (aplikasi ini sepenuhnya
-              berbahasa Indonesia). Ditampilkan disabled dgn badge "Segera hadir" drpd
-              dihilangkan total, sesuai keputusan produk. */}
-          <ListItem
-            iconBg="bg-slate-100 dark:bg-slate-700" iconColor="text-slate-500 dark:text-slate-400"
-            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9Z" /></svg>}
-            label="Bahasa"
-            value="Indonesia"
-            badge="Segera hadir"
-            disabled
-          />
         </div>
       </div>
 
-      {/* Kartu Tentang -- Bantuan & FAQ juga placeholder (belum ada halaman bantuan). */}
+      {/* Kartu Tentang -- Bantuan & FAQ juga placeholder (belum ada halaman bantuan). Versi
+          Aplikasi pindah ke menu Pengaturan (lihat kartu Preferensi di atas). */}
       <div>
         <p className="text-[12px] font-bold text-slate-400 uppercase tracking-wide px-1.5 pb-2">Tentang</p>
         <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-[18px] divide-y divide-slate-100 dark:divide-slate-700 overflow-hidden">
@@ -423,12 +407,6 @@ export default function ProfilPage() {
             label="Bantuan & FAQ"
             badge="Segera hadir"
             disabled
-          />
-          <ListItem
-            iconBg="bg-slate-100 dark:bg-slate-700" iconColor="text-slate-500 dark:text-slate-400"
-            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2 4 5v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V5l-8-3Z" /></svg>}
-            label="Versi Aplikasi"
-            value={APP_VERSION}
           />
         </div>
       </div>
