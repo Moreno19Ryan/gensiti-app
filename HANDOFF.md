@@ -61,6 +61,48 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 24 Juli 2026 (lanjutan 2) — A1, A3 (Opsi B), A2/A7 dari `WISHLIST_ASSESSMENT.md`
+
+Urutan disepakati lewat sesi strategi Claude.ai: item ringan/berisiko-tinggi-
+kalau-ditunda dulu (A1), baru item yang butuh keputusan tools (A3), baru item
+"nice to have" (A2 sisa). Detail lengkap tiap item + status di
+[WISHLIST_ASSESSMENT.md §Status Implementasi](WISHLIST_ASSESSMENT.md).
+
+- **A1 -- Runbook recovery Super Admin** (`RUNBOOK_RECOVERY_SUPER_ADMIN.md`,
+  commit `260aad3`). 4 skenario (lupa password, akun nonaktif, role_id
+  berubah, baris user hilang), semua lewat Supabase Dashboard manual --
+  SENGAJA tidak ada fitur recovery di dalam aplikasi (red flag: kalau auth
+  normal bermasalah, jalur recovery yang sama tidak menolong). Trigger
+  `enforce_single_super_admin` diverifikasi ulang lewat `pg_get_functiondef`
+  sebelum ditulis -- cuma memblokir akun LAIN jadi Super Admin kedua, tidak
+  menghalangi memulihkan baris yang sudah ada.
+- **A3 -- Reminder backup mingguan** (migrasi `add_backup_reminder_schedule`,
+  commit `a195537`). Opsi B dari 3 opsi yang diajukan (A: upgrade Supabase
+  Pro, B: reminder-only via pg_cron, C: backup otomatis ke Storage) -- pola
+  identik 2 reminder existing (`send_reminder_h1_kegiatan` dkk). Kolom baru
+  `system_config.last_backup_at` (diisi `/api/backup` tiap backup manual
+  selesai) + RPC `send_reminder_backup_belum_dilakukan` (in-app+push+email
+  ke Super Admin kalau >30 hari) + cron mingguan Senin 08:00 WIB. Tambah 1
+  cabang baru `reminder_umum` di `build_email_html` (cabang lain tidak
+  diubah) -- cabang `reminder` lama ternyata hard-coded utk kegiatan, tidak
+  reusable. Opsi C (backup otomatis) DITUNDA -- butuh keputusan scope akses
+  storage terpisah (lihat red flag di `WISHLIST_ASSESSMENT.md` A3).
+- **A2 sisa + A7 -- Card rate-limit & link Sentry** (migrasi
+  `add_rate_limit_summary_rpc`, commit `254e168`). RPC baru
+  `get_rate_limit_summary` (gate super_admin/Team IT) karena tabel
+  `auth_rate_limit` deny-all utk `authenticated` -- beda dari card lain di
+  `KesehatanTab` yang query langsung krn RLS sudah mengizinkan. Live error
+  count Sentry DITUNDA (butuh `SENTRY_AUTH_TOKEN`/`SENTRY_ORG`/
+  `SENTRY_PROJECT` diisi Vercel dulu, belum ada saat ini) -- diganti link-out
+  ke Sentry Issues (`https://generus-bekasi-timur.sentry.io`) sbg langkah
+  pertama tanpa secret baru.
+- Semua 3 item di atas diverifikasi lewat `BEGIN...ROLLBACK`/simulasi RLS
+  penuh (identitas Super Admin + Generus, cek fail-closed) sebelum commit,
+  plus `tsc`/`eslint`/`npm run test` (49 lulus) utk perubahan kode.
+- **Belum dilakukan**: keempat commit di atas (termasuk entri "Insiden" di
+  bawah) masih di branch `claude/gemini-gensiti-collaboration-1vrtvi`,
+  belum dibuka PR-nya -- menunggu instruksi Reno kapan mau dibuka.
+
 ### Sesi 24 Juli 2026 — Insiden: 2 commit lolos ke main tanpa PR/review, branch protection diaktifkan
 
 - Ditemukan Reno (bukan lewat proses audit terjadwal) bahwa 2 commit sempat masuk ke
