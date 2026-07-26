@@ -109,7 +109,7 @@ export default function GlobalSearch() {
               Mencari...
             </div>
           ) : error ? (
-            <div className="p-4 text-sm text-red-600">{error}</div>
+            <div className="p-4 text-sm text-red-600 dark:text-red-400">{error}</div>
           ) : results.length === 0 ? (
             <div className="p-4 text-sm text-slate-400 text-center">Tidak ada hasil untuk &quot;{query}&quot;.</div>
           ) : (
