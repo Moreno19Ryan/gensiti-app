@@ -50,6 +50,10 @@ const statusPengajuanLabel: Record<string, { label: string; color: string }> = {
 // tidak berkepentingan dengan data keuangan wilayah manapun.
 export default function KeuanganPage() {
   const { user } = useUser()
+  // A6: "sekarang" dihitung sekali saat mount (bukan Date.now() langsung saat render, yang
+  // dianggap impure oleh react-hooks/purity) -- cukup akurat utk cek ambang 3 hari, tidak
+  // perlu live-ticking spt LiveClock.
+  const [now] = useState(() => Date.now())
 
   const tingkatan = user?.role?.tingkatan
   // Keuangan HANYA untuk pengurus operasional (Daerah/Desa/Kelompok) -- PPG sengaja
@@ -66,6 +70,10 @@ export default function KeuanganPage() {
   const canManage = isBendahara(user)
   // Pengurus lain (bukan Bendahara) yang boleh mengajukan reimbursement.
   const canAjukan = canAjukanReimbursement(user)
+  // A6: Ketua/Wakil Ketua boleh "ambil alih" approve/tolak kalau pengajuan sudah menunggu
+  // >3 hari (eskalasi). Cek TANPA "sekretaris" -- sengaja sempit, cuma Ketua, sesuai gate
+  // di RPC proses_reimbursement (bukan pola isPengurus/canManageMembers yg lebih luas).
+  const isKetuaUser = (user?.role?.nama_role || '').toLowerCase().includes('ketua')
 
   const canPickScope = tingkatan === 'daerah'
 
@@ -351,6 +359,22 @@ export default function KeuanganPage() {
   const pengajuanMenunggu = pengajuanList.filter(p => p.status === 'menunggu')
   const pengajuanSelesai = pengajuanList.filter(p => p.status !== 'menunggu')
 
+  // A6: cocokkan PERSIS logika scope+waktu di RPC proses_reimbursement -- kalau di sini
+  // longgar dari backend, tombol muncul tapi RPC tetap menolak (membingungkan); kalau lebih
+  // ketat dari backend, tidak masalah (cuma nyembunyikan tombol yang sebenarnya diizinkan).
+  const TIGA_HARI_MS = 3 * 24 * 60 * 60 * 1000
+  const bisaKetuaAmbilAlih = (p: PengajuanReimbursement) =>
+    isKetuaUser
+    && p.tingkatan === tingkatan
+    && (
+      (p.tingkatan === 'daerah')
+      || (p.tingkatan === 'desa' && p.desa_id === user?.desa_id)
+      || (p.tingkatan === 'kelompok' && p.kelompok_id === user?.kelompok_id)
+    )
+    && (now - new Date(p.created_at).getTime()) > TIGA_HARI_MS
+
+  const pengajuanBisaDiproses = canManage ? pengajuanMenunggu : pengajuanMenunggu.filter(bisaKetuaAmbilAlih)
+
   const exportKelompokOptions = kelompokList.filter(k => exportDesaId === 'all' || k.desa_id === exportDesaId)
 
   const exportRows = useMemo(() => filtered.filter(k => {
@@ -489,8 +513,8 @@ export default function KeuanganPage() {
           <button onClick={() => setTab('reimbursement')}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition flex items-center gap-1.5 ${tab === 'reimbursement' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
             Pengajuan Reimbursement
-            {pengajuanMenunggu.length > 0 && canManage && (
-              <span className="px-1.5 py-0.5 bg-amber-500 text-white text-[10px] font-bold rounded-full">{pengajuanMenunggu.length}</span>
+            {pengajuanBisaDiproses.length > 0 && (
+              <span className="px-1.5 py-0.5 bg-amber-500 text-white text-[10px] font-bold rounded-full">{pengajuanBisaDiproses.length}</span>
             )}
           </button>
         </div>
@@ -504,11 +528,11 @@ export default function KeuanganPage() {
             </div>
           ) : (
             <>
-              {canManage && pengajuanMenunggu.length > 0 && (
+              {pengajuanBisaDiproses.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-xs font-medium text-slate-500">Menunggu Persetujuan Anda</p>
                   <div className="bg-white rounded-2xl shadow-sm border border-slate-100 divide-y divide-slate-100">
-                    {pengajuanMenunggu.map(p => (
+                    {pengajuanBisaDiproses.map(p => (
                       <div key={p.id} className="p-4 space-y-2">
                         <div className="flex items-start justify-between gap-3">
                           <div>
@@ -517,6 +541,9 @@ export default function KeuanganPage() {
                               Diajukan oleh {p.pengaju?.nama_lengkap || '-'} · {new Date(p.tanggal).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
                             </p>
                             <p className="text-sm text-slate-600 mt-1">{p.deskripsi}</p>
+                            {!canManage && bisaKetuaAmbilAlih(p) && (
+                              <p className="text-[11px] text-amber-600 font-medium mt-1">⚡ Sudah &gt;3 hari menunggu Bendahara -- Anda bisa ambil alih</p>
+                            )}
                           </div>
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${statusPengajuanLabel[p.status]?.color}`}>
                             {statusPengajuanLabel[p.status]?.label}
