@@ -133,7 +133,7 @@ export default function RiwayatAbsensiPage() {
           </div>
         ) : riwayatPresensi.length === 0 ? (
           <div className="text-center py-8 text-slate-400">
-            <p className="text-sm">Belum ada riwayat absensi</p>
+            <p className="text-sm">Belum ada riwayat absensi nih</p>
           </div>
         ) : (
           <div className="divide-y divide-slate-100 dark:divide-slate-700">

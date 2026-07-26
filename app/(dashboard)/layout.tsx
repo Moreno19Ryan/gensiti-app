@@ -201,7 +201,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   if (loading || (user && maintenanceOk === null)) {
-    return <LoadingSpinner label="Memuat..." fullScreen />
+    return <LoadingSpinner label="Sabar ya, lagi disiapin..." fullScreen />
   }
 
   if (!user) return null

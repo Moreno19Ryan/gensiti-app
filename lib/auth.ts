@@ -5,10 +5,11 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
   const { data, error } = await supabase
     .from('users')
     .select(`
-      id, email, login_username, active_session_token, nama_lengkap, no_hp, foto_url, avatar_url, is_active, desa_id, kelompok_id, role_id, created_at,
+      id, email, login_username, active_session_token, nama_lengkap, no_hp, foto_url, avatar_url, is_active, desa_id, kelompok_id, role_id, created_at, tampilkan_pesan_motivasi,
       role:roles(id, nama_role, tingkatan),
       desa:desa(id, nama_desa),
-      kelompok:kelompok(id, nama_kelompok)
+      kelompok:kelompok(id, nama_kelompok),
+      generus(nama_panggilan)
     `)
     .eq('id', userId)
     .single()

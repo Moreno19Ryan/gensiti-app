@@ -106,12 +106,12 @@ export default function GlobalSearch() {
           {loading ? (
             <div className="p-4 flex items-center justify-center text-slate-400 text-sm gap-2">
               <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-              Mencari...
+              Lagi nyari...
             </div>
           ) : error ? (
             <div className="p-4 text-sm text-red-600 dark:text-red-400">{error}</div>
           ) : results.length === 0 ? (
-            <div className="p-4 text-sm text-slate-400 text-center">Tidak ada hasil untuk &quot;{query}&quot;.</div>
+            <div className="p-4 text-sm text-slate-400 text-center">Nggak ketemu hasil buat &quot;{query}&quot;.</div>
           ) : (
             <ul className="py-1">
               {results.map((r, i) => (

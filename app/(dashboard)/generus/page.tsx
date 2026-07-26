@@ -824,7 +824,7 @@ export default function DataGenerusPage() {
       ) : filtered.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
           <div className="text-4xl mb-2">👥</div>
-          <p>Belum ada Generus terdaftar</p>
+          <p>Belum ada Generus yang terdaftar</p>
           {canManage && <button onClick={openAdd} className="mt-3 text-blue-600 dark:text-blue-400 text-sm font-medium hover:underline">+ Tambah sekarang</button>}
         </div>
       ) : (
