@@ -117,9 +117,9 @@ const kelasNgajiLabel: Record<string, string> = {
 }
 
 const statusPenggunaBadge: Record<string, string> = {
-  lajang: 'bg-blue-100 text-blue-700',
-  menikah: 'bg-emerald-100 text-emerald-700',
-  pindah_sambung: 'bg-amber-100 text-amber-700',
+  lajang: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  menikah: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  pindah_sambung: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
   meninggal_dunia: 'bg-slate-100 text-slate-600',
 }
 
@@ -131,11 +131,11 @@ const statusPenggunaLabel: Record<string, string> = {
 }
 
 const tingkatanColor: Record<string, string> = {
-  super_admin: 'bg-red-100 text-red-700',
-  daerah: 'bg-purple-100 text-purple-700',
-  desa: 'bg-blue-100 text-blue-700',
-  kelompok: 'bg-green-100 text-green-700',
-  ppg: 'bg-indigo-100 text-indigo-700',
+  super_admin: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  daerah: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  desa: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  kelompok: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  ppg: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
 }
 
 const toUpperWords = (str: string) => str.toUpperCase()
@@ -825,7 +825,7 @@ export default function DataGenerusPage() {
         <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
           <div className="text-4xl mb-2">👥</div>
           <p>Belum ada Generus terdaftar</p>
-          {canManage && <button onClick={openAdd} className="mt-3 text-blue-600 text-sm font-medium hover:underline">+ Tambah sekarang</button>}
+          {canManage && <button onClick={openAdd} className="mt-3 text-blue-600 dark:text-blue-400 text-sm font-medium hover:underline">+ Tambah sekarang</button>}
         </div>
       ) : (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
@@ -852,7 +852,7 @@ export default function DataGenerusPage() {
                       onClick={() => setDetailModal(m)}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm shrink-0">
+                          <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 font-bold text-sm shrink-0">
                             {m.nama_lengkap?.charAt(0).toUpperCase()}
                           </div>
                           <div>
@@ -873,7 +873,7 @@ export default function DataGenerusPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-col gap-1">
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium w-fit ${m.is_archived ? 'bg-orange-100 text-orange-700' : m.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium w-fit ${m.is_archived ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' : m.is_active ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'}`}>
                             {m.is_archived ? 'Diarsipkan' : m.is_active ? 'Aktif' : 'Non-aktif'}
                           </span>
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium w-fit ${statusPenggunaBadge[sp] || 'bg-slate-100 text-slate-500'}`}>
@@ -884,9 +884,9 @@ export default function DataGenerusPage() {
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         {canActOn(m) ? (
                           <div className="flex gap-3">
-                            <button onClick={() => openEdit(m)} className="text-blue-600 hover:text-blue-800 font-medium text-xs">Edit</button>
+                            <button onClick={() => openEdit(m)} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium text-xs">Edit</button>
                             {!m.is_archived && (!ppgLocked) && (
-                              <button onClick={() => toggleActive(m)} className={`text-xs font-medium ${m.is_active ? 'text-slate-400 hover:text-slate-600' : 'text-green-600 hover:text-green-800'}`}>
+                              <button onClick={() => toggleActive(m)} className={`text-xs font-medium ${m.is_active ? 'text-slate-400 hover:text-slate-600' : 'text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300'}`}>
                                 {m.is_active ? 'Nonaktifkan' : 'Aktifkan'}
                               </button>
                             )}
@@ -894,7 +894,7 @@ export default function DataGenerusPage() {
                               <span className="text-xs text-slate-300 italic" title="Status akun PPG hanya dapat diubah Super Admin">Terkunci</span>
                             )}
                             {m.is_archived && !ppgLocked && (
-                              <button onClick={() => setRestoreTarget(m)} className="text-orange-500 hover:text-orange-700 font-medium text-xs">
+                              <button onClick={() => setRestoreTarget(m)} className="text-orange-500 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300 font-medium text-xs">
                                 Pulihkan
                               </button>
                             )}
@@ -918,7 +918,7 @@ export default function DataGenerusPage() {
         <Modal open={!!detailModal} onClose={() => setDetailModal(null)} title="Detail Generus" size="lg">
           <div className="space-y-4">
             <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center text-blue-700 text-2xl font-black shrink-0">
+              <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 text-2xl font-black shrink-0">
                 {detailModal.nama_lengkap?.charAt(0)}
               </div>
               <div>
@@ -937,7 +937,7 @@ export default function DataGenerusPage() {
                     )
                   })()}
                   {detailModal.roles?.tingkatan !== 'ppg' && (
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${biodataLengkap(detailModal) ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${biodataLengkap(detailModal) ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}`}>
                       Biodata {biodataLengkap(detailModal) ? 'Lengkap' : 'Belum Lengkap'}
                     </span>
                   )}
@@ -946,7 +946,7 @@ export default function DataGenerusPage() {
             </div>
 
             {detailModal.is_archived && (
-              <div className="p-3 bg-orange-50 border border-orange-200 rounded-xl text-orange-800 text-sm">
+              <div className="p-3 bg-orange-50 border border-orange-200 rounded-xl text-orange-800 text-sm dark:bg-orange-900/20 dark:border-orange-800 dark:text-orange-300">
                 Akun ini diarsipkan. Alasan: <strong>{detailModal.alasan_arsip || '-'}</strong>
               </div>
             )}
@@ -998,16 +998,16 @@ export default function DataGenerusPage() {
       {/* Add/Edit Modal */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editTarget ? `Edit ${editTarget.nama_lengkap}` : 'Tambah Generus'} size="lg">
         <div className="space-y-4">
-          {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
+          {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">{error}</div>}
 
           {showBiodataTab && (
             <div className="flex gap-1 p-1 bg-slate-100 rounded-xl w-fit">
               <button type="button" onClick={() => setActiveTab('akun')}
-                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${activeTab === 'akun' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${activeTab === 'akun' ? 'bg-white text-blue-700 shadow-sm dark:text-blue-400' : 'text-slate-500 hover:text-slate-700'}`}>
                 Akun
               </button>
               <button type="button" onClick={() => setActiveTab('biodata')}
-                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${activeTab === 'biodata' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${activeTab === 'biodata' ? 'bg-white text-blue-700 shadow-sm dark:text-blue-400' : 'text-slate-500 hover:text-slate-700'}`}>
                 Biodata
                 {editTarget && (
                   <span className={`w-1.5 h-1.5 rounded-full ${biodataLengkap(editTarget) ? 'bg-green-500' : 'bg-amber-500'}`} />
@@ -1020,8 +1020,8 @@ export default function DataGenerusPage() {
             <div className="space-y-4">
               {!editTarget && (
                 <>
-                  <div className="p-2 bg-blue-50 rounded-xl border border-blue-100">
-                    <span className="text-xs text-blue-500">
+                  <div className="p-2 bg-blue-50 rounded-xl border border-blue-100 dark:bg-blue-900/20 dark:border-blue-800">
+                    <span className="text-xs text-blue-500 dark:text-blue-400">
                       Nama & tanggal lahir dipakai sistem untuk membuat Nama Pengguna dan password awal akun. Biodata lengkap (alamat, data orang tua, dll) dilengkapi nanti di tab &quot;Biodata&quot; setelah akun dibuat.
                     </span>
                   </div>
@@ -1048,14 +1048,14 @@ export default function DataGenerusPage() {
                       <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1">
                         Tanggal Lahir *
                         {form.tanggal_lahir && (
-                          <span className="px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-semibold normal-case">
+                          <span className="px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-semibold normal-case dark:bg-blue-900/20 dark:text-blue-400">
                             {formatAge(form.tanggal_lahir)}
                           </span>
                         )}
                       </label>
                       <input type="date" value={form.tanggal_lahir} onChange={e => set('tanggal_lahir', e.target.value)}
                         className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                      <p className="text-[11px] text-blue-500 mt-1">Dipakai juga sebagai password awal akun (format DDMMYYYY)</p>
+                      <p className="text-[11px] text-blue-500 dark:text-blue-400 mt-1">Dipakai juga sebagai password awal akun (format DDMMYYYY)</p>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-slate-600 mb-1">Jenis Kelamin *</label>
@@ -1180,41 +1180,41 @@ export default function DataGenerusPage() {
                   </div>
 
                   {form.status_pengguna === 'pindah_sambung' && (
-                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3">
-                      <p className="text-xs font-semibold text-amber-800">Tujuan Pindah Sambung</p>
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3 dark:bg-amber-900/20 dark:border-amber-800">
+                      <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">Tujuan Pindah Sambung</p>
                       <div className="flex gap-6">
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input type="radio" name="pindah_jenis" value="bekasi_timur"
                             checked={form.pindah_jenis === 'bekasi_timur'}
                             onChange={() => setForm(f => ({ ...f, pindah_jenis: 'bekasi_timur', pindah_desa_id: '', pindah_kelompok_id: '' }))}
                             className="accent-amber-600" />
-                          <span className="text-sm text-amber-800 font-medium">Masih di Bekasi Timur</span>
+                          <span className="text-sm text-amber-800 dark:text-amber-300 font-medium">Masih di Bekasi Timur</span>
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input type="radio" name="pindah_jenis" value="daerah_lain"
                             checked={form.pindah_jenis === 'daerah_lain'}
                             onChange={() => setForm(f => ({ ...f, pindah_jenis: 'daerah_lain', pindah_desa_id: '', pindah_kelompok_id: '' }))}
                             className="accent-amber-600" />
-                          <span className="text-sm text-amber-800 font-medium">Ke Daerah Lain</span>
+                          <span className="text-sm text-amber-800 dark:text-amber-300 font-medium">Ke Daerah Lain</span>
                         </label>
                       </div>
 
                       {form.pindah_jenis === 'bekasi_timur' && (
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="block text-xs font-medium text-amber-800 mb-1">Desa Tujuan *</label>
+                            <label className="block text-xs font-medium text-amber-800 dark:text-amber-300 mb-1">Desa Tujuan *</label>
                             <select value={form.pindah_desa_id}
                               onChange={e => setForm(f => ({ ...f, pindah_desa_id: e.target.value, pindah_kelompok_id: '' }))}
-                              className="w-full px-3 py-2 rounded-xl border border-amber-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+                              className="w-full px-3 py-2 rounded-xl border border-amber-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 dark:border-amber-700">
                               <option value="">-- Pilih Desa --</option>
                               {desaList.map(d => <option key={d.id} value={d.id}>{d.nama_desa}</option>)}
                             </select>
                           </div>
                           <div>
-                            <label className="block text-xs font-medium text-amber-800 mb-1">Kelompok Tujuan *</label>
+                            <label className="block text-xs font-medium text-amber-800 dark:text-amber-300 mb-1">Kelompok Tujuan *</label>
                             <select value={form.pindah_kelompok_id}
                               onChange={e => set('pindah_kelompok_id', e.target.value)}
-                              className="w-full px-3 py-2 rounded-xl border border-amber-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+                              className="w-full px-3 py-2 rounded-xl border border-amber-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 dark:border-amber-700">
                               <option value="">-- Pilih Kelompok --</option>
                               {kelompokList.filter(k => !form.pindah_desa_id || k.desa_id === form.pindah_desa_id).map(k => (
                                 <option key={k.id} value={k.id}>{k.nama_kelompok}</option>
@@ -1225,7 +1225,7 @@ export default function DataGenerusPage() {
                       )}
 
                       {form.pindah_jenis === 'daerah_lain' && (
-                        <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs leading-relaxed">
+                        <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs leading-relaxed dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
                           Akun akan diarsipkan. Untuk mengaktifkan kembali, pengguna harus mengajukan permohonan kepada Ketua Muda-Mudi Daerah terlebih dahulu.
                         </div>
                       )}
@@ -1233,13 +1233,13 @@ export default function DataGenerusPage() {
                   )}
 
                   {form.status_pengguna === 'menikah' && editTarget?.roles?.tingkatan === 'ppg' && (
-                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 text-xs leading-relaxed">
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 text-xs leading-relaxed dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-300">
                       Akun PPG tidak diarsipkan otomatis saat berstatus &quot;Menikah&quot; -- status hanya dicatat sebagai info biodata, akun tetap aktif seperti biasa.
                     </div>
                   )}
 
                   {((form.status_pengguna === 'menikah' && editTarget?.roles?.tingkatan !== 'ppg') || form.status_pengguna === 'meninggal_dunia') && (
-                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs leading-relaxed">
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs leading-relaxed dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
                       Menyimpan dengan status ini akan mengarsipkan dan menonaktifkan akun pengguna. Diperlukan 2x konfirmasi sebelum perubahan diterapkan.
                     </div>
                   )}
@@ -1261,7 +1261,7 @@ export default function DataGenerusPage() {
                   onChange={e => setUpper('nama_panggilan', e.target.value)}
                   placeholder="NAMA PANGGILAN"
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
-                <p className="text-[11px] text-amber-600 mt-1">Mengubah nama panggilan akan ikut mengubah Nama Pengguna (login) -- pengguna akan diberi tahu nama login barunya, password tidak berubah.</p>
+                <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">Mengubah nama panggilan akan ikut mengubah Nama Pengguna (login) -- pengguna akan diberi tahu nama login barunya, password tidak berubah.</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -1276,7 +1276,7 @@ export default function DataGenerusPage() {
                   <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1">
                     Tanggal Lahir
                     {form.tanggal_lahir && (
-                      <span className="px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-semibold normal-case">
+                      <span className="px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-semibold normal-case dark:bg-blue-900/20 dark:text-blue-400">
                         {formatAge(form.tanggal_lahir)}
                       </span>
                     )}
@@ -1464,7 +1464,7 @@ export default function DataGenerusPage() {
               placeholder="Tap kartu di sini..."
               className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            {kartuError && <p className="text-xs text-red-500">{kartuError}</p>}
+            {kartuError && <p className="text-xs text-red-500 dark:text-red-400">{kartuError}</p>}
             <div className="flex gap-3 pt-2 border-t border-slate-100">
               <button onClick={() => { setKartuTarget(null); setKartuUidInput(''); setKartuError('') }}
                 className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
@@ -1472,7 +1472,7 @@ export default function DataGenerusPage() {
               </button>
               {kartuTarget.generus?.kartu_rfid_uid && (
                 <button onClick={handleCabutKartu} disabled={kartuSaving}
-                  className="flex-1 py-2.5 border border-red-200 text-red-500 rounded-xl text-sm font-medium hover:bg-red-50 disabled:opacity-50 transition">
+                  className="flex-1 py-2.5 border border-red-200 text-red-500 rounded-xl text-sm font-medium hover:bg-red-50 disabled:opacity-50 transition dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20">
                   Cabut Kartu
                 </button>
               )}
@@ -1506,7 +1506,7 @@ export default function DataGenerusPage() {
               Akun <span className="font-semibold">{newCredentials.nama}</span> berhasil dibuat. Catat dan sampaikan kredensial berikut ke pengguna:
             </p>
             {newCredentials.biodataWarning && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
                 ⚠️ {newCredentials.biodataWarning}
               </div>
             )}
@@ -1520,7 +1520,7 @@ export default function DataGenerusPage() {
                 <p className="font-mono font-semibold text-slate-800">{newCredentials.password}</p>
               </div>
             </div>
-            <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-700">
+            <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300">
               Password ini hanya ditampilkan sekali dan tidak tersimpan di sistem dalam bentuk terbaca. Untuk mengganti password, pengguna dapat mengajukan permintaan lewat halaman &quot;Lupa Password&quot;.
             </div>
             <button onClick={() => setNewCredentials(null)}
