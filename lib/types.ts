@@ -37,6 +37,14 @@ export interface UserProfile {
     id: string
     nama_kelompok: string
   } | null
+  // Toggle personal (default true) -- tulis-langsung ke kolom ini dikunci RLS ke super_admin
+  // saja, jadi diubah lewat RPC set_tampilkan_pesan_motivasi (self-only), bukan .update() biasa.
+  tampilkan_pesan_motivasi: boolean
+  // Biodata generus (kalau ada -- Super Admin tidak punya baris generus). nama_panggilan
+  // dipakai sapaan Dashboard, fallback ke nama_lengkap kalau kosong/baris tidak ada.
+  generus: {
+    nama_panggilan: string | null
+  } | null
 }
 
 export type KelasNgaji = 'pra_remaja' | 'remaja_muda' | 'remaja_dewasa'

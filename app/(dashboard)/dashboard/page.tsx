@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { isPengurus, isBendahara, canManageKontenOrganisasi, isTeamIT } from '@/lib/roles'
+import { UserProfile } from '@/lib/types'
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -97,6 +98,52 @@ function LiveClock() {
     <div className="text-right shrink-0">
       <div className="text-lg sm:text-2xl font-mono font-bold tabular-nums">{formatTime(now)}</div>
       <div className="text-blue-200 text-xs sm:text-sm mt-0.5 hidden sm:block">{formatDate(now)}</div>
+    </div>
+  )
+}
+
+// Sapaan singkat berdasarkan jam device (waktu lokal browser, sama seperti LiveClock di atas
+// -- bukan waktu server) -- lihat PANDUAN_TONE_VOICE_GENSITI.md "Contoh Sapaan Berdasarkan
+// Waktu". Sengaja hanya fragmen kedua (bukan "Selamat pagi!" penuh) supaya menyambung wajar
+// setelah "Assalamualaikum," yang sudah jadi pembuka -- menghindari 2 salam bertumpuk.
+function getSapaanWaktu(): string {
+  const jam = new Date().getHours()
+  if (jam >= 4 && jam < 10) return 'Semangat mulai hari ya'
+  if (jam >= 10 && jam < 15) return 'Jangan lupa istirahat sejenak'
+  if (jam >= 15 && jam < 18) return 'Enaknya buka GENSITI dulu'
+  if (jam >= 18 && jam < 22) return 'Cocok buat cek kegiatan besok'
+  return 'Masih melek? Jangan lupa istirahat ya'
+}
+
+const PESAN_MOTIVASI_SESSION_KEY = 'gensiti_pesan_motivasi'
+
+// Card pesan motivasi random -- 1x per sesi browser (di-cache sessionStorage, bukan
+// di-random ulang tiap render/navigasi, sesuai prinsip "frekuensi wajar" di panduan).
+// Sengaja TIDAK mengecek pengumuman duka yang sedang tayang -- tabel `pengumuman` tidak
+// punya kolom kategori/jenis utk membedakan itu, jadi tidak bisa dideteksi otomatis dgn
+// skema sekarang (lihat catatan di PANDUAN_TONE_VOICE_GENSITI.md).
+function PesanMotivasiCard({ user }: { user: UserProfile }) {
+  const [pesan, setPesan] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (user.tampilkan_pesan_motivasi === false) return
+    const cached = sessionStorage.getItem(PESAN_MOTIVASI_SESSION_KEY)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (cached) { setPesan(cached); return }
+    supabase.from('pesan_motivasi').select('teks').then(({ data }) => {
+      if (!data || data.length === 0) return
+      const pilihan = data[Math.floor(Math.random() * data.length)].teks
+      sessionStorage.setItem(PESAN_MOTIVASI_SESSION_KEY, pilihan)
+      setPesan(pilihan)
+    })
+  }, [user.tampilkan_pesan_motivasi])
+
+  if (user.tampilkan_pesan_motivasi === false || !pesan) return null
+
+  return (
+    <div className="bg-amber-50 border border-amber-100 rounded-[18px] px-4 py-3 flex items-center gap-2.5">
+      <span className="text-lg shrink-0">✨</span>
+      <p className="text-amber-800 text-sm">{pesan}</p>
     </div>
   )
 }
@@ -629,12 +676,14 @@ export default function DashboardPage() {
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="text-white/80 text-sm font-medium">Assalamualaikum,</p>
-            <h2 className="text-xl sm:text-2xl font-extrabold mt-0.5 truncate">{user?.nama_lengkap}</h2>
-            <p className="text-white/80 text-sm mt-1">{user?.role?.nama_role} &middot; Sistem GENSITI</p>
+            <h2 className="text-xl sm:text-2xl font-extrabold mt-0.5 truncate">{user?.generus?.nama_panggilan || user?.nama_lengkap}</h2>
+            <p className="text-white/80 text-sm mt-1">{user?.role?.nama_role} &middot; {getSapaanWaktu()}</p>
           </div>
           <LiveClock />
         </div>
       </div>
+
+      {user && user.role?.tingkatan !== 'super_admin' && <PesanMotivasiCard user={user} />}
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
         {statCards.map((card) => (
