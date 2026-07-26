@@ -12,16 +12,16 @@ import ExportPreviewModal from '@/components/ExportPreviewModal'
 import LaporanBulananModal from '@/components/LaporanBulananModal'
 
 const statusLabel: Record<string, { label: string; color: string }> = {
-  upcoming: { label: 'Akan Datang', color: 'bg-blue-100 text-blue-700' },
-  ongoing: { label: 'Berlangsung', color: 'bg-green-100 text-green-700' },
+  upcoming: { label: 'Akan Datang', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+  ongoing: { label: 'Berlangsung', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
   selesai: { label: 'Selesai', color: 'bg-slate-100 text-slate-500' },
 }
 
 const kehadiranLabel: Record<string, { label: string; color: string }> = {
-  hadir: { label: 'Hadir', color: 'bg-green-100 text-green-700' },
-  tidak_hadir: { label: 'Tidak Hadir', color: 'bg-red-100 text-red-600' },
-  izin: { label: 'Izin', color: 'bg-amber-100 text-amber-700' },
-  sakit: { label: 'Sakit', color: 'bg-purple-100 text-purple-700' },
+  hadir: { label: 'Hadir', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+  tidak_hadir: { label: 'Tidak Hadir', color: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' },
+  izin: { label: 'Izin', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+  sakit: { label: 'Sakit', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
 }
 
 const kelasNgajiLabel: Record<string, string> = {
@@ -632,7 +632,7 @@ export default function AbsensiPage() {
                 <button
                   key={k.id}
                   onClick={() => loadDetail(k)}
-                  className="text-left bg-white rounded-2xl p-4 shadow-sm border border-slate-100 hover:shadow-md hover:border-blue-200 transition"
+                  className="text-left bg-white rounded-2xl p-4 shadow-sm border border-slate-100 hover:shadow-md hover:border-blue-200 dark:hover:border-blue-800 transition"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -654,7 +654,7 @@ export default function AbsensiPage() {
       ) : (
         <div className="space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
-            <button onClick={() => setSelectedKegiatan(null)} className="text-sm text-blue-600 hover:underline font-medium">
+            <button onClick={() => setSelectedKegiatan(null)} className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium">
               ← Kembali ke daftar kegiatan
             </button>
             <div className="flex items-center gap-2">
@@ -698,9 +698,9 @@ export default function AbsensiPage() {
               Muncul di atas daftar Generus supaya pengurus langsung lihat & proses pengajuan
               yang menunggu tanpa perlu scroll cari satu per satu di daftar Generus. */}
           {canManage && pengajuanIzinList.length > 0 && (
-            <div className="bg-amber-50 rounded-2xl border border-amber-100 divide-y divide-amber-100">
+            <div className="bg-amber-50 rounded-2xl border border-amber-100 divide-y divide-amber-100 dark:bg-amber-900/20 dark:border-amber-800 dark:divide-amber-800">
               <div className="px-4 py-2.5">
-                <h4 className="text-sm font-semibold text-amber-800">📋 Pengajuan Izin Menunggu ({pengajuanIzinList.length})</h4>
+                <h4 className="text-sm font-semibold text-amber-800 dark:text-amber-300">📋 Pengajuan Izin Menunggu ({pengajuanIzinList.length})</h4>
               </div>
               {pengajuanIzinList.map(p => (
                 <div key={p.id} className="flex items-center justify-between gap-3 p-3">
@@ -761,7 +761,7 @@ export default function AbsensiPage() {
                           murni). Menampilkan siapa, kapan, dan status sebelum dikoreksi supaya
                           ada akuntabilitas & transparansi kalau ada kekeliruan/kecurigaan. */}
                       {absen?.dikoreksi_oleh && absen?.dikoreksi_at && (
-                        <p className="text-xs text-amber-500 mt-0.5" title={`Sebelumnya: ${absen.status_sebelum_koreksi ? (kehadiranLabel[absen.status_sebelum_koreksi]?.label || absen.status_sebelum_koreksi) : '-'}`}>
+                        <p className="text-xs text-amber-500 dark:text-amber-400 mt-0.5" title={`Sebelumnya: ${absen.status_sebelum_koreksi ? (kehadiranLabel[absen.status_sebelum_koreksi]?.label || absen.status_sebelum_koreksi) : '-'}`}>
                           Dikoreksi {koreksiUserMap[absen.dikoreksi_oleh] ? `oleh ${koreksiUserMap[absen.dikoreksi_oleh]}` : ''} - {new Date(absen.dikoreksi_at).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         </p>
                       )}
