@@ -135,7 +135,7 @@ export default function PPGPage() {
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-slate-700">Menunggu Persetujuan</h3>
           {totalMenunggu > 0 && (
-            <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-medium">{totalMenunggu} item</span>
+            <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-medium dark:bg-amber-900/30 dark:text-amber-400">{totalMenunggu} item</span>
           )}
         </div>
 
@@ -154,7 +154,7 @@ export default function PPGPage() {
               <div key={k.id} className="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-100">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-xs font-medium">Kegiatan</span>
+                    <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-xs font-medium dark:bg-indigo-900/30 dark:text-indigo-400">Kegiatan</span>
                     <p className="font-medium text-slate-700 text-sm truncate">{k.nama_kegiatan}</p>
                   </div>
                   <p className="text-xs text-slate-400 mt-1">{fmt(k.tanggal_mulai)} · {k.lokasi}</p>
@@ -169,7 +169,7 @@ export default function PPGPage() {
               <div key={p.id} className="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-100">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full text-xs font-medium">Pengumuman</span>
+                    <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full text-xs font-medium dark:bg-orange-900/30 dark:text-orange-400">Pengumuman</span>
                     <p className="font-medium text-slate-700 text-sm truncate">{p.judul}</p>
                   </div>
                   <p className="text-xs text-slate-400 mt-1 line-clamp-1">{p.isi}</p>
@@ -201,10 +201,10 @@ export default function PPGPage() {
                 rows={3} placeholder="Tulis catatan pembinaan atau alasan penolakan..."
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none" />
             </div>
-            {errorMsg && <p className="text-xs text-red-500">{errorMsg}</p>}
+            {errorMsg && <p className="text-xs text-red-500 dark:text-red-400">{errorMsg}</p>}
             <div className="flex gap-3 pt-2 border-t border-slate-100">
               <button onClick={() => submitApproval('tolak')} disabled={processing}
-                className="flex-1 py-2.5 border border-red-200 text-red-600 rounded-xl text-sm font-medium hover:bg-red-50 disabled:opacity-60 transition">
+                className="flex-1 py-2.5 border border-red-200 text-red-600 rounded-xl text-sm font-medium hover:bg-red-50 disabled:opacity-60 transition dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20">
                 {processing ? 'Memproses...' : 'Tolak'}
               </button>
               <button onClick={() => submitApproval('setujui')} disabled={processing}

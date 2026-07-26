@@ -260,7 +260,7 @@ export default function DokumenPage() {
         <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
           <div className="text-4xl mb-2">📁</div>
           <p>Belum ada dokumen yang diunggah</p>
-          {canManage && <button onClick={openAdd} className="mt-3 text-blue-600 text-sm font-medium hover:underline">+ Upload sekarang</button>}
+          {canManage && <button onClick={openAdd} className="mt-3 text-blue-600 dark:text-blue-400 text-sm font-medium hover:underline">+ Upload sekarang</button>}
         </div>
       ) : (
         <div className="grid gap-3">
@@ -282,20 +282,20 @@ export default function DokumenPage() {
                   </div>
                   <div className="flex gap-2 shrink-0">
                     <a href={d.url_file} target="_blank" rel="noreferrer"
-                      className="px-3 py-1.5 bg-blue-50 text-blue-600 text-xs font-medium rounded-lg hover:bg-blue-100 transition">
+                      className="px-3 py-1.5 bg-blue-50 text-blue-600 text-xs font-medium rounded-lg hover:bg-blue-100 transition dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/40">
                       Buka
                     </a>
                     {canManage && (
                       <>
                         <button onClick={() => openEdit(d)} className="px-3 py-1.5 bg-slate-50 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-100 transition">Edit</button>
-                        <button onClick={() => handleDelete(d.id, d.judul)} className="px-3 py-1.5 bg-red-50 text-red-600 text-xs font-medium rounded-lg hover:bg-red-100 transition">Hapus</button>
+                        <button onClick={() => handleDelete(d.id, d.judul)} className="px-3 py-1.5 bg-red-50 text-red-600 text-xs font-medium rounded-lg hover:bg-red-100 transition dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40">Hapus</button>
                       </>
                     )}
                   </div>
                 </div>
                 <div className="flex items-center gap-3 mt-2 flex-wrap">
                   {d.kategori && (
-                    <span className="px-2 py-0.5 bg-blue-50 text-blue-600 text-xs rounded-full">{d.kategori}</span>
+                    <span className="px-2 py-0.5 bg-blue-50 text-blue-600 text-xs rounded-full dark:bg-blue-900/20 dark:text-blue-400">{d.kategori}</span>
                   )}
                   {d.desa && <span className="text-slate-400 text-xs">{d.desa.nama_desa}</span>}
                   {d.kelompok && <span className="text-slate-400 text-xs">· {d.kelompok.nama_kelompok}</span>}
@@ -311,7 +311,7 @@ export default function DokumenPage() {
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editTarget ? 'Edit Dokumen' : 'Tambah Dokumen'} size="md">
         <div className="space-y-4">
-          {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
+          {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">{error}</div>}
 
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Judul Dokumen *</label>
@@ -370,7 +370,7 @@ export default function DokumenPage() {
             </div>
           </div>
 
-          {error && <p className="text-red-600 text-sm">{error}</p>}
+          {error && <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>}
 
           <div className="flex gap-3 pt-2 border-t border-slate-100">
             <button onClick={() => setModalOpen(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">

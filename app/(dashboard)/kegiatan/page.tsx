@@ -17,16 +17,16 @@ interface DesaOpt { id: string; nama_desa: string }
 interface KelompokOpt { id: string; nama_kelompok: string; desa_id: string }
 
 const statusLabel: Record<string, { label: string; color: string }> = {
-  upcoming: { label: 'Akan Datang', color: 'bg-blue-100 text-blue-700' },
-  ongoing: { label: 'Berlangsung', color: 'bg-green-100 text-green-700' },
+  upcoming: { label: 'Akan Datang', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+  ongoing: { label: 'Berlangsung', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
   selesai: { label: 'Selesai', color: 'bg-slate-100 text-slate-500' },
 }
 
 // Badge status approval PPG -- hanya relevan utk kegiatan tingkat Daerah.
 const approvalLabel: Record<string, { label: string; color: string }> = {
-  menunggu_ppg: { label: '⏳ Menunggu Persetujuan PPG', color: 'bg-amber-100 text-amber-700' },
-  disetujui: { label: '✓ Disetujui PPG', color: 'bg-green-100 text-green-700' },
-  ditolak: { label: '✕ Ditolak PPG', color: 'bg-red-100 text-red-600' },
+  menunggu_ppg: { label: '⏳ Menunggu Persetujuan PPG', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+  disetujui: { label: '✓ Disetujui PPG', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+  ditolak: { label: '✕ Ditolak PPG', color: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' },
 }
 
 // Kategori kegiatan -- HANYA relevan/berlaku utk tingkatan='daerah'. Memilih kategori apapun
@@ -447,7 +447,7 @@ export default function KegiatanPage() {
         <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
           <div className="text-4xl mb-2">📅</div>
           <p>Belum ada kegiatan nih</p>
-          {canManage && <button onClick={openAdd} className="mt-3 text-blue-600 text-sm font-medium hover:underline">+ Tambah sekarang</button>}
+          {canManage && <button onClick={openAdd} className="mt-3 text-blue-600 dark:text-blue-400 text-sm font-medium hover:underline">+ Tambah sekarang</button>}
         </div>
       ) : (
         <div className="grid gap-3">
@@ -467,7 +467,7 @@ export default function KegiatanPage() {
                       </span>
                     )}
                     {k.kategori_kegiatan && (
-                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
                         {kategoriKegiatanLabel[k.kategori_kegiatan] || k.kategori_kegiatan}
                       </span>
                     )}
@@ -485,14 +485,14 @@ export default function KegiatanPage() {
                     {k.lokasi && <span>📍 {k.lokasi}</span>}
                   </div>
                   {k.tingkatan === 'daerah' && k.status_approval === 'ditolak' && k.catatan_ppg && (
-                    <div className="mt-2 p-2 bg-red-50 border border-red-100 rounded-lg text-xs text-red-600">
+                    <div className="mt-2 p-2 bg-red-50 border border-red-100 rounded-lg text-xs text-red-600 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
                       <span className="font-medium">Catatan PPG:</span> {k.catatan_ppg}
                     </div>
                   )}
                 </div>
                 {canManage && (
                   <div className="flex gap-2 shrink-0">
-                    <button onClick={() => openEdit(k)} className="text-blue-600 hover:text-blue-800 font-medium text-xs">Edit</button>
+                    <button onClick={() => openEdit(k)} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium text-xs">Edit</button>
                     <button onClick={() => handleDelete(k.id)} className="text-red-400 hover:text-red-600 font-medium text-xs">Hapus</button>
                   </div>
                 )}
@@ -563,8 +563,8 @@ export default function KegiatanPage() {
           </div>
 
           {canPickScope && (
-            <div className="p-2.5 bg-amber-50 border border-amber-100 rounded-xl space-y-2">
-              <label className="block text-xs font-medium text-amber-800">Kategori Kegiatan Daerah</label>
+            <div className="p-2.5 bg-amber-50 border border-amber-100 rounded-xl space-y-2 dark:bg-amber-900/20 dark:border-amber-800">
+              <label className="block text-xs font-medium text-amber-800 dark:text-amber-300">Kategori Kegiatan Daerah</label>
               <select
                 value={form.tingkatan === 'daerah' ? (form.kategori_kegiatan || '') : 'bukan_daerah'}
                 onChange={e => {
@@ -575,7 +575,7 @@ export default function KegiatanPage() {
                     setForm(f => ({ ...f, tingkatan: 'daerah', desa_id: '', kelompok_id: '', kategori_kegiatan: val }))
                   }
                 }}
-                className="w-full px-3 py-2 rounded-xl border border-amber-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+                className="w-full px-3 py-2 rounded-xl border border-amber-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-amber-700">
                 <option value="bukan_daerah">-- Bukan Kegiatan Daerah (pilih Desa/Kelompok di bawah) --</option>
                 <option value="pengajian_rutin">{kategoriKegiatanLabel.pengajian_rutin}</option>
                 <option value="pegasus">{kategoriKegiatanLabel.pegasus}</option>
@@ -583,7 +583,7 @@ export default function KegiatanPage() {
                 <option value="pengajian_gabungan">{kategoriKegiatanLabel.pengajian_gabungan}</option>
               </select>
               {form.tingkatan === 'daerah' && (
-                <p className="text-xs text-amber-700">Kegiatan tingkat Daerah (lintas Desa/Kelompok) -- wajib persetujuan PPG sebelum tampil ke semua orang.</p>
+                <p className="text-xs text-amber-700 dark:text-amber-400">Kegiatan tingkat Daerah (lintas Desa/Kelompok) -- wajib persetujuan PPG sebelum tampil ke semua orang.</p>
               )}
             </div>
           )}
@@ -672,7 +672,7 @@ export default function KegiatanPage() {
           )}
 
           {error && (
-            <div className="p-2.5 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600">{error}</div>
+            <div className="p-2.5 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">{error}</div>
           )}
 
           <div className="flex gap-3 pt-2 border-t border-slate-100">

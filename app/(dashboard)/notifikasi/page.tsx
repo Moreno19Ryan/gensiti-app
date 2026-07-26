@@ -6,10 +6,10 @@ import { supabase } from '@/lib/supabase'
 import { Notifikasi } from '@/lib/types'
 
 const tipeColor: Record<string, string> = {
-  info: 'bg-blue-100 text-blue-700',
-  warning: 'bg-yellow-100 text-yellow-700',
-  success: 'bg-green-100 text-green-700',
-  error: 'bg-red-100 text-red-700',
+  info: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  warning: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+  success: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  error: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 }
 
 export default function NotifikasiPage() {
@@ -69,7 +69,7 @@ export default function NotifikasiPage() {
         {unread > 0 && (
           <button
             onClick={markAllRead}
-            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+            className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium"
           >
             Tandai semua dibaca
           </button>
@@ -95,7 +95,7 @@ export default function NotifikasiPage() {
               className={`bg-white rounded-2xl p-4 shadow-sm border transition cursor-pointer ${
                 n.is_read
                   ? 'border-slate-100 opacity-70'
-                  : 'border-blue-100 ring-1 ring-blue-100 hover:shadow-md'
+                  : 'border-blue-100 ring-1 ring-blue-100 hover:shadow-md dark:border-blue-800 dark:ring-blue-800'
               }`}
             >
               <div className="flex items-start gap-3">

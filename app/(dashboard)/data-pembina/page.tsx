@@ -54,9 +54,9 @@ const statusPenggunaLabel: Record<string, string> = {
 }
 
 const statusPenggunaBadge: Record<string, string> = {
-  lajang: 'bg-blue-100 text-blue-700',
-  menikah: 'bg-emerald-100 text-emerald-700',
-  pindah_sambung: 'bg-amber-100 text-amber-700',
+  lajang: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  menikah: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  pindah_sambung: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
   meninggal_dunia: 'bg-slate-100 text-slate-600',
 }
 
@@ -431,7 +431,7 @@ export default function DataPembinaPage() {
                     <tr key={g.id} className="border-b border-slate-50 hover:bg-slate-50 transition">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 font-bold text-sm shrink-0">
+                          <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 font-bold text-sm shrink-0 dark:bg-purple-900/30 dark:text-purple-400">
                             {g.users?.nama_lengkap?.charAt(0).toUpperCase()}
                           </div>
                           <div>
@@ -453,25 +453,25 @@ export default function DataPembinaPage() {
                             {statusPenggunaLabel[sp]}
                           </span>
                           {g.users?.is_archived && (
-                            <span className="px-2 py-0.5 rounded-full text-xs font-medium w-fit bg-orange-100 text-orange-700">
+                            <span className="px-2 py-0.5 rounded-full text-xs font-medium w-fit bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
                               Diarsipkan
                             </span>
                           )}
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${lengkap ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${lengkap ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}`}>
                           {lengkap ? 'Lengkap' : 'Belum Lengkap'}
                         </span>
                       </td>
                       {canManage && (
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
-                            <button onClick={() => openEdit(g)} className="text-blue-600 hover:text-blue-800 font-medium text-xs">
+                            <button onClick={() => openEdit(g)} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium text-xs">
                               Lihat / Edit
                             </button>
                             {g.users?.is_archived && isSuperAdmin && (
-                              <button onClick={() => setRestoreTarget(g)} className="text-orange-500 hover:text-orange-700 font-medium text-xs">
+                              <button onClick={() => setRestoreTarget(g)} className="text-orange-500 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300 font-medium text-xs">
                                 Pulihkan
                               </button>
                             )}
@@ -493,7 +493,7 @@ export default function DataPembinaPage() {
       {editTarget && (
         <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title={`Biodata ${editTarget.users?.nama_lengkap || ''}`} size="lg">
           <div className="space-y-4">
-            {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
+            {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">{error}</div>}
 
             <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
               <span className="text-xs text-slate-400">No. PPG</span>
@@ -529,7 +529,7 @@ export default function DataPembinaPage() {
                   <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1">
                     Tanggal Lahir *
                     {form.tanggal_lahir && (
-                      <span className="px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-semibold normal-case">
+                      <span className="px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-semibold normal-case dark:bg-blue-900/20 dark:text-blue-400">
                         {formatAge(form.tanggal_lahir)}
                       </span>
                     )}
@@ -583,12 +583,12 @@ export default function DataPembinaPage() {
                     <option value="meninggal_dunia">Meninggal Dunia</option>
                   </select>
                   {form.status_pengguna === 'menikah' && (
-                    <p className="text-xs text-emerald-600 mt-1.5">
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1.5">
                       ✓ Status &quot;Menikah&quot; tidak mengarsipkan akun PPG -- mayoritas pengurus PPG memang sudah menikah.
                     </p>
                   )}
                   {form.status_pengguna === 'meninggal_dunia' && (
-                    <p className="text-xs text-red-600 mt-1.5">
+                    <p className="text-xs text-red-600 dark:text-red-400 mt-1.5">
                       ⚠️ Akun akan otomatis diarsipkan (dinonaktifkan) saat disimpan.
                     </p>
                   )}

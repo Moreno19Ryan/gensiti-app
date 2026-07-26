@@ -175,7 +175,7 @@ export default function LupaPasswordPage() {
 
           {done ? (
             <div className="text-center py-4">
-              <div className="w-14 h-14 bg-green-100 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-4">✓</div>
+              <div className="w-14 h-14 bg-green-100 dark:bg-green-900/30 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-4">✓</div>
               <h2 className="text-lg font-bold text-slate-800 mb-2">Password Berhasil Diubah</h2>
               <p className="text-slate-500 text-sm mb-6">
                 Password akun kamu sudah diperbarui. Silakan masuk lagi dengan password baru.
@@ -194,7 +194,7 @@ export default function LupaPasswordPage() {
               </p>
 
               {error && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
                   {error}
                 </div>
               )}
@@ -243,7 +243,7 @@ export default function LupaPasswordPage() {
               </p>
 
               {error && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
                   {error}
                 </div>
               )}

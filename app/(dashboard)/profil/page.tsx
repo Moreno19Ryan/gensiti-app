@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { authFetch, signOut } from '@/lib/auth'
 import Modal from '@/components/Modal'
 import ProfilHeader from '@/components/ProfilHeader'
+import { useDarkMode } from '@/lib/dark-mode'
 import type { UserIdentity } from '@supabase/supabase-js'
 
 const APP_VERSION = '0.1.0'
@@ -80,10 +81,11 @@ export default function ProfilPage() {
   const [unlinkConfirm, setUnlinkConfirm] = useState(false)
   const [unlinking, setUnlinking] = useState(false)
 
-  // Mode Gelap -- state & mekanisme (localStorage key + class 'dark' di documentElement)
-  // SAMA PERSIS dengan toggleDarkMode di app/(dashboard)/layout.tsx, supaya toggle dari sini
-  // ATAU dari sidebar tetap konsisten satu sama lain (bukan dua sumber kebenaran terpisah).
-  const [darkMode, setDarkModeState] = useState(false)
+  // Mode Gelap -- pakai hook bersama lib/dark-mode.ts (useSyncExternalStore) supaya toggle
+  // dari sini ATAU dari ikon di layout.tsx (kanan atas) selalu sinkron real-time, tidak perlu
+  // reload. Sebelumnya masing-masing punya useState terpisah yang cuma baca localStorage
+  // sekali saat mount -- toggle di satu tempat tidak membuat yang lain re-render.
+  const [darkMode, toggleDarkMode] = useDarkMode()
   const [confirmLogout, setConfirmLogout] = useState(false)
 
   const loadGenerus = async (userId: string) => {
@@ -105,14 +107,6 @@ export default function ProfilPage() {
     loadGoogleIdentity()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
-
-  // Baca preferensi Mode Gelap tersimpan saat mount -- murni sinkronisasi state dgn
-  // localStorage yg sudah ada (bukan derived state), sama pola dgn layout.tsx.
-  useEffect(() => {
-    const saved = localStorage.getItem('gensiti_dark_mode')
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDarkModeState(saved === 'true')
-  }, [])
 
   // Baca hasil redirect setelah proses linkIdentity('google') selesai (sukses/gagal/
   // dibatalkan) -- lihat komentar sama persis di HANDOFF sebelumnya. HANYA hapus key yg
@@ -139,14 +133,6 @@ export default function ProfilPage() {
     const qs = params.toString()
     window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : ''))
   }, [])
-
-  const toggleDarkMode = () => {
-    const next = !darkMode
-    setDarkModeState(next)
-    localStorage.setItem('gensiti_dark_mode', String(next))
-    if (next) document.documentElement.classList.add('dark')
-    else document.documentElement.classList.remove('dark')
-  }
 
   const handleSignOut = async () => {
     setConfirmLogout(false)
@@ -282,7 +268,7 @@ export default function ProfilPage() {
       <ProfilHeader title="Profil Saya" backHref="/dashboard" />
 
       {msg && (
-        <div className={`p-3 rounded-xl text-sm ${msg.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+        <div className={`p-3 rounded-xl text-sm ${msg.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400' : 'bg-red-50 border border-red-200 text-red-700 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400'}`}>
           {msg.text}
         </div>
       )}
@@ -376,7 +362,7 @@ export default function ProfilPage() {
                 </button>
               )}
             </div>
-            {googleMsg && <p className={`text-xs mt-2 ${googleMsg.type === 'ok' ? 'text-emerald-600' : 'text-red-500'}`}>{googleMsg.text}</p>}
+            {googleMsg && <p className={`text-xs mt-2 ${googleMsg.type === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>{googleMsg.text}</p>}
           </div>
           {!isSuperAdmin && generusData?.nomor_generus && (
             <ListItem

@@ -118,11 +118,11 @@ export default function DataDiriPage() {
 
       <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6 space-y-4">
         {msg && (
-          <div className={`p-3 rounded-xl text-sm ${msg.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+          <div className={`p-3 rounded-xl text-sm ${msg.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400' : 'bg-red-50 border border-red-200 text-red-700 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400'}`}>
             {msg.text}
           </div>
         )}
-        <p className="text-xs text-slate-500 bg-blue-50 p-3 rounded-xl border border-blue-100">
+        <p className="text-xs text-slate-500 bg-blue-50 p-3 rounded-xl border border-blue-100 dark:bg-blue-900/20 dark:border-blue-800">
           {isPPGUser ? 'Data diri Anda sebagai PPG. Perubahan akan tersimpan ke profil Generus.' : 'Data diri Anda. Perubahan akan tersimpan ke profil Generus.'}
         </p>
         <div className="grid grid-cols-2 gap-3">
