@@ -217,8 +217,8 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
       const { queued } = await submitCheckinDenganKode(inputKode.trim())
       setStatusCheckin('sukses')
       setPesanCheckin(queued
-        ? 'Sinyal terputus -- absensi disimpan di perangkat & akan otomatis terkirim saat online kembali.'
-        : 'Absensi berhasil dicatat. Terima kasih!')
+        ? 'Sinyal lagi kurang stabil nih -- tenang aja, absensimu udah kesimpen di HP dan bakal otomatis terkirim pas online lagi.'
+        : 'Mantap, kamu udah tercatat hadir!')
       setSudahHadir(true)
       setInputKode('')
     } catch (e) {
@@ -251,8 +251,8 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
       const { queued } = await submitCheckinDenganKode(payload.kode)
       setStatusCheckin('sukses')
       setPesanCheckin(queued
-        ? 'Sinyal terputus -- absensi disimpan di perangkat & akan otomatis terkirim saat online kembali.'
-        : 'Absensi berhasil dicatat. Terima kasih!')
+        ? 'Sinyal lagi kurang stabil nih -- tenang aja, absensimu udah kesimpen di HP dan bakal otomatis terkirim pas online lagi.'
+        : 'Mantap, kamu udah tercatat hadir!')
       setSudahHadir(true)
     } catch (e) {
       setStatusCheckin('gagal')
@@ -319,8 +319,8 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
       const { queued } = await submitCheckinDenganKode(kode)
       setStatusCheckin('sukses')
       setPesanCheckin(queued
-        ? 'Sinyal terputus -- kehadiran disimpan di perangkat & akan otomatis terkirim saat online kembali.'
-        : 'Kehadiran Anda berhasil dicatat. Terima kasih!')
+        ? 'Sinyal lagi kurang stabil nih -- tenang aja, kehadiranmu udah kesimpen dan bakal otomatis terkirim pas online lagi.'
+        : 'Mantap, kehadiran kamu udah tercatat!')
       setSudahHadir(true)
     } catch (e) {
       setStatusCheckin('gagal')

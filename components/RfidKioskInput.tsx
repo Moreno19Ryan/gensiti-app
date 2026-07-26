@@ -66,7 +66,7 @@ export default function RfidKioskInput({ kegiatanId, kode, onCheckin }: Props) {
       if (hasil.error) throw new Error(hasil.error)
       if (hasil.queued) {
         setJumlahAntrean((n) => n + 1)
-        onCheckin('📶 Sinyal terputus -- absensi disimpan & akan otomatis terkirim saat online kembali.', true)
+        onCheckin('📶 Sinyal kurang stabil -- data kesimpen, nanti otomatis terkirim', true)
       } else {
         const data = hasil.data as { nama_lengkap?: string } | undefined
         const nama = data?.nama_lengkap ? ` -- ${data.nama_lengkap}` : ''

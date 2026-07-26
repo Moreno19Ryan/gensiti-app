@@ -147,7 +147,7 @@ export default function CatatanPembinaanPage() {
       ) : data.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
           <div className="text-4xl mb-2">📝</div>
-          <p>Belum ada catatan pembinaan</p>
+          <p>Belum ada catatan pembinaan yang ditulis</p>
         </div>
       ) : (
         <div className="grid gap-3">

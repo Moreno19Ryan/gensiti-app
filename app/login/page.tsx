@@ -156,7 +156,7 @@ export default function LoginPage() {
     // `required` pada <input> internalnya (komponen tidak menerima prop itu), jadi
     // browser tidak otomatis mencegah submit kosong seperti pada <input required> biasa.
     if (!normalizedUsername || !password) {
-      setError('Nama pengguna dan password wajib diisi')
+      setError('Nama pengguna dan password wajib diisi dulu ya')
       setLoading(false)
       return
     }
@@ -169,7 +169,7 @@ export default function LoginPage() {
       })
       const resolved = await res.json()
       if (!res.ok || !resolved.email) {
-        setError('Nama pengguna atau password salah')
+        setError('Yah, nama pengguna atau password-nya kayaknya belum pas nih')
         setLoading(false)
         return
       }
@@ -201,7 +201,7 @@ export default function LoginPage() {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Login gagal'
       if (message.includes('Invalid login credentials')) {
-        setError('Nama pengguna atau password salah')
+        setError('Yah, nama pengguna atau password-nya kayaknya belum pas nih')
       } else if (message.includes('Email not confirmed')) {
         setError('Akun belum dikonfirmasi')
       } else {
