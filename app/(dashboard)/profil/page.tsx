@@ -268,7 +268,7 @@ export default function ProfilPage() {
       <ProfilHeader title="Profil Saya" backHref="/dashboard" />
 
       {msg && (
-        <div className={`p-3 rounded-xl text-sm ${msg.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+        <div className={`p-3 rounded-xl text-sm ${msg.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400' : 'bg-red-50 border border-red-200 text-red-700 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400'}`}>
           {msg.text}
         </div>
       )}
@@ -362,7 +362,7 @@ export default function ProfilPage() {
                 </button>
               )}
             </div>
-            {googleMsg && <p className={`text-xs mt-2 ${googleMsg.type === 'ok' ? 'text-emerald-600' : 'text-red-500'}`}>{googleMsg.text}</p>}
+            {googleMsg && <p className={`text-xs mt-2 ${googleMsg.type === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>{googleMsg.text}</p>}
           </div>
           {!isSuperAdmin && generusData?.nomor_generus && (
             <ListItem
