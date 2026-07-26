@@ -79,12 +79,12 @@ export default function NotifikasiPage() {
       {loading ? (
         <div className="text-center py-12 text-slate-400">
           <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-          Memuat...
+          Sabar ya, lagi disiapin...
         </div>
       ) : data.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
           <div className="text-4xl mb-2">🔔</div>
-          <p>Tidak ada notifikasi</p>
+          <p>Belum ada notifikasi nih, aman!</p>
         </div>
       ) : (
         <div className="space-y-2">

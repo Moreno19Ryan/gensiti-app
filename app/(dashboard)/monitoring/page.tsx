@@ -375,7 +375,7 @@ function AuditTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user
         {loading ? (
           <div className="flex items-center justify-center py-12 text-slate-400">
             <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mr-2" />
-            Memuat...
+            Sabar ya, lagi disiapin...
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-12 text-slate-400">
@@ -527,7 +527,7 @@ function EmailTab() {
         {loading ? (
           <div className="flex items-center justify-center py-12 text-slate-400">
             <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mr-2" />
-            Memuat...
+            Sabar ya, lagi disiapin...
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-12 text-slate-400">

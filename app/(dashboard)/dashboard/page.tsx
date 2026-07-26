@@ -763,7 +763,7 @@ export default function DashboardPage() {
                 <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
               </div>
             ) : !generusInsight?.kegiatanMendatang.length ? (
-              <div className="py-8 text-center text-slate-400 text-sm">Belum ada kegiatan mendatang</div>
+              <div className="py-8 text-center text-slate-400 text-sm">Belum ada kegiatan mendatang, cek lagi nanti ya</div>
             ) : (
               <div className="divide-y divide-slate-100">
                 {generusInsight.kegiatanMendatang.map((k) => (
@@ -787,7 +787,7 @@ export default function DashboardPage() {
                 <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
               </div>
             ) : !generusInsight?.pengumumanTerbaru.length ? (
-              <div className="py-8 text-center text-slate-400 text-sm">Belum ada pengumuman aktif</div>
+              <div className="py-8 text-center text-slate-400 text-sm">Belum ada pengumuman baru nih</div>
             ) : (
               <div className="divide-y divide-slate-100">
                 {generusInsight.pengumumanTerbaru.map((p) => (

@@ -624,7 +624,7 @@ export default function AbsensiPage() {
             </div>
           ) : filteredKegiatan.length === 0 ? (
             <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
-              <p>Belum ada kegiatan</p>
+              <p>Belum ada kegiatan nih</p>
             </div>
           ) : (
             <div className="grid gap-3">
