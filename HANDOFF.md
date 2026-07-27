@@ -61,6 +61,38 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 27 Juli 2026 (lanjutan) — Beres-beres teknis DB pasca-A4 (item #5, #7, #8 audit)
+
+Setelah insiden deploy A4 tuntas (lihat entri sesi di bawah), Reno diajak diskusi
+soal prioritas kerja berikutnya (semua A1-A7 & B2-B5 sudah selesai, sisa hanya
+item hardening DB dari audit + B1 yang belum mulai). Reno pilih beres-beres
+teknis dulu -- 3 item dari `AUDIT_MENYELURUH_2026-07.md` §6, semuanya digabung
+jadi satu batch krn sama-sama perubahan DB tanpa efek perilaku aplikasi:
+
+- **#5** `SET search_path = public` pada `submit_presensi`/`submit_presensi_rfid`
+  (migrasi `fix_search_path_fungsi_presensi`) -- 2 fungsi ini anomali, semua
+  fungsi `SECURITY DEFINER` lain sudah konsisten pakai ini.
+- **#7** `(select auth.uid())` di 6 policy/7 klausul yang sebelumnya bare
+  `auth.uid()` (migrasi `optimasi_rls_select_auth_uid`) -- perf murni, logika
+  identik. Diverifikasi lewat `BEGIN...ROLLBACK` + `SET LOCAL role authenticated`:
+  user pemilik 1 baris `push_subscriptions` tetap cuma lihat persis 1 baris
+  miliknya pasca-rewrite (bukan 0/kebocoran tertutup, bukan 2/kebocoran ke user
+  lain). **Ketemu 1 kasus tambahan** saat verifikasi ulang lewat advisor:
+  `feature_toggles_select_all` pakai `auth.role()` (bukan `auth.uid()`) dan kena
+  initplan issue yang sama -- terlewat dari audit awal krn query pembuktian lama
+  cuma menyaring pola `auth.uid()`. Sempat salah tulis di percobaan pertama (lupa
+  benar-benar membungkus ekspresinya), ketahuan saat verifikasi ulang & langsung
+  diperbaiki (migrasi susulan `..._fix`).
+- **#8** Index baru utk 40 foreign key yang sebelumnya tanpa index pendukung
+  (migrasi `index_fk_tanpa_index`), termasuk `reset_password_requests` (tabel
+  usang, tetap diberi index demi kelengkapan). Diverifikasi: advisor performance
+  `unindexed_foreign_keys` 40 → 0.
+
+Item #6 (proteksi password bocor) masih pending -- itu sakelar di Supabase
+Dashboard Auth settings, harus Reno sendiri yang nyalain, bukan sesuatu yang
+bisa dikerjakan lewat migrasi/kode. Detail lengkap tiap item ada di
+`AUDIT_MENYELURUH_2026-07.md` §6-7.
+
 ### Sesi 27 Juli 2026 — Audit menyeluruh (keamanan+UX), fondasi toast/dialog, a11y Modal, skeleton loader, transisi navigasi, A4 (multi-device session)
 
 **PR #21** -- docs-only, catat penyelesaian B4 (menu Pengaturan) di HANDOFF/WISHLIST_ASSESSMENT yang sempat tertinggal dari sesi sebelumnya.

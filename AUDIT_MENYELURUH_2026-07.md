@@ -331,12 +331,12 @@ Diurutkan berdasarkan (dampak ÷ risiko), bukan berdasarkan besarnya usaha.
 |---|---|---|---|---|
 | ~~1~~ | ~~Cabut EXECUTE 3 fungsi cron (§1)~~ | ✅ **SELESAI** — disetujui & diverifikasi | — | — |
 | ~~2~~ | ~~Toast + dialog konfirmasi berstyle, ganti 16 `alert`/`confirm`~~ | ✅ **SELESAI** — lihat §7 | — | — |
-| **3** | `Modal.tsx`: focus trap, Escape, `role="dialog"` | Melengkapi B4 | Rendah | Tidak |
-| **4** | Skeleton loader di halaman utama | "Efek menyenangkan" | Nol | Tidak |
-| **5** | `SET search_path` 2 fungsi presensi (§2a) | Kebersihan | Rendah | ✅ **Ya — DB production** |
-| **6** | Aktifkan proteksi password bocor (§2b) | Keamanan akun | Nol | Sakelar dashboard Reno |
-| **7** | `(select auth.uid())` di 7 policy (§3a) | Performa | Sedang | ✅ **Ya — DB production** |
-| **8** | Index FK (§3c) | Performa skala | Rendah | ✅ **Ya — DB production** |
+| ~~3~~ | ~~`Modal.tsx`: focus trap, Escape, `role="dialog"`~~ | ✅ **SELESAI** — PR #23 | — | — |
+| ~~4~~ | ~~Skeleton loader di halaman utama~~ | ✅ **SELESAI** — PR #23 | — | — |
+| ~~5~~ | ~~`SET search_path` 2 fungsi presensi (§2a)~~ | ✅ **SELESAI** — migrasi `fix_search_path_fungsi_presensi` | — | — |
+| **6** | Aktifkan proteksi password bocor (§2b) | Keamanan akun | Nol | Sakelar dashboard Reno — belum dikonfirmasi aktif |
+| ~~7~~ | ~~`(select auth.uid())` di 7 policy (§3a)~~ | ✅ **SELESAI** — migrasi `optimasi_rls_select_auth_uid` + 1 kasus tambahan (`auth.role()` di `feature_toggles`, terlewat dari audit awal krn beda pola fungsi) via `optimasi_rls_select_auth_role_feature_toggles_fix` | — | — |
+| ~~8~~ | ~~Index FK (§3c)~~ | ✅ **SELESAI** — migrasi `index_fk_tanpa_index`, 40 index ditambahkan, diverifikasi lewat advisor (`unindexed_foreign_keys` 40→0) | — | — |
 | — | Gabungkan 155 policy (§3b) | Performa | **Tinggi** | ❌ Sebaiknya jangan sekarang |
 
 ### Catatan jujur soal "banyak efek yang menyenangkan"
@@ -406,6 +406,30 @@ sama: `if (!confirm(...))` cukup jadi `if (!await konfirmasi({...}))`.
 Animasi sengaja ditahan di 180–220ms dengan easing `cubic-bezier(0.16, 1, 0.3, 1)`
 dan seluruhnya dinonaktifkan di bawah `prefers-reduced-motion` — konsisten
 dengan komitmen aksesibilitas B4.
+
+### Item #3 & #4 — a11y `Modal.tsx` + skeleton loader (PR #23)
+
+Lihat `HANDOFF.md` §Sesi 27 Juli 2026 untuk detail lengkap.
+
+### Item #5, #7, #8 — beres-beres teknis DB (disetujui Reno pasca-A4)
+
+- **#5** — `ALTER FUNCTION ... SET search_path = public` untuk `submit_presensi` &
+  `submit_presensi_rfid`, disamakan dgn fungsi `SECURITY DEFINER` lain yang sudah
+  konsisten. Diverifikasi lewat `pg_proc.proconfig`.
+- **#7** — 6 policy (7 klausul `qual`/`with_check`) dibungkus `(select auth.uid())`
+  lewat `ALTER POLICY`, logika tidak berubah sama sekali. Diverifikasi 2 lapis:
+  (a) regex ulang memastikan nol `auth.uid()` bare tersisa, (b) spot-check
+  fungsional `BEGIN...ROLLBACK` dgn `SET LOCAL role authenticated` — user pemilik
+  1 baris `push_subscriptions` tetap cuma melihat 1 baris miliknya sendiri (bukan 0
+  atau 2), membuktikan scoping RLS tidak berubah pasca-rewrite.
+  **Temuan tambahan** saat verifikasi ulang lewat advisor: `feature_toggles_select_all`
+  ternyata juga kena masalah initplan yang sama tapi lewat `auth.role()`, bukan
+  `auth.uid()` — terlewat dari audit awal krn query pembuktian lama cuma menyaring
+  pola `auth.uid()`. Sudah diperbaiki juga dgn pola yang sama.
+- **#8** — 40 index baru (`idx_<tabel>_<kolom>`) untuk semua FK yang sebelumnya
+  tanpa index pendukung, termasuk `reset_password_requests` (tabel usang, tetap
+  diberi index demi kelengkapan meski tabelnya kandidat dihapus di masa depan).
+  Diverifikasi: advisor performance `unindexed_foreign_keys` 40 → 0.
 
 ---
 
