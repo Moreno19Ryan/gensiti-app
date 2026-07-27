@@ -10,6 +10,7 @@ import { canManageKontenOrganisasi } from '@/lib/roles'
 import { useFeatureAccess } from '@/lib/feature-toggles'
 import { toast } from '@/lib/toast'
 import { konfirmasi } from '@/lib/konfirmasi'
+import { SkeletonCards } from '@/components/Skeleton'
 
 interface DesaOpt { id: string; nama_desa: string }
 interface KelompokOpt { id: string; nama_kelompok: string; desa_id: string }
@@ -238,9 +239,7 @@ export default function PengumumanPage() {
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-slate-400">
-          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-        </div>
+        <SkeletonCards />
       ) : filteredData.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
           <div className="text-4xl mb-2">📢</div>

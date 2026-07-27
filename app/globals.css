@@ -286,7 +286,8 @@ body {
   .animate-page-in,
   .animate-toast-in,
   .animate-dialog-in,
-  .animate-fade-in {
+  .animate-fade-in,
+  .animate-pulse {
     animation: none;
   }
 }
