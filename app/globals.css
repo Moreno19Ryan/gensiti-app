@@ -309,6 +309,7 @@ body {
   .animate-toast-in,
   .animate-dialog-in,
   .animate-fade-in,
+  .animate-pulse,
   .animate-nav-pop {
     animation: none;
   }

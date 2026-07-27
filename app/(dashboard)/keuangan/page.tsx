@@ -12,6 +12,7 @@ import { useFeatureAccess } from '@/lib/feature-toggles'
 import { ExportOptions } from '@/lib/export'
 import { toast } from '@/lib/toast'
 import { konfirmasi } from '@/lib/konfirmasi'
+import { SkeletonRows, SkeletonTable } from '@/components/Skeleton'
 
 interface DesaOpt { id: string; nama_desa: string }
 interface KelompokOpt { id: string; nama_kelompok: string; desa_id: string }
@@ -541,9 +542,7 @@ export default function KeuanganPage() {
       {tab === 'reimbursement' ? (
         <div className="space-y-4">
           {loadingPengajuan ? (
-            <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
-              <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-            </div>
+            <SkeletonRows jumlah={4} />
           ) : (
             <>
               {pengajuanBisaDiproses.length > 0 && (
@@ -695,18 +694,18 @@ export default function KeuanganPage() {
             ))}
           </div>
 
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-            {loading ? (
-              <div className="flex items-center justify-center py-12 text-slate-400">
-                <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mr-2" />
-              </div>
-            ) : filtered.length === 0 ? (
+          {loading ? (
+            <SkeletonTable kolom={['No. Transaksi', 'Tanggal', 'Jenis', 'Kategori', 'Deskripsi', 'Jumlah']} />
+          ) : filtered.length === 0 ? (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
               <div className="text-center py-12 text-slate-400">
                 <div className="text-4xl mb-2">💰</div>
                 <p>Belum ada transaksi yang tercatat</p>
                 {canManage && <button onClick={openAdd} className="mt-3 text-blue-600 dark:text-blue-400 text-sm font-medium hover:underline">+ Tambah sekarang</button>}
               </div>
-            ) : (
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -750,8 +749,8 @@ export default function KeuanganPage() {
                   </tbody>
                 </table>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </>
       )}
 

@@ -11,6 +11,7 @@ import { ExportOptions, exportToPDF } from '@/lib/export'
 import ExportPreviewModal from '@/components/ExportPreviewModal'
 import LaporanBulananModal from '@/components/LaporanBulananModal'
 import { toast } from '@/lib/toast'
+import { SkeletonCards, SkeletonRows } from '@/components/Skeleton'
 
 const statusLabel: Record<string, { label: string; color: string }> = {
   upcoming: { label: 'Akan Datang', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
@@ -620,9 +621,7 @@ export default function AbsensiPage() {
             className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           {loadingKegiatan ? (
-            <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
-              <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-            </div>
+            <SkeletonCards />
           ) : filteredKegiatan.length === 0 ? (
             <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
               <p>Belum ada kegiatan nih</p>
@@ -732,9 +731,7 @@ export default function AbsensiPage() {
           )}
 
           {loadingDetail ? (
-            <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
-              <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-            </div>
+            <SkeletonRows jumlah={6} />
           ) : scopedGenerus.length === 0 ? (
             <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
               <p>Tidak ada Generus dalam cakupan ini</p>
