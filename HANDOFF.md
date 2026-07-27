@@ -61,6 +61,46 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 27 Juli 2026 (lanjutan 4) — Audit fitur Notifikasi/push + banner ajakan aktifkan push
+
+Menindaklanjuti gap terakhir yang tercatat di §4B dokumen ini ("push notification
+sudah ada lib/push.ts + ServiceWorkerRegister.tsx -- perlu dicek status pemakaian
+nyata"). Hasil audit menyeluruh (kode + query production):
+
+- **Pipeline push TERNYATA lengkap & aktif end-to-end**, bukan setengah jalan
+  seperti dugaan awal: `lib/push.ts` (subscribe/unsubscribe browser) ->
+  `push_subscriptions` -> trigger DB `notify_push`/`notify_push_scope`
+  (dipanggil dari trigger kegiatan/pengumuman baru, approval reimbursement,
+  approval PPG, DAN 5 job `pg_cron` reminder) -> Edge Function `send-push`
+  (`web-push` + VAPID asli) -> service worker `public/sw.js`. Semua
+  dikonfirmasi lewat `pg_get_functiondef`/`pg_trigger` di database production,
+  bukan cuma baca kode.
+- **Masalah sebenarnya: adopsi, bukan kode.** Dari 83 akun aktif, cuma **2**
+  yang pernah mengaktifkan toggle push (baris `push_subscriptions`).
+  Kemungkinan besar karena togglenya "tersembunyi" di sub-halaman
+  `Profil -> Notifikasi`, bukan di halaman **Notifikasi** utama, dan tidak ada
+  ajakan apapun.
+- **Perbaikan yang dikerjakan**: banner ajakan "Aktifkan Notifikasi Push?" di
+  atas halaman `app/(dashboard)/notifikasi/page.tsx` (halaman utama, bukan
+  sub-profil) -- klik "Aktifkan" langsung memanggil `subscribeToPush` di
+  tempat (tidak perlu pindah halaman). Muncul HANYA kalau: browser mendukung,
+  izin belum ditolak permanen, belum ada subscription aktif di device ini, dan
+  belum pernah di-dismiss ("Nanti Saja" -> `localStorage`, dismiss permanen,
+  sengaja TIDAK muncul lagi otomatis supaya tidak nagging). Super Admin
+  dikecualikan (konsisten dengan `profil/notifikasi/page.tsx` yang sudah lebih
+  dulu redirect Super Admin keluar dari pengaturan push).
+- Visual diverifikasi lewat preview page sementara + screenshot Playwright
+  (Mode Terang & Gelap, termasuk state pesan error) -- halaman preview sudah
+  dihapus lagi, bukan bagian permanen kode. `tsc`, `eslint`, `npm run test`,
+  `npm run build` semua sukses.
+- **Item #6 (proteksi password bocor) masih pending** -- ternyata BUKAN
+  sekadar toggle gratis seperti dugaan awal audit: fitur "Prevent use of
+  leaked passwords" (Authentication -> Attack Protection) cuma tersedia di
+  **Supabase Pro plan ke atas** (project masih FREE plan). Jadi ini sekarang
+  keputusan upgrade berbayar berulang (~$25/bulan, cek angka pasti di
+  Billing), bukan cuma sakelar gratis -- ditunda dulu sampai Reno putuskan
+  worth it atau tidak.
+
 ### Sesi 27 Juli 2026 (lanjutan 3) — Tabel usang §2d (no action) + B1 Gamifikasi v1 (badge personal)
 
 Melanjutkan diskusi prioritas pasca-batch DB di atas: 2 hal dari sisa
@@ -699,9 +739,10 @@ prioritasnya bersama Reno**, tapi ini kandidat area lanjutan yang masuk akal:
   autocrlf berulang di masa depan.
 
 ### B. Fitur yang kemungkinan besar masih dibutuhkan
-- **Notifikasi**: menu `notifikasi` sudah ada, tapi belum diaudit mendalam sejauh mana
-  cakupannya (push notification web sudah ada `lib/push.ts` + `ServiceWorkerRegister.tsx` --
-  perlu dicek status pemakaian nyata).
+- ~~**Notifikasi**: menu `notifikasi` sudah ada, tapi belum diaudit mendalam sejauh mana
+  cakupannya~~ ✅ **Sudah diaudit** (Sesi 27 Juli 2026 lanjutan 4) -- pipeline push
+  end-to-end TERNYATA lengkap & aktif, gap-nya cuma adopsi (2/83 user). Banner ajakan
+  aktifkan push sudah ditambahkan di halaman Notifikasi utama.
 - **Backup data**: menu `backup-data` sudah ada -- perlu dipastikan alurnya (manual/terjadwal)
   dan diuji end-to-end kalau belum pernah dicoba pemulihan datanya.
 - **Laporan bulanan untuk jenjang PPG**: sejauh ini RPC laporan bulanan dibangun untuk
