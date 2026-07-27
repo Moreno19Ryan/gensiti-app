@@ -356,7 +356,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             return (
               <Link key={item.href} href={item.href} title={collapsed ? item.label : undefined}
                 className={`flex items-center rounded-xl text-sm font-medium transition-all ${collapsed ? 'justify-center w-10 h-10 mx-auto' : 'gap-3 px-3 py-2.5'} ${
-                  isActive ? 'bg-white text-blue-900 shadow-sm' : 'text-blue-100 hover:bg-blue-800 hover:text-white'
+                  isActive ? 'bg-white text-blue-900 shadow-sm animate-nav-pop' : 'text-blue-100 hover:bg-blue-800 hover:text-white'
                 }`}>
                 <span className="text-base shrink-0">{item.icon}</span>
                 {!collapsed && item.label}
@@ -388,7 +388,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </svg>
             </button>
             <div>
-              <h1 className="font-bold text-slate-800 dark:text-slate-100 text-base lg:text-lg leading-tight">{currentLabel}</h1>
+              {/* key={currentLabel} SENGAJA dipasang -- h1 ini hidup di layout.tsx yang TIDAK
+                  remount antar halaman (beda dari konten via template.tsx), jadi teks di
+                  dalamnya biasanya cuma "meloncat" berganti tanpa transisi apa pun begitu
+                  currentLabel berubah. Mengganti key memaksa React membongkar & memasang
+                  ulang elemennya tiap kali berpindah menu, sehingga animate-fade-in (sudah
+                  ada, dipakai juga di backdrop Modal/Konfirmasi) otomatis terputar ulang. */}
+              <h1 key={currentLabel} className="font-bold text-slate-800 dark:text-slate-100 text-base lg:text-lg leading-tight animate-fade-in">{currentLabel}</h1>
               <p className="text-slate-400 dark:text-slate-500 text-xs hidden sm:block">
                 {tingkatan === 'ppg' ? 'PPG · Bekasi Timur' : user.desa ? user.desa.nama_desa : 'Tingkat Daerah'}
                 {user.kelompok ? ` · ${user.kelompok.nama_kelompok}` : ''}

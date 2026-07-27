@@ -223,7 +223,9 @@ body {
 
 /* Transisi halus saat berpindah halaman -- dipakai di app/login/page.tsx,
    app/lupa-password/page.tsx (root wrapper), dan app/(dashboard)/template.tsx (konten
-   per halaman dashboard, sidebar/topbar di layout.tsx tidak ikut animasi ini). */
+   per halaman dashboard, sidebar/topbar di layout.tsx tidak ikut animasi ini). Easing
+   disamakan dgn toast/dialog (cubic-bezier "keluar-cepat, mendarat-lembut") supaya seluruh
+   app terasa satu bahasa gerak, bukan campuran ease-out bawaan di sana-sini. */
 @keyframes page-fade-in {
   from {
     opacity: 0;
@@ -235,7 +237,27 @@ body {
   }
 }
 .animate-page-in {
-  animation: page-fade-in 260ms ease-out;
+  animation: page-fade-in 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Highlight menu aktif di sidebar (app/(dashboard)/layout.tsx) -- class ini HANYA disematkan
+   ke <Link> saat itemnya baru saja jadi aktif (bukan selalu ada lalu disembunyikan), jadi
+   `animation-name` di elemen itu berubah dari "none" ke "nav-pop" setiap kali berpindah menu
+   -- browser otomatis memutar ulang animasinya di setiap perubahan itu, tanpa perlu JS
+   mengukur posisi elemen (teknik "sliding pill" sungguhan butuh itu). Efeknya: pindah menu
+   terasa ada "kedatangan" singkat, bukan warna yang cuma berganti instan. */
+@keyframes nav-pop {
+  from {
+    transform: scale(0.92);
+    opacity: 0.5;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.animate-nav-pop {
+  animation: nav-pop 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Toast (components/ToastHost.tsx) & dialog konfirmasi (components/KonfirmasiHost.tsx).
@@ -287,7 +309,8 @@ body {
   .animate-toast-in,
   .animate-dialog-in,
   .animate-fade-in,
-  .animate-pulse {
+  .animate-pulse,
+  .animate-nav-pop {
     animation: none;
   }
 }
