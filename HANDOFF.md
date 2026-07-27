@@ -61,6 +61,50 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 27 Juli 2026 (lanjutan 3) — Tabel usang §2d (no action) + B1 Gamifikasi v1 (badge personal)
+
+Melanjutkan diskusi prioritas pasca-batch DB di atas: 2 hal dari sisa
+`AUDIT_MENYELURUH_2026-07.md` yang belum diputuskan.
+
+- **§2d tabel usang `reset_password_requests`** -- dicek isinya (`execute_sql`,
+  read-only): cuma 1 baris historis (request Reno sendiri, 14 Juli, sudah
+  `processed`). **Keputusan: JANGAN di-drop** -- komentar di
+  `backup-data/page.tsx:9` sudah eksplisit bilang tabel ini sengaja dibiarkan
+  ada untuk histori, jadi rekomendasi audit "pertimbangkan drop" ternyata
+  bentrok dengan keputusan yang sudah diambil sebelumnya. Ditutup sebagai *no
+  action*.
+- **B1 Gamifikasi Ringan v1** -- didiskusikan dulu 2 keputusan non-teknis
+  sebelum nulis kode (sesuai catatan `WISHLIST_ASSESSMENT.md` §B1):
+  1. **Badge personal, BUKAN leaderboard** -- disetujui Reno, karena ranking
+     publik antar-orang/kelompok berisiko memicu kompetisi tidak sehat di
+     organisasi keagamaan/sosial begini.
+  2. **Pemicu: bertahap dari presensi dulu** (bukan poin datar atau
+     kegiatan-selesai/streak dari awal) -- badge dihitung dari pola presensi
+     yang sudah ada, bukan sistem poin baru.
+
+  Implementasi v1 (3 badge, kegiatan berjalan mingguan):
+  - 🔥 **Streak** -- hadir >=4x berturut-turut (izin/sakit dilewati/tidak
+    memutus, `tidak_hadir`/alpha memutus)
+  - 📅 **Rajin Bulan Ini** -- hadir >=75% dari minimal 3 kegiatan bulan berjalan
+  - 🌱 **Kontribusi Konsisten** -- 3 bulan KALENDER berturut-turut (bukan cuma
+    3 bulan yang kebetulan ada datanya) masing-masing >=75% hadir
+
+  **Sengaja TANPA tabel/RPC baru** -- semua badge dihitung on-the-fly di
+  client dari data `absensi` yang sudah ada (pola sama seperti
+  `profil/riwayat-absensi/page.tsx`, RLS sudah membatasi ke baris milik
+  generus sendiri), jadi tidak ada skema/RLS baru yang perlu didesain atau
+  di-review. Lihat `lib/badges.ts` (+ `lib/badges.test.ts`, 9 test) untuk
+  logikanya, ditampilkan di kartu hero `app/(dashboard)/profil/page.tsx`
+  (disembunyikan total kalau generus belum punya badge apapun -- menghindari
+  kesan "0 pencapaian").
+
+  **Catatan penting**: saat ini baru ada **1 kegiatan tercatat di database**
+  (24 Juli 2026, 79 baris absensi) -- threshold di atas cuma tebakan awal
+  berdasar asumsi kegiatan mingguan, belum tervalidasi dengan data multi-bulan
+  asli. Wajar dikalibrasi ulang setelah beberapa bulan berjalan kalau ternyata
+  terlalu gampang/susah dicapai. `tsc`, `eslint`, `npm run test` (58 test),
+  dan `npm run build` semua sukses tanpa error.
+
 ### Sesi 27 Juli 2026 (lanjutan) — Beres-beres teknis DB pasca-A4 (item #5, #7, #8 audit)
 
 Setelah insiden deploy A4 tuntas (lihat entri sesi di bawah), Reno diajak diskusi

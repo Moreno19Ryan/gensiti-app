@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { authFetch, signOut } from '@/lib/auth'
+import { isPPG } from '@/lib/roles'
+import { computeBadgeGenerus, type Badge } from '@/lib/badges'
 import Modal from '@/components/Modal'
 import ProfilHeader from '@/components/ProfilHeader'
 import type { UserIdentity } from '@supabase/supabase-js'
@@ -64,12 +66,14 @@ function ListItem({ href, icon, iconBg, iconColor, label, value, badge, disabled
 export default function ProfilPage() {
   const { user, refresh } = useUser()
   const isSuperAdmin = user?.role?.tingkatan === 'super_admin'
+  const isPPGUser = isPPG(user)
 
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [generusData, setGenerusData] = useState<GenerusRingkas | null>(null)
+  const [badges, setBadges] = useState<Badge[]>([])
 
   // Status akun Google -- tetap INLINE di halaman overview ini (bukan dipindah ke sub-
   // halaman) karena redirectTo di handleLinkGoogle di bawah sudah di-whitelist persis
@@ -91,6 +95,23 @@ export default function ProfilPage() {
     if (json.data) setGenerusData({ nomor_generus: json.data.nomor_generus })
   }
 
+  // B1 -- badge personal (bukan leaderboard, lihat komentar lib/badges.ts). Query langsung
+  // ke tabel absensi (sama seperti profil/riwayat-absensi/page.tsx), RLS sudah membatasi ke
+  // baris milik generus_id sendiri -- tidak perlu RPC/tabel baru sama sekali.
+  const loadBadges = async (userId: string) => {
+    const { data: generus } = await supabase.from('generus').select('id').eq('user_id', userId).maybeSingle()
+    if (!generus) { setBadges([]); return }
+    const { data } = await supabase
+      .from('absensi')
+      .select('status, kegiatan:kegiatan_id(tanggal_mulai)')
+      .eq('generus_id', generus.id)
+    const riwayat = (data || []).map(r => ({
+      status: r.status,
+      tanggal_kegiatan: (r.kegiatan as unknown as { tanggal_mulai: string | null } | null)?.tanggal_mulai ?? null,
+    }))
+    setBadges(computeBadgeGenerus(riwayat))
+  }
+
   const loadGoogleIdentity = async () => {
     const { data } = await supabase.auth.getUserIdentities()
     setGoogleIdentity(data?.identities.find(i => i.provider === 'google') || null)
@@ -101,6 +122,7 @@ export default function ProfilPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setAvatarUrl(user.avatar_url || user.foto_url || null)
     if (!isSuperAdmin) loadGenerus(user.id)
+    if (!isSuperAdmin && !isPPGUser) loadBadges(user.id)
     loadGoogleIdentity()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
@@ -308,6 +330,24 @@ export default function ProfilPage() {
           {[user.desa?.nama_desa, user.kelompok?.nama_kelompok].filter(Boolean).join(' · ') || 'Sistem GENSITI'}
           {' · '}Bergabung {formatDateShort(user.created_at)}
         </p>
+
+        {/* Badge personal (B1) -- sengaja HANYA badge, tanpa leaderboard/ranking publik.
+            Tidak ditampilkan sama sekali kalau belum ada badge yang didapat -- menghindari
+            kesan "0 pencapaian" yang bisa terasa negatif, murni presentasi pencapaian positif. */}
+        {badges.length > 0 && (
+          <div className="flex flex-wrap justify-center gap-2 mt-4">
+            {badges.map(b => (
+              <div
+                key={b.key}
+                title={b.deskripsi}
+                className="inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 px-3 py-1.5 rounded-full text-xs font-bold"
+              >
+                <span>{b.emoji}</span>
+                {b.label}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Kartu Akun */}
