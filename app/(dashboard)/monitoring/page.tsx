@@ -9,6 +9,7 @@ import Modal from '@/components/Modal'
 import { AuditLog, EmailLog, EmailStatus, SystemConfig } from '@/lib/types'
 import { canManageMembers, isTeamIT } from '@/lib/roles'
 import { useFeatureAccess } from '@/lib/feature-toggles'
+import { labelPerangkat } from '@/lib/user-agent'
 
 // Halaman "Monitoring & Log" -- gabungan sumber observability & kontrol teknis sistem yang
 // sebelumnya terpisah (Kesehatan Sistem & Sesi Aktif dari menu "Administrasi Sistem", plus
@@ -154,12 +155,16 @@ function KesehatanTab() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [{ data: roleAgg }, { count: userAktif }, { count: userNonaktif }, { data: emailAgg }, { count: sesiAktif }, { data: rateLimitData }] = await Promise.all([
+      const [{ data: roleAgg }, { count: userAktif }, { count: userNonaktif }, { data: emailAgg }, { data: sesiAktif }, { data: rateLimitData }] = await Promise.all([
         supabase.from('users').select('roles:role_id(tingkatan, nama_role)').eq('is_active', true),
         supabase.from('users').select('id', { count: 'exact', head: true }).eq('is_active', true),
         supabase.from('users').select('id', { count: 'exact', head: true }).eq('is_active', false),
         supabase.from('email_log').select('status'),
-        supabase.from('users').select('id', { count: 'exact', head: true }).not('active_session_token', 'is', null).eq('is_active', true),
+        // Sejak A4 (multi-device, tabel user_sessions): tabel mentahnya terkunci self+super_admin
+        // (data per-sesi sensitif), jadi angka agregat ini lewat RPC count_sesi_aktif yang
+        // sengaja dibuka utk semua authenticated -- cuma 1 angka total, tidak membocorkan
+        // siapa/dari device apa, konsisten dgn semangat "Team IT juga boleh lihat observability".
+        supabase.rpc('count_sesi_aktif'),
         // auth_rate_limit deny-all utk authenticated (lihat GRANT-nya) -- wajib lewat RPC,
         // beda dari query lain di atas yang bisa langsung .from() krn RLS-nya sudah mengizinkan.
         supabase.rpc('get_rate_limit_summary', { p_window_minutes: 60 }),
@@ -644,15 +649,19 @@ function EmailTab() {
 }
 
 // ============================= TAB: SESI AKTIF (SA only) =============================
+// Sejak A4 (multi-device, maks 2 sesi per akun): 1 baris di sini = 1 SESI (device), BUKAN
+// 1 user lagi -- seorang user kini bisa punya sampai 2 baris (mis. Ketua login dari laptop
+// & HP). "Sesi Anda" ditandai lewat pencocokan session_token ke localStorage, bukan lagi
+// sekadar id user, supaya tepat menunjuk device MANA yang sedang dipakai membuka halaman
+// ini (bukan sekadar "salah satu sesi milik saya").
 
 interface SessionRow {
   id: string
-  nama_lengkap: string
-  email: string
-  login_username: string | null
-  is_active: boolean
-  active_session_created_at: string | null
-  roles: { nama_role: string; tingkatan: string } | null
+  user_id: string
+  session_token: string
+  user_agent: string | null
+  created_at: string
+  users: { nama_lengkap: string; email: string; login_username: string | null; roles: { nama_role: string; tingkatan: string } | null } | null
 }
 
 function SesiTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user']> }) {
@@ -661,15 +670,14 @@ function SesiTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user'
   const [search, setSearch] = useState('')
   const [confirmTarget, setConfirmTarget] = useState<SessionRow | null>(null)
   const [processing, setProcessing] = useState(false)
+  const sesiTokenSaya = typeof window !== 'undefined' ? localStorage.getItem('gensiti_session_token') : null
 
   const loadSessions = useCallback(async () => {
     setLoading(true)
     const { data, error } = await supabase
-      .from('users')
-      .select('id, nama_lengkap, email, login_username, is_active, active_session_created_at, roles:role_id(nama_role, tingkatan)')
-      .not('active_session_token', 'is', null)
-      .eq('is_active', true)
-      .order('active_session_created_at', { ascending: false })
+      .from('user_sessions')
+      .select('id, user_id, session_token, user_agent, created_at, users:user_id(nama_lengkap, email, login_username, roles:role_id(nama_role, tingkatan))')
+      .order('created_at', { ascending: false })
     if (error) console.error('Sesi load error:', error)
     setRows((data as unknown as SessionRow[]) || [])
     setLoading(false)
@@ -684,12 +692,9 @@ function SesiTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user'
     if (!confirmTarget) return
     setProcessing(true)
     try {
-      const { error } = await supabase
-        .from('users')
-        .update({ active_session_token: null })
-        .eq('id', confirmTarget.id)
+      const { error } = await supabase.from('user_sessions').delete().eq('id', confirmTarget.id)
       if (error) { console.error('Gagal paksa logout:', error); return }
-      await logAudit(user, 'UPDATE', 'Monitoring & Log - Sesi Aktif', `Paksa logout: ${confirmTarget.nama_lengkap}`, {}, confirmTarget.id)
+      await logAudit(user, 'DELETE', 'Monitoring & Log - Sesi Aktif', `Paksa logout: ${confirmTarget.users?.nama_lengkap} (${labelPerangkat(confirmTarget.user_agent)})`, {}, confirmTarget.id)
       setConfirmTarget(null)
       loadSessions()
     } finally {
@@ -699,13 +704,13 @@ function SesiTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user'
 
   const filtered = rows.filter(r => {
     const q = search.toLowerCase()
-    return !search || r.nama_lengkap?.toLowerCase().includes(q) || r.email?.toLowerCase().includes(q) || r.login_username?.toLowerCase().includes(q)
+    return !search || r.users?.nama_lengkap?.toLowerCase().includes(q) || r.users?.email?.toLowerCase().includes(q) || r.users?.login_username?.toLowerCase().includes(q)
   })
 
   return (
     <div className="space-y-3">
       <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-300">
-        💡 Daftar ini hanya menampilkan pengguna yang pernah login lewat form login sejak fitur sesi tunggal aktif. Paksa logout akan mengosongkan sesi tersebut -- pengguna otomatis keluar di perangkat manapun dalam waktu singkat, TANPA menonaktifkan akunnya.
+        💡 Setiap akun boleh punya maksimal 2 sesi aktif bersamaan (mis. laptop + HP) -- login ke-3 otomatis menendang sesi paling lama. Paksa logout di sini menghapus sesi tersebut saja -- pengguna otomatis keluar dalam waktu singkat TANPA akunnya dinonaktifkan, dan device lain miliknya (kalau ada) tidak ikut terpengaruh.
       </div>
 
       <input type="text" placeholder="Cari nama, email, atau nama pengguna..."
@@ -728,31 +733,33 @@ function SesiTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user'
               <tr className="text-left text-slate-500 border-b border-slate-100 bg-slate-50">
                 <th className="px-4 py-3 font-medium">Pengguna</th>
                 <th className="px-4 py-3 font-medium">Role</th>
-                <th className="px-4 py-3 font-medium">Login Terakhir</th>
+                <th className="px-4 py-3 font-medium">Perangkat</th>
+                <th className="px-4 py-3 font-medium">Login Sejak</th>
                 <th className="px-4 py-3 font-medium">Aksi</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map(r => (
+              {filtered.map(r => {
+                const iniSesiSaya = !!sesiTokenSaya && r.session_token === sesiTokenSaya
+                return (
                 <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50 transition">
                   <td className="px-4 py-3">
                     <div className="font-medium text-slate-800 flex items-center gap-2">
-                      {r.nama_lengkap}
-                      {r.id === user.id && (
-                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Sesi Anda</span>
+                      {r.users?.nama_lengkap || '(pengguna tidak ditemukan)'}
+                      {iniSesiSaya && (
+                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Sesi Ini</span>
                       )}
                     </div>
-                    <div className="text-slate-400 text-xs">{r.login_username || r.email}</div>
+                    <div className="text-slate-400 text-xs">{r.users?.login_username || r.users?.email}</div>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${tingkatanColor[r.roles?.tingkatan || ''] || 'bg-slate-100 text-slate-500'}`}>
-                      {r.roles?.nama_role || '-'}
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${tingkatanColor[r.users?.roles?.tingkatan || ''] || 'bg-slate-100 text-slate-500'}`}>
+                      {r.users?.roles?.nama_role || '-'}
                     </span>
                   </td>
+                  <td className="px-4 py-3 text-slate-500 text-xs">{labelPerangkat(r.user_agent)}</td>
                   <td className="px-4 py-3 text-slate-500 text-xs">
-                    {r.active_session_created_at
-                      ? new Date(r.active_session_created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
-                      : '-'}
+                    {new Date(r.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}
                   </td>
                   <td className="px-4 py-3">
                     <button onClick={() => setConfirmTarget(r)} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-xs font-medium">
@@ -760,7 +767,8 @@ function SesiTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user'
                     </button>
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -768,20 +776,20 @@ function SesiTab({ user }: { user: NonNullable<ReturnType<typeof useUser>['user'
 
       <Modal open={!!confirmTarget} onClose={() => setConfirmTarget(null)} title="Paksa Logout Sesi?" size="sm">
         <div className="space-y-4">
-          {confirmTarget?.id === user.id ? (
+          {confirmTarget && sesiTokenSaya && confirmTarget.session_token === sesiTokenSaya ? (
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300">
-              ⚠️ Ini adalah sesi login Anda sendiri. Melanjutkan akan membuat Anda otomatis keluar dari sistem dalam waktu singkat dan harus login ulang.
+              ⚠️ Ini adalah sesi login Anda sendiri (device yang sedang Anda pakai sekarang). Melanjutkan akan membuat Anda otomatis keluar dari sistem dalam waktu singkat dan harus login ulang.
             </div>
           ) : (
             <p className="text-sm text-slate-600">
-              Sesi login <strong>{confirmTarget?.nama_lengkap}</strong> akan dikosongkan. Akunnya TIDAK dinonaktifkan -- yang bersangkutan bisa login kembali kapan saja lewat form login.
+              Sesi login <strong>{confirmTarget?.users?.nama_lengkap}</strong> ({confirmTarget && labelPerangkat(confirmTarget.user_agent)}) akan dihapus. Akunnya TIDAK dinonaktifkan -- yang bersangkutan bisa login kembali kapan saja lewat form login.
             </p>
           )}
           <div className="flex gap-3 pt-2 border-t border-slate-100">
             <button onClick={() => setConfirmTarget(null)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition">Batal</button>
             <button onClick={paksaLogout} disabled={processing}
               className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:bg-red-300 transition flex items-center justify-center gap-2">
-              {processing ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : (confirmTarget?.id === user.id ? 'Ya, Logout Diri Sendiri' : 'Ya, Paksa Logout')}
+              {processing ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'Ya, Paksa Logout'}
             </button>
           </div>
         </div>

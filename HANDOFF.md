@@ -61,6 +61,32 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 27 Juli 2026 — Audit menyeluruh (keamanan+UX), fondasi toast/dialog, a11y Modal, skeleton loader, transisi navigasi, A4 (multi-device session)
+
+**PR #21** -- docs-only, catat penyelesaian B4 (menu Pengaturan) di HANDOFF/WISHLIST_ASSESSMENT yang sempat tertinggal dari sesi sebelumnya.
+
+**PR #22 -- Audit menyeluruh + fondasi UX (toast/dialog konfirmasi)**
+- Audit lintas lapisan atas permintaan Reno ("jadikan aplikasi selayaknya aplikasi pada umumnya") -- dokumen lengkap `AUDIT_MENYELURUH_2026-07.md`, semua temuan diverifikasi lewat advisor Supabase + query `pg_proc`/`pg_policy`/`cron.job` production, bukan tebakan.
+- **Temuan kritis, sudah diperbaiki:** 3 fungsi cron `SECURITY DEFINER` (`send_reminder_*`, 2 di antaranya buatan sesi 26 Juli sendiri) ternyata bisa dieksekusi role `anon` -- tidak ada cek `auth.uid()` sama sekali, padahal berjalan sebagai `postgres` yang bisa memanggil `notify_email`/`notify_push` yang justru sudah terkunci rapat (pola *confused deputy*). **Jebakan yang hampir terlewat:** usulan awal `REVOKE ... FROM anon, authenticated` TIDAK akan berfungsi krn ketiga fungsi memakai default privilege Postgres (`EXECUTE TO PUBLIC`) -- harus `REVOKE ... FROM PUBLIC` juga. Diverifikasi 3 sudut (privilege check, ACL, advisor sebelum/sesudah 28→25).
+- **Fondasi UX:** `lib/toast.ts` + `lib/konfirmasi.ts` (module-level store + `useSyncExternalStore`, meniru pola `lib/dark-mode.ts`) + `components/ToastHost.tsx`/`KonfirmasiHost.tsx`. Mengganti SELURUH 16 `alert()`/`confirm()` native di 5 halaman -- gap terbesar: dialog native mengabaikan Mode Gelap total (kotak putih menyilaukan), jadi kerja B3 praktis batal di 16 titik itu.
+- Bug ikutan ditemukan & diperbaiki: `pengumuman/page.tsx` tidak memeriksa error saat hapus (delete gagal RLS tetap terlihat "berhasil").
+
+**PR #23 -- a11y Modal.tsx + skeleton loader 6 halaman utama**
+- `Modal.tsx` (dipakai ~15 halaman form tambah/edit) sebelumnya nol atribut a11y -- ditambah focus trap, Escape, `role="dialog"`, meniru pola `KonfirmasiHost.tsx`.
+- `components/Skeleton.tsx` (`SkeletonCards`/`SkeletonRows`/`SkeletonTable`) menggantikan pola "spinner di kotak putih kosong" di 6 halaman tersibuk (Data Generus, Kegiatan, Pengumuman, Dokumen, Absensi, Keuangan) -- bentuk diambil dari inventaris pola yang sudah ada, bukan didesain dari nol.
+- Konflik merge nyata terjadi antara PR #23 & #24 (sama-sama menyentuh blok `prefers-reduced-motion` di `globals.css`) -- di-resolve manual (union kedua class, bukan pilih salah satu) setelah salah satu merge duluan.
+
+**PR #24 -- Transisi halus antar halaman & antar menu**
+- Permintaan langsung Reno ("kaku"). Highlight menu aktif sidebar dapat animasi "pop" (class `animate-nav-pop` HANYA disematkan saat item baru jadi aktif, sehingga `animation-name` berubah none→nav-pop dan browser otomatis memutar ulang -- tanpa perlu JS mengukur posisi elemen ala sliding-pill). Judul topbar (`currentLabel`) diberi `key={currentLabel}` supaya remount + fade tiap ganti menu (sebelumnya cuma meloncat, krn hidup di `layout.tsx` yang tidak remount antar halaman). Easing `animate-page-in` disamakan dgn toast/dialog.
+- Insiden proses: sempat salah cabang branch dari PR #23 yang belum merge -- ketahuan sebelum push, branch di-recreate dari `main` bersih.
+
+**A4 -- Redesain single-session → multi-device (belum ada nomor PR saat catatan ini ditulis)**
+- Diskusi eksplisit dgn Reno dulu (bukan asumsi): batas **maks 2 sesi aktif** per akun (bukan unlimited -- sengaja dipertahankan sbg "rem alami" terhadap sharing akun antar orang, sekaligus cukup utk kebutuhan harian mis. Super Admin pantau dari laptop+HP), DAN UI kelola/logout device **sejak versi pertama** (bukan menyusul).
+- Skema baru `user_sessions` (1 baris per device) menggantikan kolom tunggal `users.active_session_token`/`active_session_created_at` (di-DROP, sudah dicek tidak ada view/trigger/fungsi lain yg bergantung). RPC `claim_session` (`SECURITY DEFINER`, menggantikan `app/api/session/claim` -- sesuai rekomendasi lama NATIVE_READINESS_AUDIT.md §B.2) insert baris baru lalu tendang sesi TERTUA kalau sudah >2.
+- Diverifikasi lewat `BEGIN...ROLLBACK` di production (bukan Supabase database branch -- org masih plan Free, branching butuh billing yg belum terpasang, Reno pilih skip branch). **Bug ketemu saat testing:** eviksi awalnya salah tendang sesi TERBARU bukan TERTUA -- `created_at DEFAULT now()` ternyata SAMA sepanjang satu transaksi Postgres (bukan per-statement), jadi 3 login berturut dlm 1 transaksi test dapat timestamp identik & urutan jadi acak. Diganti `clock_timestamp()`. Total 8 skenario diverifikasi lolos (eviksi, RLS lintas-user, self-service, anon terkunci, agregat count, kolom lama benar-benar hilang) sebelum apply ke production.
+- Halaman baru `/profil/perangkat` (self-service lihat/keluarkan device sendiri, semua role) + tab Sesi Aktif Monitoring & Log dirombak total (1 baris = 1 SESI, bukan 1 user lagi -- "Sesi Ini" dicocokkan via `session_token`, bukan sekadar id user, krn 1 user kini bisa punya 2 baris).
+- `count_sesi_aktif()` RPC baru (agregat murni) menggantikan query langsung `users.active_session_token` di kartu Kesehatan Sistem -- sengaja dibuka utk semua `authenticated` (bukan cuma Super Admin/Team IT) krn cuma 1 angka total tanpa detail per-device.
+
 ### Sesi 26 Juli 2026 — Tone/voice, A6 (eskalasi approval), B3 (Mode Gelap rollout penuh), fix PPG di Data Generus, B4 (Aksesibilitas) + menu Pengaturan
 
 Enam PR berurutan (#15-#20), semua sudah di-merge ke `main`. Ringkasan per PR:

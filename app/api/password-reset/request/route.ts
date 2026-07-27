@@ -6,7 +6,8 @@ import { NextRequest, NextResponse } from 'next/server'
 // /lupa-password SEBELUM ada sesi), jadi pola adminClient()/escapeIlike()/normalisasi username
 // di sini SENGAJA disalin persis dari app/api/resolve-login/route.ts, bukan diimpor dari lib
 // bersama -- konsisten dgn konvensi codebase ini (adminClient() sudah di-copy-paste verbatim di
-// resolve-login, session/claim, dan (mantan) reset-password-requests routes).
+// resolve-login, (mantan) session/claim -- kini RPC claim_session sejak A4 -- dan (mantan)
+// reset-password-requests routes).
 function adminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

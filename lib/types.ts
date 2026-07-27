@@ -10,10 +10,6 @@ export interface UserProfile {
   // yang belum di-backfill. Email di atas TETAP jadi identitas Supabase Auth &
   // tujuan notifikasi, tidak berubah oleh fitur ini.
   login_username: string | null
-  // Token sesi aktif saat ini (dibuat ulang setiap kali form login berhasil submit --
-  // lihat app/api/session/claim). Dipakai lib/user-context.tsx untuk mendeteksi apakah
-  // sesi browser ini sudah "digantikan" oleh login baru di browser/perangkat lain.
-  active_session_token: string | null
   // Kapan akun ini dibuat -- ditampilkan di tab Akun halaman Profil sebagai "Bergabung Sejak".
   created_at: string
   nama_lengkap: string

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import { signIn, authFetch, getUserProfile } from '@/lib/auth'
+import { signIn, getUserProfile } from '@/lib/auth'
 import { supabase, setRememberMe } from '@/lib/supabase'
 import { PPG_LOGO_LOGIN_BASE64 } from '@/lib/logo'
 import PasswordInput from '@/components/PasswordInput'
@@ -84,13 +84,10 @@ export default function LoginPage() {
         }
 
         // Profil valid & aktif -- lanjutkan persis seperti login nama+password berhasil
-        // (klaim sesi tunggal, non-fatal kalau gagal, lihat komentar sama di handleLogin).
+        // (klaim sesi multi-device, non-fatal kalau gagal, lihat komentar sama di handleLogin).
         try {
-          const claimRes = await authFetch('/api/session/claim', { method: 'POST' })
-          const claimJson = await claimRes.json()
-          if (claimJson.sessionToken) {
-            localStorage.setItem('gensiti_session_token', claimJson.sessionToken)
-          }
+          const { data: sessionToken } = await supabase.rpc('claim_session', { p_user_agent: navigator.userAgent })
+          if (sessionToken) localStorage.setItem('gensiti_session_token', sessionToken)
         } catch {
           // non-fatal
         }
@@ -179,20 +176,16 @@ export default function LoginPage() {
       setRememberMe(ingatSaya)
       await signIn(resolved.email, password)
 
-      // Klaim sesi tunggal: generate token sesi baru & simpan ke localStorage browser
-      // ini. Ini akan MENGGANTIKAN status "aktif" milik sesi manapun yang sedang login
-      // dgn akun yang sama di browser/perangkat lain -- lihat lib/user-context.tsx untuk
-      // sisi deteksinya. Kalau klaim gagal karena alasan apapun (mis. jaringan), login
-      // tetap dilanjutkan (non-fatal) -- lebih baik user tetap bisa masuk daripada
-      // terhalang oleh fitur pelengkap ini. Pakai authFetch supaya Bearer token diambil
-      // langsung dari sesi Supabase yang baru saja tersimpan (bukan dari objek respons
-      // signIn), konsisten dengan cara semua API route internal lain dipanggil.
+      // Klaim sesi multi-device (maks 2 sesi aktif per akun, lihat migrasi
+      // buat_user_sessions_multi_device): generate token sesi baru & simpan ke localStorage
+      // browser ini. RPC claim_session otomatis menendang sesi TERTUA kalau ini sudah jadi
+      // sesi ke-3 -- lihat lib/user-context.tsx untuk sisi deteksi "sesi ini baru saja
+      // ditendang". Kalau klaim gagal karena alasan apapun (mis. jaringan), login tetap
+      // dilanjutkan (non-fatal) -- lebih baik user tetap bisa masuk daripada terhalang oleh
+      // fitur pelengkap ini.
       try {
-        const claimRes = await authFetch('/api/session/claim', { method: 'POST' })
-        const claimJson = await claimRes.json()
-        if (claimJson.sessionToken) {
-          localStorage.setItem('gensiti_session_token', claimJson.sessionToken)
-        }
+        const { data: sessionToken } = await supabase.rpc('claim_session', { p_user_agent: navigator.userAgent })
+        if (sessionToken) localStorage.setItem('gensiti_session_token', sessionToken)
       } catch {
         // non-fatal, lihat komentar di atas
       }

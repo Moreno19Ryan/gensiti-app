@@ -43,26 +43,30 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [onlineCountScoped, setOnlineCountScoped] = useState(0)
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
 
-  // Single-session login: setiap login lewat form (bukan reload/tab baru di browser yang
-  // sama) menyimpan token acak baru ke localStorage ('gensiti_session_token') SEKALIGUS ke
-  // kolom users.active_session_token (lihat app/api/session/claim & app/login/page.tsx).
-  // Fungsi ini membandingkan keduanya setiap kali profil dimuat -- kalau token lokal browser
-  // ini TIDAK cocok lagi dengan token di database, artinya akun sudah login di tempat lain
-  // dan MENGGANTIKAN sesi ini. Sesi ini (yang lama) harus logout sendiri, TANPA menyentuh
-  // token di database (supaya sesi baru yang menggantikannya tidak ikut ter-invalidasi).
+  // Multi-device login (maks 2 sesi aktif per akun, lihat migrasi a4_multi_device_session):
+  // setiap login lewat form menyimpan token acak baru ke localStorage ('gensiti_session_token')
+  // SEKALIGUS sebagai baris baru di tabel user_sessions (lewat RPC claim_session, lihat
+  // app/login/page.tsx). Fungsi ini mengecek keberadaan token lokal browser ini di
+  // user_sessions setiap kali profil dimuat -- RLS user_sessions_select sudah membatasi hasil
+  // ke baris milik user ini sendiri (user_id = auth.uid()), jadi cukup SELECT sederhana, tidak
+  // perlu RPC tambahan. Kalau token lokal TIDAK ADA lagi di sana, artinya sesi ini sudah
+  // ditendang (device ke-3 login, atau di-"Paksa Logout" Super Admin) -- logout sendiri.
   //
   // Kasus yang SENGAJA tidak memicu peringatan (supaya tidak false-positive):
-  // - localToken kosong (belum pernah klaim sesi lewat form login ini, mis. akun lama yang
-  //   sudah login sejak sebelum fitur ini ada, atau localStorage baru saja dibersihkan).
-  // - profile.active_session_token kosong (akun belum pernah login lewat form sejak fitur
-  //   ini ditambahkan -- tidak ada dasar pembanding).
-  const checkSessionMasihValid = async (profile: UserProfile): Promise<boolean> => {
+  // - localToken kosong (belum pernah klaim sesi lewat form login ini, mis. localStorage
+  //   baru saja dibersihkan, atau sesi lama dari sebelum fitur multi-device ini ada).
+  const checkSessionMasihValid = async (): Promise<boolean> => {
     const localToken = localStorage.getItem('gensiti_session_token')
-    if (!localToken || !profile.active_session_token) return true
-    if (localToken === profile.active_session_token) return true
+    if (!localToken) return true
 
-    // Token tidak cocok -- sesi ini sudah digantikan sesi baru di tempat lain.
-    // Tandai pesan utk ditampilkan di halaman login, lalu logout HANYA sesi ini.
+    const { data } = await supabase
+      .from('user_sessions')
+      .select('id')
+      .eq('session_token', localToken)
+      .maybeSingle()
+    if (data) return true
+
+    // Sesi ini sudah tidak terdaftar lagi -- tandai pesan utk halaman login, lalu logout.
     localStorage.removeItem('gensiti_session_token')
     localStorage.setItem('gensiti_session_superseded', '1')
     await supabase.auth.signOut()
@@ -79,7 +83,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
       if (session?.user) {
         const profile = await getUserProfile(session.user.id)
         if (profile) {
-          const masihValid = await checkSessionMasihValid(profile)
+          const masihValid = await checkSessionMasihValid()
           if (!masihValid) {
             setUser(null)
             return
@@ -103,7 +107,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         if (session?.user) {
           const profile = await getUserProfile(session.user.id)
           if (profile) {
-            const masihValid = await checkSessionMasihValid(profile)
+            const masihValid = await checkSessionMasihValid()
             if (!masihValid) {
               setUser(null)
               return
@@ -130,7 +134,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
       if (!session?.user) return
       const profile = await getUserProfile(session.user.id)
       if (!profile) return
-      const masihValid = await checkSessionMasihValid(profile)
+      const masihValid = await checkSessionMasihValid()
       if (!masihValid) {
         setUser(null)
       }

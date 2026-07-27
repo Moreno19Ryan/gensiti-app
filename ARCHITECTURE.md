@@ -50,7 +50,7 @@ boleh membuat role di tingkatan apa (`getAllowedTargetTingkatan` di
 [lib/roles.ts:242](lib/roles.ts:242)), bukan untuk gate fitur lain (masing-masing fitur
 punya gate sendiri, lihat §4).
 
-## 3. Skema Database (schema `public`, 19 tabel, RLS aktif di semua)
+## 3. Skema Database (schema `public`, 20 tabel, RLS aktif di semua)
 
 ### Struktur organisasi
 | Tabel | Isi | Relasi kunci |
@@ -58,8 +58,13 @@ punya gate sendiri, lihat §4).
 | `roles` | Master role (nama_role + tingkatan) | `users.role_id` |
 | `desa` | 10 Desa | induk `kelompok`, banyak tabel scope |
 | `kelompok` | 50 Kelompok | `desa_id` → `desa` |
-| `users` | Akun login (84 baris) — profil, role, scope, session token single-login | `role_id`, `desa_id`, `kelompok_id`, terhubung `auth.users` |
+| `users` | Akun login (84 baris) — profil, role, scope | `role_id`, `desa_id`, `kelompok_id`, terhubung `auth.users` |
 | `generus` | Biodata anggota (83 baris) — bisa merangkap `users` lewat `user_id`, `kartu_rfid_uid` (unique, lihat §11) | `desa_id`, `kelompok_id`, status arsip (menikah/meninggal/pindah_sambung) |
+
+### Autentikasi & sesi
+| Tabel | Isi |
+|---|---|
+| `user_sessions` | **(A4, 27 Juli 2026)** 1 baris per device login, maks 2 baris/user (device ke-3 menendang yang tertua) -- menggantikan kolom tunggal `users.active_session_token`/`active_session_created_at` (keduanya di-DROP). RLS: baca/hapus hanya baris sendiri ATAU Super Admin (data per-sesi -- user-agent, waktu login -- dianggap lebih sensitif drpd data pengguna umum, jadi TIDAK ikut kebuka utk Daerah/PPG seperti `users_select`). Insert HANYA lewat RPC `claim_session`, tidak ada policy/grant INSERT client. |
 
 > **Invarian RLS tulis `users` & `generus` (sejak 20 Juli 2026).** Kedua tabel ini
 > **tidak** pernah ditulis langsung dari client — semua create/update lewat API route
@@ -200,6 +205,18 @@ isi email otomatis (pengumuman/kegiatan/approval/reminder) serta notifikasi
 in-app diperhalus mengikuti `PANDUAN_TONE_VOICE_GENSITI.md` -- lihat commit
 migrasi `tone_voice_email_notifikasi`.
 
+**Autentikasi & sesi (A4, 27 Juli 2026):** `claim_session(p_user_agent)` -- `SECURITY DEFINER`,
+dipanggil client sekali tepat setelah `signInWithPassword` berhasil; insert baris baru ke
+`user_sessions` lalu tendang sesi TERTUA kalau sudah >2 (lihat §3). Menggantikan
+`app/api/session/claim` (service-role) sesuai rekomendasi NATIVE_READINESS_AUDIT.md §B.2.
+`created_at` tabel `user_sessions` pakai `clock_timestamp()`, BUKAN `now()` -- `now()` tetap
+sama sepanjang 1 transaksi Postgres, jadi kalau dipakai di sini urutan eviksi antar-login yang
+berdekatan bisa jadi tidak deterministik (ketemu langsung saat verifikasi `BEGIN...ROLLBACK`
+sebelum migrasi diterapkan). `count_sesi_aktif()` -- agregat jumlah sesi aktif se-sistem,
+sengaja terbuka utk semua `authenticated` (bukan cuma Super Admin/Team IT) krn cuma 1 angka
+total tanpa detail per-device, dipakai kartu "Sesi Aktif" di Monitoring & Log > Kesehatan
+Sistem.
+
 **Lainnya**: `global_search` (pencarian lintas modul), `enforce_single_super_admin`
 (trigger — Super Admin akun tunggal mutlak), `rls_auto_enable` (event trigger — RLS wajib
 aktif di tabel baru)
@@ -211,7 +228,6 @@ aktif di tabel baru)
 | `app/api/users` | CRUD pengguna, enforce `getAllowedTargetTingkatan` server-side |
 | `app/api/generus` | CRUD biodata Generus, cek scope tujuan saat pindah sambung (anti-IDOR) |
 | `app/api/resolve-login` | Terjemahkan nama panggilan/lengkap → email asli untuk login |
-| `app/api/session/claim` | Klaim token sesi aktif (single-session enforcement) |
 | `app/api/password-reset/request`, `.../confirm` | Reset password self-service via OTP email (tanpa approval admin) |
 | `app/api/backup` | Backup data |
 | `app/api/maintenance`, `.../activate-scheduled` | Mode perawatan sistem |
