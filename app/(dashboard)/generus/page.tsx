@@ -11,7 +11,8 @@ import { formatAge } from '@/lib/date'
 import { RFID_PRESENSI_READY } from '@/lib/rfid'
 import Modal from '@/components/Modal'
 import PasswordInput from '@/components/PasswordInput'
-import { exportToPDF, exportToExcel } from '@/lib/export'
+import { ExportOptions } from '@/lib/export'
+import ExportPreviewModal from '@/components/ExportPreviewModal'
 import { SkeletonTable } from '@/components/Skeleton'
 
 interface Member {
@@ -183,6 +184,12 @@ export default function DataGenerusPage() {
   const [search, setSearch] = useState('')
   const [filterRole, setFilterRole] = useState('')
   const [filterStatus, setFilterStatus] = useState<'' | 'aktif' | 'nonaktif' | 'diarsipkan'>('')
+  // Pemisahan laki-laki/perempuan -- kegiatan muda-mudi organisasi ini rutin memisahkan
+  // tempat antara laki-laki & perempuan (menghindari bersentuhan dgn bukan mahram), jadi
+  // Pengurus perlu bisa menarik data salah satu gender saja ATAU keduanya (default) baik
+  // di tampilan tabel maupun saat export/cetak -- filter ini mengalir otomatis ke
+  // buildExportData() di bawah krn export selalu ambil dari `filtered`, bukan `data` mentah.
+  const [filterJenisKelamin, setFilterJenisKelamin] = useState<'' | 'laki-laki' | 'perempuan'>('')
   const [sortBy, setSortBy] = useState<'nama_asc' | 'nama_desc' | 'terbaru'>('nama_asc')
   const [modalOpen, setModalOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'akun' | 'biodata'>('akun')
@@ -194,7 +201,7 @@ export default function DataGenerusPage() {
   const [roleList, setRoleList] = useState<RoleOpt[]>([])
   const [desaList, setDesaList] = useState<DesaOpt[]>([])
   const [kelompokList, setKelompokList] = useState<KelompokOpt[]>([])
-  const [exporting, setExporting] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
   // Confirmation dialog state (arsip 2-langkah)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [confirmStep, setConfirmStep] = useState<1 | 2>(1)
@@ -646,7 +653,8 @@ export default function DataGenerusPage() {
         (filterStatus === 'diarsipkan' && m.is_archived) ||
         (filterStatus === 'aktif' && !m.is_archived && m.is_active) ||
         (filterStatus === 'nonaktif' && !m.is_archived && !m.is_active)
-      return matchSearch && matchRole && matchStatus
+      const matchJK = !filterJenisKelamin || m.generus?.jenis_kelamin === filterJenisKelamin
+      return matchSearch && matchRole && matchStatus && matchJK
     })
     .sort((a, b) => {
       if (sortBy === 'nama_asc') return (a.nama_lengkap || '').localeCompare(b.nama_lengkap || '')
@@ -712,40 +720,24 @@ export default function DataGenerusPage() {
     return `${scope || 'Se-Bekasi Timur'} -- ${rows.length} Generus`
   }
 
-  const handleExportPDF = async () => {
-    const rows = buildExportData()
-    if (rows.length === 0) { setNotice('Tidak ada data untuk diexport.'); return }
-    setExporting(true)
-    try {
-      exportToPDF({
-        title: 'Data Generus (Biodata)',
-        subtitle: exportSubtitle(),
-        columns: exportColumns,
-        rows,
-        fileName: `Data-Generus-${new Date().toISOString().slice(0, 10)}`,
-      })
-      if (user) await logAudit(user, 'EXPORT', 'Data Generus', `PDF -- ${rows.length} generus`)
-    } finally {
-      setExporting(false)
-    }
+  // Opsi export dihitung ulang tiap render, mengikuti filter TERKINI (termasuk jenis kelamin)
+  // -- sama seperti pola previewOptions di app/(dashboard)/absensi/page.tsx.
+  const previewOptions: ExportOptions = {
+    title: 'Data Generus (Biodata)',
+    subtitle: exportSubtitle(),
+    columns: exportColumns,
+    rows: buildExportData(),
+    fileName: `Data-Generus-${new Date().toISOString().slice(0, 10)}`,
   }
 
-  const handleExportExcel = async () => {
-    const rows = buildExportData()
-    if (rows.length === 0) { setNotice('Tidak ada data untuk diexport.'); return }
-    setExporting(true)
-    try {
-      await exportToExcel({
-        title: 'Data Generus (Biodata)',
-        subtitle: exportSubtitle(),
-        columns: exportColumns,
-        rows,
-        fileName: `Data-Generus-${new Date().toISOString().slice(0, 10)}`,
-      })
-      if (user) await logAudit(user, 'EXPORT', 'Data Generus', `Excel -- ${rows.length} generus`)
-    } finally {
-      setExporting(false)
-    }
+  const handleOpenPreview = () => {
+    if (previewOptions.rows.length === 0) { setNotice('Tidak ada data untuk diexport.'); return }
+    setPreviewOpen(true)
+  }
+
+  const handleExported = async (format: 'pdf' | 'excel') => {
+    if (!user) return
+    await logAudit(user, 'EXPORT', 'Data Generus', `${format === 'pdf' ? 'PDF' : 'Excel'} -- ${previewOptions.rows.length} generus`)
   }
 
   if (!featureChecking && !featureEnabled) {
@@ -775,16 +767,10 @@ export default function DataGenerusPage() {
         </div>
         <div className="flex items-center gap-2">
           {canManage && biodataEnabled && (
-            <>
-              <button onClick={handleExportPDF} disabled={exporting}
-                className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
-                📄 PDF
-              </button>
-              <button onClick={handleExportExcel} disabled={exporting}
-                className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
-                📊 Excel
-              </button>
-            </>
+            <button onClick={handleOpenPreview}
+              className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
+              🔍 Pratinjau & Export
+            </button>
           )}
           {canManage && (
             <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
@@ -806,6 +792,12 @@ export default function DataGenerusPage() {
           <option value="desa">Desa</option>
           <option value="kelompok">Kelompok</option>
           <option value="ppg">PPG</option>
+        </select>
+        <select value={filterJenisKelamin} onChange={e => setFilterJenisKelamin(e.target.value as typeof filterJenisKelamin)}
+          className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
+          <option value="">Laki-laki & Perempuan</option>
+          <option value="laki-laki">Laki-laki Saja</option>
+          <option value="perempuan">Perempuan Saja</option>
         </select>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as typeof filterStatus)}
           className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
@@ -1552,6 +1544,13 @@ export default function DataGenerusPage() {
           </div>
         </Modal>
       )}
+
+      <ExportPreviewModal
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        options={previewOptions}
+        onExported={handleExported}
+      />
     </div>
   )
 }

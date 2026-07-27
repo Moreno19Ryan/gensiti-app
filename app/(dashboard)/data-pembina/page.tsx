@@ -9,7 +9,8 @@ import { canManageMembers as checkCanManageMembers, canViewGenerusData } from '@
 import { useFeatureAccess } from '@/lib/feature-toggles'
 import { formatAge } from '@/lib/date'
 import Modal from '@/components/Modal'
-import { exportToPDF, exportToExcel } from '@/lib/export'
+import { ExportOptions } from '@/lib/export'
+import ExportPreviewModal from '@/components/ExportPreviewModal'
 
 // Halaman KHUSUS biodata PPG (Penggerak Pembina Generus) -- dipisah dari menu "Data Generus"
 // karena PPG adalah pembina, BUKAN Generus (tidak punya kelas ngaji, tidak berada dalam
@@ -81,7 +82,7 @@ export default function DataPembinaPage() {
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [exporting, setExporting] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
   // Diisi kalau /api/generus PATCH mengembalikan newLoginUsername (nama_panggilan berubah,
   // login_username ikut disinkronkan otomatis -- lihat komentar di app/api/generus/route.ts).
   const [usernameChangedNotice, setUsernameChangedNotice] = useState<{ nama: string; username: string } | null>(null)
@@ -300,40 +301,6 @@ export default function DataPembinaPage() {
 
   const exportSubtitle = () => `Se-Bekasi Timur -- ${filtered.length} Pembina (PPG)`
 
-  const handleExportPDF = async () => {
-    if (filtered.length === 0) { setNotice('Tidak ada data untuk diexport.'); return }
-    setExporting(true)
-    try {
-      exportToPDF({
-        title: 'Data Pembina (PPG)',
-        subtitle: exportSubtitle(),
-        columns: exportColumns,
-        rows: buildExportData(),
-        fileName: `Data-Pembina-${new Date().toISOString().slice(0, 10)}`,
-      })
-      if (user) await logAudit(user, 'EXPORT', 'Data Pembina', `PDF -- ${filtered.length} pembina`)
-    } finally {
-      setExporting(false)
-    }
-  }
-
-  const handleExportExcel = async () => {
-    if (filtered.length === 0) { setNotice('Tidak ada data untuk diexport.'); return }
-    setExporting(true)
-    try {
-      await exportToExcel({
-        title: 'Data Pembina (PPG)',
-        subtitle: exportSubtitle(),
-        columns: exportColumns,
-        rows: buildExportData(),
-        fileName: `Data-Pembina-${new Date().toISOString().slice(0, 10)}`,
-      })
-      if (user) await logAudit(user, 'EXPORT', 'Data Pembina', `Excel -- ${filtered.length} pembina`)
-    } finally {
-      setExporting(false)
-    }
-  }
-
   const filtered = data.filter(g => {
     const q = search.toLowerCase()
     if (!q) return true
@@ -344,6 +311,28 @@ export default function DataPembinaPage() {
       g.users?.kelompok?.nama_kelompok?.toLowerCase().includes(q)
     )
   })
+
+  // previewOptions dihitung SETELAH `filtered` (di atas) krn ini objek biasa yang langsung
+  // dievaluasi saat render -- beda dari fungsi buildExportData/exportSubtitle yang baru
+  // membaca `filtered` belakangan saat dipanggil (closure), objek ini butuh `filtered` sudah
+  // terisi PERSIS di baris ini.
+  const previewOptions: ExportOptions = {
+    title: 'Data Pembina (PPG)',
+    subtitle: exportSubtitle(),
+    columns: exportColumns,
+    rows: buildExportData(),
+    fileName: `Data-Pembina-${new Date().toISOString().slice(0, 10)}`,
+  }
+
+  const handleOpenPreview = () => {
+    if (previewOptions.rows.length === 0) { setNotice('Tidak ada data untuk diexport.'); return }
+    setPreviewOpen(true)
+  }
+
+  const handleExported = async (format: 'pdf' | 'excel') => {
+    if (!user) return
+    await logAudit(user, 'EXPORT', 'Data Pembina', `${format === 'pdf' ? 'PDF' : 'Excel'} -- ${previewOptions.rows.length} pembina`)
+  }
 
   if (!hasAccess) {
     return (
@@ -378,16 +367,10 @@ export default function DataPembinaPage() {
           <p className="text-slate-400 text-sm">Biodata pribadi {data.length} Pembina (PPG) -- terpisah dari Data Generus</p>
         </div>
         {canManage && (
-          <div className="flex items-center gap-2">
-            <button onClick={handleExportPDF} disabled={exporting}
-              className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
-              📄 PDF
-            </button>
-            <button onClick={handleExportExcel} disabled={exporting}
-              className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
-              📊 Excel
-            </button>
-          </div>
+          <button onClick={handleOpenPreview}
+            className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
+            🔍 Pratinjau & Export
+          </button>
         )}
       </div>
 
@@ -669,6 +652,13 @@ export default function DataPembinaPage() {
           </div>
         </Modal>
       )}
+
+      <ExportPreviewModal
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        options={previewOptions}
+        onExported={handleExported}
+      />
     </div>
   )
 }

@@ -7,7 +7,8 @@ import { supabase } from '@/lib/supabase'
 import { Absensi } from '@/lib/types'
 import { isPPG } from '@/lib/roles'
 import { logAudit } from '@/lib/audit'
-import { exportToPDF, exportToExcel, ExportColumn } from '@/lib/export'
+import { ExportColumn, ExportOptions } from '@/lib/export'
+import ExportPreviewModal from '@/components/ExportPreviewModal'
 import ProfilHeader from '@/components/ProfilHeader'
 
 // Sub-halaman "Riwayat Absensi" -- dipecah dari tab "Presensi" lama di
@@ -23,7 +24,7 @@ export default function RiwayatAbsensiPage() {
 
   const [riwayatPresensi, setRiwayatPresensi] = useState<Absensi[]>([])
   const [loading, setLoading] = useState(true)
-  const [exporting, setExporting] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
 
   const loadRiwayatPresensi = useCallback(async (userId: string) => {
     setLoading(true)
@@ -77,37 +78,21 @@ export default function RiwayatAbsensiPage() {
       : '-',
     status: r.status ? label[r.status] : '-',
   }))
-  const handleExportPDF = async () => {
-    if (riwayatPresensi.length === 0 || exporting) return
-    setExporting(true)
-    try {
-      exportToPDF({
-        title: 'Riwayat Absensi',
-        subtitle: user.nama_lengkap,
-        columns: exportColumns,
-        rows: buildExportRows(),
-        fileName: `Riwayat-Absensi-${new Date().toISOString().slice(0, 10)}`,
-      })
-      await logAudit(user, 'EXPORT', 'Riwayat Absensi', `PDF -- ${riwayatPresensi.length} baris`)
-    } finally {
-      setExporting(false)
-    }
+  const previewOptions: ExportOptions = {
+    title: 'Riwayat Absensi',
+    subtitle: user.nama_lengkap,
+    columns: exportColumns,
+    rows: buildExportRows(),
+    fileName: `Riwayat-Absensi-${new Date().toISOString().slice(0, 10)}`,
   }
-  const handleExportExcel = async () => {
-    if (riwayatPresensi.length === 0 || exporting) return
-    setExporting(true)
-    try {
-      await exportToExcel({
-        title: 'Riwayat Absensi',
-        subtitle: user.nama_lengkap,
-        columns: exportColumns,
-        rows: buildExportRows(),
-        fileName: `Riwayat-Absensi-${new Date().toISOString().slice(0, 10)}`,
-      })
-      await logAudit(user, 'EXPORT', 'Riwayat Absensi', `Excel -- ${riwayatPresensi.length} baris`)
-    } finally {
-      setExporting(false)
-    }
+
+  const handleOpenPreview = () => {
+    if (riwayatPresensi.length === 0) return
+    setPreviewOpen(true)
+  }
+
+  const handleExported = async (format: 'pdf' | 'excel') => {
+    await logAudit(user, 'EXPORT', 'Riwayat Absensi', `${format === 'pdf' ? 'PDF' : 'Excel'} -- ${riwayatPresensi.length} baris`)
   }
 
   return (
@@ -117,13 +102,9 @@ export default function RiwayatAbsensiPage() {
       <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6">
         {!loading && riwayatPresensi.length > 0 && (
           <div className="flex justify-end gap-2 mb-4">
-            <button onClick={handleExportPDF} disabled={exporting}
+            <button onClick={handleOpenPreview}
               className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition disabled:opacity-50">
-              📄 PDF
-            </button>
-            <button onClick={handleExportExcel} disabled={exporting}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition disabled:opacity-50">
-              📊 Excel
+              🔍 Pratinjau & Export
             </button>
           </div>
         )}
@@ -151,6 +132,13 @@ export default function RiwayatAbsensiPage() {
           </div>
         )}
       </div>
+
+      <ExportPreviewModal
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        options={previewOptions}
+        onExported={handleExported}
+      />
     </div>
   )
 }

@@ -61,6 +61,49 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 27 Juli 2026 (lanjutan 5) — Pratinjau+Cetak langsung di semua export, filter jenis kelamin Data Generus
+
+Permintaan langsung dari Reno (bukan hasil audit): (1) konsistensikan pratinjau dokumen
+di SEMUA tempat yang bisa export, dan (2) opsi cetak langsung tanpa wajib unduh dulu, (3)
+Data Generus perlu bisa disaring per jenis kelamin -- kegiatan muda-mudi organisasi ini rutin
+memisahkan tempat laki-laki/perempuan (menghindari bersentuhan dgn bukan mahram), jadi
+Pengurus butuh bisa menarik data salah satu gender saja ATAU keduanya untuk rekap/kebutuhan
+pengurus.
+
+**Temuan awal**: pratinjau (`ExportPreviewModal`, PDF asli di iframe sebelum diunduh) TERNYATA
+sudah ada & dipakai di **Keuangan** dan **Absensi** -- tapi **Data Generus, Data Pembina,
+Kegiatan, dan Riwayat Absensi pribadi** masih pakai `exportToPDF`/`exportToExcel` LANGSUNG
+tanpa pratinjau (2 tombol terpisah "📄 PDF" / "📊 Excel", download langsung).
+
+**Dikerjakan:**
+- **`components/ExportPreviewModal.tsx`**: tambah tombol **"🖨️ Cetak"** (gelap, paling
+  menonjol) di antara Tutup dan Export PDF/Excel -- memicu `iframe.contentWindow.print()`
+  atas PDF yang SUDAH tampil di pratinjau, jadi user bisa langsung cetak tanpa unduh file
+  dulu. Karena komponen ini shared, **Keuangan & Absensi otomatis dapat tombol ini juga**
+  tanpa disentuh.
+- **4 halaman diubah dari 2-tombol-langsung-unduh jadi 1 tombol "🔍 Pratinjau & Export"**
+  yang membuka `ExportPreviewModal` (pola disalin persis dari `absensi/page.tsx`):
+  `generus/page.tsx` (Data Generus), `data-pembina/page.tsx` (Data Pembina),
+  `kegiatan/page.tsx`, `profil/riwayat-absensi/page.tsx`. Audit log export (`logAudit`)
+  dipindah ke callback `onExported` (dipanggil `ExportPreviewModal` setelah export
+  PDF/Excel beneran terjadi, BUKAN saat cetak -- cetak tidak menghasilkan file baru jadi
+  tidak perlu dicatat sbg "export").
+  - **Catatan teknis**: di `data-pembina/page.tsx`, `previewOptions` (objek biasa, beda
+    dari fungsi `buildExportData`/`exportSubtitle` yang dievaluasi belakangan lewat
+    closure) harus dipindah ke SETELAH deklarasi `const filtered` -- kalau tetap di posisi
+    lama (sebelum `filtered` dideklarasikan) akan kena *temporal dead zone* JS
+    ("Cannot access 'filtered' before initialization").
+- **Filter Jenis Kelamin di Data Generus**: dropdown baru "Laki-laki & Perempuan" (default,
+  tarik keduanya) / "Laki-laki Saja" / "Perempuan Saja", masuk ke rantai filter yang sama
+  dgn pencarian/role/status. Karena `buildExportData()` selalu ambil dari `filtered` (bukan
+  data mentah), filter ini otomatis ikut kepakai saat pratinjau/export/cetak -- tidak perlu
+  logic terpisah. Data Pembina/Kegiatan TIDAK diberi filter ini (di luar scope permintaan --
+  PPG bukan peserta kegiatan muda-mudi yang dipisah gender).
+- Visual diverifikasi lewat halaman preview sementara (dihapus lagi) + screenshot
+  Playwright: tombol Cetak baru tampil benar di pratinjau PDF ASLI (bukan tiruan, generated
+  via jsPDF sungguhan di iframe), dropdown filter jenis kelamin terbaca jelas.
+  `tsc --noEmit`, `eslint`, `npm run test` (58 test), `npm run build` semua sukses.
+
 ### Sesi 27 Juli 2026 (lanjutan 4) — Audit fitur Notifikasi/push + banner ajakan aktifkan push
 
 Menindaklanjuti gap terakhir yang tercatat di §4B dokumen ini ("push notification

@@ -11,7 +11,8 @@ import { RFID_PRESENSI_READY } from '@/lib/rfid'
 import Modal from '@/components/Modal'
 import PresensiPanel from '@/components/PresensiPanel'
 import PengajuanIzinPanel from '@/components/PengajuanIzinPanel'
-import { exportToPDF, exportToExcel } from '@/lib/export'
+import { ExportOptions } from '@/lib/export'
+import ExportPreviewModal from '@/components/ExportPreviewModal'
 import { toast } from '@/lib/toast'
 import { konfirmasi } from '@/lib/konfirmasi'
 import { SkeletonCards } from '@/components/Skeleton'
@@ -91,7 +92,7 @@ export default function KegiatanPage() {
   const [saving, setSaving] = useState(false)
   const [desaList, setDesaList] = useState<DesaOpt[]>([])
   const [kelompokList, setKelompokList] = useState<KelompokOpt[]>([])
-  const [exporting, setExporting] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
   const [error, setError] = useState('')
   // Kelas ngaji milik Generus yang login -- dipakai utk filter tampilan kegiatan dengan
   // target_peserta='kelas_ngaji_tertentu' (mis. kegiatan Remaja Dewasa tidak boleh muncul
@@ -360,38 +361,22 @@ export default function KegiatanPage() {
     return `${scope} -- ${statusTxt} -- ${filtered.length} kegiatan`
   }
 
-  const handleExportPDF = async () => {
-    if (filtered.length === 0) { toast.info('Belum ada data yang bisa diexport.'); return }
-    setExporting(true)
-    try {
-      exportToPDF({
-        title: 'Daftar Kegiatan',
-        subtitle: exportSubtitle(),
-        columns: exportColumns,
-        rows: buildExportData(),
-        fileName: `Daftar-Kegiatan-${new Date().toISOString().slice(0, 10)}`,
-      })
-      if (user) await logAudit(user, 'EXPORT', 'Kegiatan', `PDF -- ${filtered.length} kegiatan`)
-    } finally {
-      setExporting(false)
-    }
+  const previewOptions: ExportOptions = {
+    title: 'Daftar Kegiatan',
+    subtitle: exportSubtitle(),
+    columns: exportColumns,
+    rows: buildExportData(),
+    fileName: `Daftar-Kegiatan-${new Date().toISOString().slice(0, 10)}`,
   }
 
-  const handleExportExcel = async () => {
-    if (filtered.length === 0) { toast.info('Belum ada data yang bisa diexport.'); return }
-    setExporting(true)
-    try {
-      await exportToExcel({
-        title: 'Daftar Kegiatan',
-        subtitle: exportSubtitle(),
-        columns: exportColumns,
-        rows: buildExportData(),
-        fileName: `Daftar-Kegiatan-${new Date().toISOString().slice(0, 10)}`,
-      })
-      if (user) await logAudit(user, 'EXPORT', 'Kegiatan', `Excel -- ${filtered.length} kegiatan`)
-    } finally {
-      setExporting(false)
-    }
+  const handleOpenPreview = () => {
+    if (previewOptions.rows.length === 0) { toast.info('Belum ada data yang bisa diexport.'); return }
+    setPreviewOpen(true)
+  }
+
+  const handleExported = async (format: 'pdf' | 'excel') => {
+    if (!user) return
+    await logAudit(user, 'EXPORT', 'Kegiatan', `${format === 'pdf' ? 'PDF' : 'Excel'} -- ${previewOptions.rows.length} kegiatan`)
   }
 
   if (!featureChecking && !featureEnabled) {
@@ -417,13 +402,9 @@ export default function KegiatanPage() {
               melihat daftar kegiatan tapi tidak perlu bisa export laporan ke PDF/Excel. */}
           {canManage && (
             <>
-              <button onClick={handleExportPDF} disabled={exporting}
+              <button onClick={handleOpenPreview}
                 className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
-                📄 PDF
-              </button>
-              <button onClick={handleExportExcel} disabled={exporting}
-                className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
-                📊 Excel
+                🔍 Pratinjau & Export
               </button>
               <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
                 + Tambah Kegiatan
@@ -696,6 +677,13 @@ export default function KegiatanPage() {
           </div>
         </div>
       </Modal>
+
+      <ExportPreviewModal
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        options={previewOptions}
+        onExported={handleExported}
+      />
     </div>
   )
 }
