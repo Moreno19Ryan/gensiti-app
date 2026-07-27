@@ -138,7 +138,7 @@ export default function ProfilPage() {
   }
 
   // Beroperasi di atas SESI YANG SUDAH LOGIN (user sudah masuk lewat nama+password) --
-  // sama sekali tidak menyentuh /api/resolve-login atau /api/session/claim, jadi tidak
+  // sama sekali tidak menyentuh /api/resolve-login atau RPC claim_session, jadi tidak
   // mengganggu alur login existing.
   const handleLinkGoogle = async () => {
     setGoogleLoading(true)
@@ -333,6 +333,14 @@ export default function ProfilPage() {
             iconBg="bg-[#EAF4FF] dark:bg-blue-900/30" iconColor="text-blue-600 dark:text-blue-400"
             icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="10" width="16" height="10" rx="2.2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>}
             label="Ganti Password"
+          />
+          {/* Perangkat Aktif -- self-service lihat/keluarkan sesi login sendiri (A4,
+              maks 2 perangkat bersamaan per akun). Lihat app/(dashboard)/profil/perangkat. */}
+          <ListItem
+            href="/profil/perangkat"
+            iconBg="bg-[#EAF4FF] dark:bg-blue-900/30" iconColor="text-blue-600 dark:text-blue-400"
+            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="2" width="16" height="20" rx="2" /><path d="M12 18h.01" /></svg>}
+            label="Perangkat Aktif"
           />
           {/* Akun Google -- inline (bukan link), lihat komentar googleIdentity di atas */}
           <div className="px-4 py-3.5">
