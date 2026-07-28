@@ -532,6 +532,28 @@ tidak menambah kompleksitas komponen baru.
   cadence-nya nyata berbeda. Kategori ASAD saat ini selalu sama ("PERSINAS ASAD") di 10 artikel
   terbaru — filter kategori kurang berguna untuk sumber itu dibanding LDII/LDII Kota
   Bekasi/SENKOM yang variatif.
+- **Nav tab bergaya "liquid glass"/glassmorphism** (redesain 28 Juli 2026, murni visual, tidak
+  menyentuh logic fetch/parse) — track tab pakai `backdrop-blur-xl` + `bg-white/50 dark:bg-
+  slate-800/45` (semi-transparan, bukan solid) + border tipis dgn highlight + `rounded-full`,
+  chip tab aktif mengambang di atasnya (`shadow-md` + `ring-1`). **Struktur (track + chip
+  mengambang) REUSE pola segmented-control Akun/Biodata yang sudah ada di
+  `generus/page.tsx`** — cuma treatment-nya diganti kaca, bukan pola baru. Transisi cross-fade
+  sederhana (`transition-colors duration-300`), BUKAN indikator yang "meluncur" presisi antar
+  posisi tab (opsi yang lebih kompleks, ditunda sebagai peningkatan terpisah kalau diperlukan).
+  Sengaja TIDAK sticky/fixed — biar tidak menghitung ulang blur tiap frame scroll (resiko lag
+  di device low-end kalau sticky).
+  - Ikon tiap tab = favicon RESMI situs sumber, hotlink apa adanya (TIDAK di-crop/diwarnai
+    ulang) — sumbernya tag `<image><url>` di RSS feed (LDII, ASAD, LDII Kota Bekasi) atau
+    `favicon.ico` standar (SENKOM, Blogger tidak menyertakan `<image>` channel). Kalau gagal
+    dimuat, fallback ke lencana inisial (`SUMBER_INISIAL`), bukan ikon patah/kosong.
+  - Tab "Semua" (gabungan lintas sumber) ditambahkan sebagai union type `TabSumber` di level
+    UI (`SumberBeritaOrganisasi | 'semua'`) — BUKAN nilai valid di kolom `sumber` database.
+    Ditaruh PALING KANAN (bukan default) supaya prioritas LDII Kota Bekasi sebagai tab
+    default (§12 di atas) tidak diam-diam berubah.
+  - `backdrop-filter` aman dipakai — didukung Chrome/WebView/Samsung Internet Android sejak
+    2019, Safari iOS sejak 15.4 (2022, tanpa prefix), Firefox sejak 103 (2022). Tailwind
+    otomatis generate versi `-webkit-` sekalian. Fallback alami kalau browser tidak dukung:
+    cuma efek blur yang hilang, warna semi-transparan tetap tampil (tidak pernah "patah").
 
 ## 13. Bookmark Berita (`berita_disimpan`)
 
