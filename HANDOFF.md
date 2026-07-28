@@ -61,6 +61,76 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 28 Juli 2026 (lanjutan 4) — Berita LDII digeneralisasi jadi "Berita Organisasi" (multi-sumber: LDII, PERSINAS ASAD, SENKOM)
+
+Berawal dari upgrade kecil (tombol Bagikan WhatsApp + ikon asli, filter kategori, pencarian di
+halaman Berita LDII — PR #30, #31, sudah merge), lalu Reno minta riset 2 organisasi afiliasi
+baru (PERSINAS ASAD, SENKOM Mitra Polri) apakah punya RSS feed yang bisa dipakai pola serupa.
+
+- **Riset feed baru** (semua lewat `net.http_get` dari database, bukan tebakan):
+  - **PERSINAS ASAD** (`https://official.asad.or.id/feed/`) — VALID, WordPress, update harian.
+    `www.berita.asad.or.id` (yang tadinya dikira sumber sebenarnya) TIMEOUT total dari jaringan
+    Supabase — tidak dipakai, tidak perlu, karena `official.asad.or.id` sendiri sudah lengkap.
+    **Beda penting dari LDII**: feed ASAD TIDAK punya `<content:encoded>` sama sekali — jadi
+    tidak ada mekanisme thumbnail apapun, `gambar_url` selalu `null` utk sumber ini. Kategori
+    di 10 artikel terbaru selalu sama ("PERSINAS ASAD") — filter kategori kurang berguna utk
+    sumber ini dibanding LDII.
+  - **SENKOM Mitra Polri** (`https://www.senkom.or.id/feeds/posts/default?alt=rss`) — VALID,
+    platform Blogger (bukan WordPress). Update jauh lebih jarang/tidak teratur dari LDII/ASAD
+    (jeda bisa 3-4 minggu) — bukan mati seperti forsgi.com (mati sejak 2022), tapi cadence
+    beda jauh. **Temuan struktural penting**: `<description>` Blogger BUKAN cuplikan seperti
+    WordPress — isinya ARTIKEL LENGKAP (dicek: 4.000–11.000+ karakter per item). Kalau
+    diperlakukan sama seperti LDII/ASAD, itu MELANGGAR prinsip hak cipta "cuma cuplikan".
+    **Dikonfirmasi eksplisit dgn Reno**: solusinya potong ringkasan SENDIRI di sisi kita
+    (280 karakter pertama, potong di batas kata + elipsis), bukan mengandalkan pemotongan dari
+    sumber (karena memang tidak ada). Thumbnail pakai `<media:thumbnail url="...">` (field
+    resmi Blogger, bukan regex dari body).
+- **Keputusan arsitektur** (ditanyakan eksplisit ke Reno via pertanyaan, bukan diasumsikan):
+  generalisasi jadi SATU tabel (`berita_organisasi`, kolom `sumber`) + SATU Edge Function
+  (`fetch-berita-organisasi`, loop atas array `SOURCES` config) — dipilih Reno dibanding bikin
+  tabel/function terpisah per sumber. Nama tabel awalnya diusulkan `berita_eksternal`, Reno
+  ganti jadi `berita_organisasi`. Frontend digabung jadi satu halaman `/berita` ("Berita
+  Organisasi") dengan tab pemilih sumber, bukan 3 menu terpisah di sidebar (juga pilihan Reno).
+- **Migrasi**: `berita_organisasi_generalisasi_multi_sumber` (tabel baru + RLS + GRANT eksplisit
+  dari awal, sudah belajar dari bug grants `berita_ldii` — tidak diulang kali ini + copy data
+  LDII lama), `berita_organisasi_tambah_sumber_senkom` (extend check constraint), pg_cron job
+  lama `fetch_berita_ldii_cron` di-unschedule, ganti `fetch_berita_organisasi_cron` (timeout
+  30 detik, pola sama). Tabel `berita_ldii` lama SENGAJA belum di-drop — nunggu tabel baru
+  terbukti stabil dulu di production, drop-nya migrasi terpisah (perlu approval eksplisit lagi).
+- **3 bug nyata ditemukan & diperbaiki lewat testing manual berulang thd Edge Function
+  (bukan asumsi kode benar)**:
+  1. `fast-xml-parser` punya batas pengaman "entity expansion" (default 1000) yang kelampauan
+     oleh banyaknya entity di HTML ter-embed description SENKOM → error "Entity expansion
+     limit exceeded". Fix: `processEntities: false` di parser, semua decode entity diserahkan
+     ke fungsi sendiri (`decodeHtmlEntities`).
+  2. Konsekuensi fix #1: teks yang diterima jadi masih ter-escape (`&lt;p&gt;` literal, bukan
+     `<p>`) — urutan `stripHtml` lalu `decodeHtmlEntities` (urutan lama, cocok utk LDII/ASAD)
+     jadi salah utk SENKOM karena `stripHtml` dijalankan SEBELUM tag di-decode jadi nyata.
+     Fix: dibalik jadi decode-dulu-baru-strip, berlaku utk semua sumber.
+  3. Regex `bersihkanRingkasan` (pembersih boilerplate Yoast) TERNYATA punya bug lama yang baru
+     ketahuan sekarang: marker `"[…]"` di depan "The post..." diwajibkan (bukan opsional) di
+     regex lama — cocok utk LDII (yang memang sering punya marker ini di cuplikannya) tapi
+     GAGAL TOTAL utk ASAD (yang tidak pernah punya marker itu, cuplikannya cuma berhenti bersih
+     + baris baru) — boilerplate ASAD lolos tidak terpotong sama sekali sampai fix ini
+     (dibuktikan lewat query SQL langsung ke tabel, bukan asumsi). Fix: marker dibuat opsional
+     sebagai satu grup `(?:\[?…\]?\s*)?`.
+- Semua 3 bug di atas ditemukan lewat re-test manual berulang thd Edge Function (panggil,
+  cek isi tabel via SQL, ulangi) — bukan cuma baca kode dan asumsi benar.
+- Frontend: `app/(dashboard)/berita-ldii/` dipindah jadi `app/(dashboard)/berita/`, tab
+  switcher (LDII/PERSINAS ASAD/SENKOM Mitra Polri) di atas kartu, filter kategori & pencarian
+  & tombol Bagikan WhatsApp (dari kerjaan sebelumnya) di-scope per tab aktif, filter/pencarian
+  otomatis reset saat ganti tab (supaya tidak nyangkut ke kategori yang tidak ada di sumber
+  baru). `lib/types.ts`: `BeritaLdii` → `BeritaOrganisasi` (+ field `sumber`).
+- **Ditemukan sekalian saat rename `menuKey`**: menu ini (`berita-ldii`) ternyata dari awal
+  dibuat TIDAK PERNAH masuk `MENU_GROUPS` di `app/(dashboard)/pengaturan-fitur/page.tsx` —
+  Super Admin sebenarnya belum pernah punya UI untuk mematikan menu ini per jenjang. Ditambahkan
+  sekalian (`menu_key: 'berita-organisasi'`) saat rename, bukan bug baru dari sesi ini.
+- Verifikasi: `tsc`/`eslint` bersih di semua file yang diubah, halaman preview sementara +
+  Playwright (tab switching mengisolasi data per sumber dengan benar, filter reset saat ganti
+  tab, kategori filter & pencarian & tombol Bagikan berfungsi, light/dark mode rapi) — dihapus
+  setelah selesai. Data live di production sudah dicek langsung lewat SQL: 0 baris tersisa
+  dengan boilerplate "The post" atau entity mentah `&nbsp;`/`&amp;` di ketiga sumber.
+
 ### Sesi 28 Juli 2026 (lanjutan 2) — Berita LDII: bersihkan teks feed, tambah gambar, redesain kartu
 
 Feedback langsung dari Reno setelah lihat halaman live: tampilannya "kurang menarik" (tidak

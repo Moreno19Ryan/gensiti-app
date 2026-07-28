@@ -45,6 +45,10 @@ const MENU_GROUPS: MenuGroup[] = [
   { menu_key: 'keuangan', menu_label: 'Keuangan', roleColumns: ['daerah', 'desa', 'kelompok'] },
   { menu_key: 'pengumuman', menu_label: 'Pengumuman', roleColumns: ['daerah', 'desa', 'kelompok', 'ppg'] },
   { menu_key: 'dokumen', menu_label: 'Dokumen', roleColumns: ['daerah', 'desa', 'kelompok', 'ppg'] },
+  // Menu ini (dulu "Berita LDII", key 'berita-ldii') ternyata belum pernah masuk MENU_GROUPS --
+  // sempat luput saat menu itu pertama dibuat, jadi Super Admin sebenarnya belum pernah punya
+  // UI utk mematikannya per jenjang. Ditambahkan sekalian saat rename ke 'berita-organisasi'.
+  { menu_key: 'berita-organisasi', menu_label: 'Berita Organisasi', roleColumns: ['daerah', 'desa', 'kelompok', 'ppg'] },
   { menu_key: 'catatan-pembinaan', menu_label: 'Catatan Pembinaan', roleColumns: ['daerah', 'desa', 'kelompok', 'ppg'] },
   { menu_key: 'monitoring', menu_label: 'Monitoring & Log', roleColumns: ['daerah', 'desa', 'kelompok'] },
 ]
