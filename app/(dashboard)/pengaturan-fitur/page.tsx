@@ -49,6 +49,7 @@ const MENU_GROUPS: MenuGroup[] = [
   // sempat luput saat menu itu pertama dibuat, jadi Super Admin sebenarnya belum pernah punya
   // UI utk mematikannya per jenjang. Ditambahkan sekalian saat rename ke 'berita-organisasi'.
   { menu_key: 'berita-organisasi', menu_label: 'Berita Organisasi', roleColumns: ['daerah', 'desa', 'kelompok', 'ppg'] },
+  { menu_key: 'faq', menu_label: 'FAQ / Panduan', roleColumns: ['daerah', 'desa', 'kelompok', 'ppg'] },
   { menu_key: 'catatan-pembinaan', menu_label: 'Catatan Pembinaan', roleColumns: ['daerah', 'desa', 'kelompok', 'ppg'] },
   { menu_key: 'monitoring', menu_label: 'Monitoring & Log', roleColumns: ['daerah', 'desa', 'kelompok'] },
 ]

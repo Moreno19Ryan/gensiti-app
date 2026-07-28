@@ -84,6 +84,10 @@ const navItems: NavItem[] = [
   // /berita-ldii & menuKey lama 'berita-ldii' diganti -- tidak ada baris feature_toggles yang
   // memakai key lama (dicek dulu sebelum rename), jadi aman diganti langsung tanpa migrasi data.
   { href: '/berita', label: 'Berita Organisasi', icon: '📰', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], menuKey: 'berita-organisasi' },
+  // FAQ/Panduan -- terbuka utk semua jenjang TERMASUK Generus biasa (tidak ada hideForGenerus)
+  // karena ini justru paling berguna buat mereka (cara absen, reset password, ajukan izin).
+  // Dikelola Super Admin lewat tombol +Tambah/edit/hapus di halaman yang sama.
+  { href: '/faq', label: 'FAQ / Panduan', icon: '❓', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], menuKey: 'faq' },
   { href: '/notifikasi', label: 'Notifikasi', icon: '🔔', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
   // Pengaturan -- konsolidasi preferensi tampilan/aksesibilitas aplikasi (Mode Gelap, Ukuran
   // Teks, Kontras Tinggi, Ganti Bahasa, Versi Aplikasi). Terbuka utk semua jenjang termasuk
