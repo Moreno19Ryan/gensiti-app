@@ -79,6 +79,7 @@ const navItems: NavItem[] = [
   { href: '/keuangan', label: 'Keuangan', icon: '💰', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, menuKey: 'keuangan' },
   { href: '/pengumuman', label: 'Pengumuman', icon: '📢', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], menuKey: 'pengumuman' },
   { href: '/dokumen', label: 'Dokumen', icon: '📁', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], menuKey: 'dokumen' },
+  { href: '/berita-ldii', label: 'Berita LDII', icon: '📰', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], menuKey: 'berita-ldii' },
   { href: '/notifikasi', label: 'Notifikasi', icon: '🔔', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
   // Pengaturan -- konsolidasi preferensi tampilan/aksesibilitas aplikasi (Mode Gelap, Ukuran
   // Teks, Kontras Tinggi, Ganti Bahasa, Versi Aplikasi). Terbuka utk semua jenjang termasuk

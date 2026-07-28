@@ -446,7 +446,35 @@ tidak perlu perubahan kode lain.
   seperti QR) + *device dipegang Pengurus yang login*, bukan di kerahasiaan UID itu
   sendiri. Cukup untuk skala organisasi ini, bukan tingkat keamanan bank-grade.
 
-## 12. Yang Belum Terdokumentasi / Perlu Update Berkala
+## 12. Berita LDII (Mirror RSS Feed Publik)
+
+Menu "Berita LDII" (`app/(dashboard)/berita-ldii/page.tsx`) menampilkan ringkasan berita dari
+RSS feed publik organisasi induk (`https://www.ldii.or.id/feed/`), diperbarui otomatis.
+
+- **Alur**: pg_cron job `fetch-berita-ldii` (jadwal `0 */4 * * *`, tiap 4 jam) → fungsi tipis
+  `public.fetch_berita_ldii_cron()` (pola identik `notify_push`/`send_reminder_*`) →
+  `net.http_post` (timeout 30 detik — default 5 detik pg_net terlalu pendek untuk fetch
+  keluar ke situs pihak ketiga) → Edge Function `fetch-berita-ldii` (Deno, `fast-xml-parser`)
+  → fetch feed, parse RSS 2.0, upsert ke tabel `berita_ldii` by `guid`.
+- **Prinsip hak cipta (WAJIB dijaga kalau menyentuh kode ini)**: field `<content:encoded>`
+  (isi artikel lengkap milik LDII) **secara sengaja tidak pernah dibaca sama sekali** di Edge
+  Function — hanya title/link/pubDate/description (ringkasan yang SUDAH dipotong otomatis
+  oleh WordPress)/category/guid. Kalau menambah field baru dari feed, JANGAN sertakan
+  `content:encoded`. Halaman frontend juga TIDAK PERNAH merender isi lengkap — tombol "Baca
+  Selengkapnya" selalu `target="_blank"` ke artikel asli di ldii.or.id.
+- **Tabel `berita_ldii`**: RLS SELECT untuk `authenticated` semua jenjang (termasuk Generus —
+  berita organisasi induk relevan buat semua). Sengaja TANPA policy INSERT/UPDATE/DELETE —
+  hanya service role (dari Edge Function) yang menulis. **Catatan penting**: tabel baru
+  TERNYATA tidak otomatis mewarisi default privileges project seperti tabel lama (mis.
+  `push_subscriptions`) — RLS policy saja tidak cukup tanpa `GRANT SELECT/INSERT/UPDATE`
+  eksplisit ke `authenticated`/`service_role`, dua lapisan permission yang terpisah. Kalau
+  membuat tabel baru lain, cek grants-nya juga (`information_schema.role_table_grants`),
+  jangan asumsikan otomatis sama seperti tabel-tabel lama.
+- Menu ini pakai `menuKey: 'berita-ldii'` (fail-open by design, lihat §6/`lib/feature-toggles.ts`)
+  — tidak perlu seed baris `feature_toggles` manual, otomatis aktif untuk semua jenjang
+  sampai Super Admin sengaja mematikannya lewat halaman Pengaturan Fitur.
+
+## 13. Yang Belum Terdokumentasi / Perlu Update Berkala
 
 - Dokumen ini snapshot per tanggal di atas — RPC & tabel baru harus ditambahkan ke §3/§4
   saat migrasi baru diterapkan lewat Supabase MCP (`apply_migration`).

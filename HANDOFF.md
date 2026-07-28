@@ -61,6 +61,53 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 28 Juli 2026 (lanjutan) — Menu "Berita LDII": mirror RSS feed publik ldii.or.id
+
+Ide dari Reno (dikonfirmasi ada RSS feed valid via sesi Claude.ai terpisah yang punya akses
+browsing -- environment Claude Code ini sendiri dibatasi jaringannya, tidak bisa fetch situs
+sembarangan). Fitur baru: mirror ringkasan berita organisasi induk (LDII) ke dalam GENSITI,
+diperbarui otomatis.
+
+**Prinsip hak cipta (disepakati eksplisit sebelum kode ditulis)**: HANYA cuplikan (title,
+description WordPress yang SUDAH terpotong otomatis, link, tanggal, kategori) yang pernah
+disimpan -- `<content:encoded>` (isi artikel LENGKAP milik LDII) **secara sengaja tidak
+pernah dibaca sama sekali** di kode Edge Function, bukan cuma "dibaca lalu tidak disimpan".
+Pola setara preview link media sosial: cuplikan + link ke sumber asli, bukan salinan penuh.
+
+**Migrasi database** (`berita_ldii_rss_mirror` + 1 migrasi susulan kecil):
+- Tabel baru `berita_ldii` (guid unique utk upsert idempotent, judul, ringkasan, link,
+  tanggal_publish, kategori text[]). RLS: SELECT utk `authenticated` semua jenjang (termasuk
+  Generus -- berita organisasi induk relevan buat semua, bukan cuma Pengurus), TANPA policy
+  tulis (cuma service role dari Edge Function yang menulis)
+- **Ketemu bug saat testing langsung** (bukan cuma dites di kepala): tabel baru TERNYATA
+  tidak otomatis warisi default privileges project seperti tabel lama (`push_subscriptions`
+  dkk sudah punya GRANT SELECT/INSERT/UPDATE/DELETE ke `authenticated`/`service_role`, tabel
+  baru ini TIDAK) -- RLS policy saja tidak cukup tanpa GRANT dasar, dua lapisan terpisah.
+  Ketahuan lewat pesan error asli `"permission denied for table berita_ldii"` saat tes
+  manual, diperbaiki via migrasi susulan `berita_ldii_grant_privileges`
+- **Ketemu bug kedua**: `net.http_post` default timeout 5 detik terlalu pendek utk Edge
+  Function yang fetch KELUAR ke situs pihak ketiga (ldii.or.id) + parse + upsert -- dinaikkan
+  ke 30 detik (`fetch_berita_ldii_cron_naikkan_timeout`)
+- Fungsi tipis `fetch_berita_ldii_cron()` -- pola identik `notify_push`/`send_reminder_*`
+  yang sudah ada (`net.http_post` ke Edge Function, otorisasi header `x-internal-secret`,
+  bukan JWT)
+- pg_cron job `fetch-berita-ldii`, jadwal tiap 4 jam (`0 */4 * * *`)
+- **Diverifikasi jalan sungguhan** (bukan cuma "seharusnya jalan"): dipanggil manual 3x
+  selama debugging, akhirnya berhasil fetch **10 artikel asli** dari feed sungguhan
+  (tanggal 24-27 Juli 2026, kategori & ringkasan bersih tanpa sisa tag HTML) -- data ini
+  TETAP tersimpan di production sebagai starter content, bukan dihapus lagi
+
+**Edge Function baru** `fetch-berita-ldii` (Deno, `fast-xml-parser`) -- fetch, parse RSS 2.0,
+upsert by guid. Komentar eksplisit di kepala file soal field mana yang boleh/tidak boleh
+pernah dibaca.
+
+**Frontend**: halaman baru `app/(dashboard)/berita-ldii/page.tsx` (nav item baru, semua
+jenjang termasuk Generus, menuKey `berita-ldii` -- fail-open by design jadi tidak perlu seed
+`feature_toggles`), card list judul/ringkasan/kategori/tanggal + tombol "Baca Selengkapnya"
+selalu `target="_blank"` ke ldii.or.id (tidak pernah render isi lengkap di dalam app).
+Visual dicek lewat halaman preview sementara (dihapus lagi) + screenshot Playwright pakai
+data asli hasil fetch. `tsc`, `eslint`, `npm run test`, `npm run build` semua sukses.
+
 ### Sesi 28 Juli 2026 — Redesain alur Tambah Kegiatan: jendela presensi otomatis berbasis waktu
 
 Permintaan besar langsung dari Reno, menyentuh alur otorisasi inti (`submit_presensi` dkk) --

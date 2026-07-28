@@ -160,6 +160,18 @@ export interface PengajuanReimbursement {
   pengaju?: { nama_lengkap: string } | null
 }
 
+// Cache ringkasan berita dari RSS feed publik ldii.or.id -- HANYA cuplikan + link ke sumber
+// asli, TIDAK PERNAH isi artikel lengkap (lihat komentar di migrasi & fetch-berita-ldii
+// Edge Function soal hak cipta).
+export interface BeritaLdii {
+  id: string
+  judul: string
+  ringkasan: string | null
+  link: string
+  tanggal_publish: string | null
+  kategori: string[]
+}
+
 export interface Pengumuman {
   id: string
   judul: string
