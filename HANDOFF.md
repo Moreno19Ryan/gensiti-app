@@ -61,6 +61,53 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 28 Juli 2026 — Redesain alur Tambah Kegiatan: jendela presensi otomatis berbasis waktu
+
+Permintaan besar langsung dari Reno, menyentuh alur otorisasi inti (`submit_presensi` dkk) --
+dikerjakan lewat 1 migrasi database (`kegiatan_jendela_presensi_otomatis`, diterapkan setelah
+"OK, jalankan" eksplisit) + perubahan frontend di 3 file. Sebelum eksekusi, RPC yang ada
+(`submit_presensi`, `submit_presensi_rfid`, `generate_kode_presensi`) dan trigger auto-alpha
+dibaca LANGSUNG dari `pg_proc` production (bukan ditebak) supaya perubahannya presisi.
+
+**Keputusan desain** (dikonfirmasi eksplisit dgn Reno lewat AskUserQuestion):
+1. "Templat kegiatan" = preset jenis kegiatan yang pre-fill field umum (bukan sistem
+   template tersimpan terpisah yang jauh lebih besar scope-nya)
+2. Status kegiatan & jendela presensi dihitung LIVE dari waktu (bukan job terjadwal
+   pg_cron) -- lebih sederhana, tanpa infrastruktur produksi baru, trade-off diterima:
+   auto-alpha baru tersimpan permanen saat ada yang membuka halaman berikutnya
+
+**Migrasi database** (`kegiatan_jendela_presensi_otomatis`):
+- Kolom baru `kegiatan.lokasi_maps_url` (text) & `kegiatan.presensi_buka_lebih_awal_menit`
+  (integer, default 0, CHECK IN (0,15,30,60))
+- `submit_presensi` & `submit_presensi_rfid`: cek `status = 'ongoing'` diganti cek jendela
+  waktu (`tanggal_mulai - presensi_buka_lebih_awal_menit` s/d `tanggal_selesai`)
+- RPC baru `sinkron_status_kegiatan_jika_selesai(p_kegiatan_id)` -- housekeeping idempotent,
+  dipanggil client saat kegiatan sudah lewat tanggal_selesai, cuma `UPDATE status='selesai'`
+  SEKALI supaya trigger `trg_auto_alpha_generus_kegiatan_selesai` yang **sudah ada** (TIDAK
+  disentuh sama sekali di migrasi ini) otomatis jalan dari situ
+- Diverifikasi: `get_advisors` tidak ada temuan baru (`sinkron_status_kegiatan_jika_selesai`
+  cuma executable oleh `authenticated`, bukan `anon` -- sesuai desain), functiondef dibaca
+  ulang dari `pg_proc` utk konfirmasi perubahan benar-benar diterapkan
+
+**Frontend:**
+- `lib/kegiatan-status.ts` (+ 15 test) -- `computeKegiatanStatus`, `isPresensiWindowOpen`,
+  `isTepatWaktu`, dipakai bersama oleh `kegiatan/page.tsx`, `PresensiPanel.tsx`,
+  `absensi/page.tsx`
+- `kegiatan/page.tsx`: dropdown "Jenis Kegiatan" (preset, hanya saat Tambah bukan Edit),
+  validasi tanggal tidak boleh sebelum hari ini (hanya saat Tambah), field Link G-Maps,
+  dropdown "Buka Presensi Lebih Awal", dropdown Status manual **dihapus** (jadi teks
+  read-only "otomatis, mengikuti jadwal"), badge status & filter & export kolom Status
+  semua pindah ke `computeKegiatanStatus()`, panggil RPC sync di `loadData()`
+- `PresensiPanel.tsx`: gate render ganti dari `kegiatan.status !== 'ongoing'` jadi
+  `!isPresensiWindowOpen(kegiatan)`
+- `absensi/page.tsx`: badge "Tepat Waktu"/"Terlambat" di baris hadir, modal wajib pilih
+  alasan (Lupa Absen/Kendala Teknis/Lainnya) + catatan sebelum koreksi kehadiran tersimpan
+  (dulu teks generik hardcoded), panggil RPC sync di `loadKegiatan()`
+- Visual diverifikasi lewat halaman preview sementara (dihapus lagi) + screenshot Playwright
+  utk 3 potongan UI baru (form preset+maps+buka-lebih-awal, badge Tepat Waktu/Terlambat,
+  modal alasan koreksi). `tsc`, `eslint`, `npm run test` (73 test), `npm run build` semua
+  sukses.
+
 ### Sesi 27 Juli 2026 (lanjutan 5) — Pratinjau+Cetak langsung di semua export, filter jenis kelamin Data Generus
 
 Permintaan langsung dari Reno (bukan hasil audit): (1) konsistensikan pratinjau dokumen

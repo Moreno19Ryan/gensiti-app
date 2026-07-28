@@ -94,6 +94,11 @@ export interface Kegiatan {
   // di luar dua flag ini, QR & RFID opsional & bisa dinyalakan bersamaan. Lihat lib/rfid.ts.
   presensi_metode_qr: boolean
   presensi_metode_rfid: boolean
+  // Link Google Maps lokasi kegiatan, opsional -- membantu Generus yang belum tahu lokasi acara.
+  lokasi_maps_url: string | null
+  // Berapa menit sebelum tanggal_mulai presensi (QR/manual/RFID) sudah bisa dipakai --
+  // 0/15/30/60. Lihat lib/kegiatan-status.ts isPresensiWindowOpen().
+  presensi_buka_lebih_awal_menit: number
 }
 
 export type StatusPengajuanIzin = 'menunggu' | 'disetujui' | 'ditolak'
