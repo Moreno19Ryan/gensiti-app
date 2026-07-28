@@ -61,6 +61,38 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 28 Juli 2026 (lanjutan 5) — Tambah sumber ke-4: DPD LDII Kota Bekasi (paling relevan lokal, jadi tab default)
+
+Temuan Reno: `ldiibekasikota.or.id` adalah situs resmi DPD LDII Kota Bekasi (sudah pernah ada di
+bio Instagram GENSITI) — SANGAT relevan karena GENSITI untuk Generus Bekasi Timur (bagian dari
+Kota Bekasi), beritanya soal kegiatan PAC/PC spesifik wilayah Bekasi, bukan nasional.
+
+- **Riset**: `https://ldiibekasikota.or.id/feed/` VALID (WordPress 6.9.5, pola identik LDII
+  nasional termasuk wording boilerplate Yoast "appeared first on"), artikel terbaru 24 Juli 2026
+  (4 hari sebelum sesi ini) — aktif, cadence-nya di antara LDII nasional dan ASAD. Kategori
+  bervariasi (Berita Kegiatan, Dakwah, Berita Daerah, dst). Karena pola persis sama dengan LDII
+  nasional, **tidak butuh penanganan khusus baru** (beda dengan kasus SENKOM/Blogger sebelumnya)
+  — tinggal 1 baris config di `SOURCES`.
+- **Keputusan tata letak** (2 opsi diajukan ke Reno sebelum eksekusi, sesuai instruksi "tunjukkan
+  usulan dulu"): Opsi A (tab biasa tapi jadi default + badge penanda) vs Opsi B (section "Sorotan
+  Lokal" terpisah di atas tab, selalu tampil terlepas tab aktif). **Reno pilih Opsi A** — tab
+  "LDII Kota Bekasi" ditaruh paling kiri, jadi `activeSumber` default saat halaman dibuka (bukan
+  LDII nasional lagi), plus ikon 📍 di label tab-nya. Tidak menambah komponen/lapisan render baru.
+- Migrasi `berita_organisasi_tambah_sumber_ldii_bekasi` (extend check constraint tambah
+  `'ldii-bekasi'`), Edge Function `fetch-berita-organisasi` tambah 1 entry di `SOURCES` (tanpa
+  `truncateRingkasan`, karena WordPress auto-potong seperti LDII/ASAD). Tidak perlu ubah pg_cron
+  sama sekali — job yang sudah ada otomatis memanggil source baru karena Edge Function loop atas
+  `SOURCES`.
+- Diuji manual langsung ke production: 10 artikel ter-upsert bersih (0 boilerplate, 0 entity
+  mentah), 2 dari 3 artikel terbaru punya gambar asli (regex `<img>` dari `content:encoded`,
+  proxy `i0.wp.com` Jetpack — tetap hotlink, bukan salinan).
+- Frontend: `SUMBER_LIST` diurutkan ulang (`'ldii-bekasi'` pertama), `activeSumber` default
+  diganti dari `'ldii'` ke `'ldii-bekasi'`, tab button dapat ikon 📍 kondisional. `lib/types.ts`:
+  `SumberBeritaOrganisasi` tambah `'ldii-bekasi'`.
+- Verifikasi: `tsc`/`eslint` bersih, halaman preview sementara + Playwright (tab default benar
+  menampilkan `ldii-bekasi`, label tab berisi ikon pin, light/dark mode rapi) — dihapus setelah
+  selesai.
+
 ### Sesi 28 Juli 2026 (lanjutan 4) — Berita LDII digeneralisasi jadi "Berita Organisasi" (multi-sumber: LDII, PERSINAS ASAD, SENKOM)
 
 Berawal dari upgrade kecil (tombol Bagikan WhatsApp + ikon asli, filter kategori, pencarian di
