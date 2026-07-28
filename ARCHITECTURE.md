@@ -446,38 +446,79 @@ tidak perlu perubahan kode lain.
   seperti QR) + *device dipegang Pengurus yang login*, bukan di kerahasiaan UID itu
   sendiri. Cukup untuk skala organisasi ini, bukan tingkat keamanan bank-grade.
 
-## 12. Berita LDII (Mirror RSS Feed Publik)
+## 12. Berita Organisasi (Mirror RSS/Feed Publik Multi-Sumber)
 
-Menu "Berita LDII" (`app/(dashboard)/berita-ldii/page.tsx`) menampilkan ringkasan berita dari
-RSS feed publik organisasi induk (`https://www.ldii.or.id/feed/`), diperbarui otomatis.
+Menu "Berita Organisasi" (`app/(dashboard)/berita/page.tsx`) menampilkan ringkasan berita dari
+feed publik beberapa organisasi afiliasi — **LDII** (`https://www.ldii.or.id/feed/`),
+**PERSINAS ASAD** (`https://official.asad.or.id/feed/`), dan **SENKOM Mitra Polri**
+(`https://www.senkom.or.id/feeds/posts/default?alt=rss`) — diperbarui otomatis, dipilih lewat
+tab di dalam halaman. Awalnya menu ini khusus LDII (`berita_ldii`/`fetch-berita-ldii`) — sudah
+digeneralisasi (28 Juli 2026) jadi satu tabel + satu Edge Function multi-sumber supaya
+menambah sumber baru nanti cukup 1 baris config, bukan duplikasi ~150 baris kode.
 
-- **Alur**: pg_cron job `fetch-berita-ldii` (jadwal `0 */4 * * *`, tiap 4 jam) → fungsi tipis
-  `public.fetch_berita_ldii_cron()` (pola identik `notify_push`/`send_reminder_*`) →
+- **Alur**: pg_cron job (jadwal `0 */4 * * *`, tiap 4 jam) → fungsi tipis
+  `public.fetch_berita_organisasi_cron()` (pola identik `notify_push`/`send_reminder_*`) →
   `net.http_post` (timeout 30 detik — default 5 detik pg_net terlalu pendek untuk fetch
-  keluar ke situs pihak ketiga) → Edge Function `fetch-berita-ldii` (Deno, `fast-xml-parser`)
-  → fetch feed, parse RSS 2.0, upsert ke tabel `berita_ldii` by `guid`.
-- **Prinsip hak cipta (WAJIB dijaga kalau menyentuh kode ini)**: field `<content:encoded>`
-  (isi artikel lengkap milik LDII) hanya disentuh untuk SATU hal — regex keluarkan URL
-  `<img src="...">` PERTAMA (kolom `gambar_url`, nullable) sebagai thumbnail, setara
-  ekstraksi `og:image` pada link preview media sosial (hotlink ke gambar yang sudah
-  di-hosting publik di server LDII, BUKAN salinan file/teks). **Teks `content:encoded` itu
-  sendiri tidak pernah disimpan/diekspos ke field manapun.** Selain itu, field yang pernah
-  dibaca hanya title/link/pubDate/description (ringkasan yang SUDAH dipotong otomatis oleh
-  WordPress, dibersihkan dari HTML entity mentah & boilerplate Yoast SEO "appeared first
-  on...")/category/guid. Kalau menambah field baru dari feed, JANGAN sertakan teks
-  `content:encoded`. Halaman frontend TIDAK PERNAH merender isi lengkap — seluruh kartu
-  adalah link `target="_blank"` ke artikel asli di ldii.or.id.
-- **Tabel `berita_ldii`**: RLS SELECT untuk `authenticated` semua jenjang (termasuk Generus —
-  berita organisasi induk relevan buat semua). Sengaja TANPA policy INSERT/UPDATE/DELETE —
-  hanya service role (dari Edge Function) yang menulis. **Catatan penting**: tabel baru
-  TERNYATA tidak otomatis mewarisi default privileges project seperti tabel lama (mis.
-  `push_subscriptions`) — RLS policy saja tidak cukup tanpa `GRANT SELECT/INSERT/UPDATE`
-  eksplisit ke `authenticated`/`service_role`, dua lapisan permission yang terpisah. Kalau
-  membuat tabel baru lain, cek grants-nya juga (`information_schema.role_table_grants`),
-  jangan asumsikan otomatis sama seperti tabel-tabel lama.
-- Menu ini pakai `menuKey: 'berita-ldii'` (fail-open by design, lihat §6/`lib/feature-toggles.ts`)
-  — tidak perlu seed baris `feature_toggles` manual, otomatis aktif untuk semua jenjang
-  sampai Super Admin sengaja mematikannya lewat halaman Pengaturan Fitur.
+  keluar ke situs pihak ketiga) → Edge Function `fetch-berita-organisasi` (Deno,
+  `fast-xml-parser`) → loop atas array `SOURCES` hardcoded di dalam function (`{sumber,
+  feedUrl, truncateRingkasan?}`), fetch tiap feed, parse, upsert ke tabel `berita_organisasi`
+  by `guid` (kolom `sumber` membedakan asalnya).
+- **Prinsip hak cipta (WAJIB dijaga kalau menyentuh kode ini)** — caranya beda per platform
+  sumber, jangan asumsikan satu pola cocok semua:
+  - **WordPress (LDII, ASAD)**: `<description>` SUDAH otomatis dipotong jadi cuplikan pendek
+    oleh Yoast SEO/WordPress sendiri — aman dipakai langsung. `<content:encoded>` (isi artikel
+    LENGKAP, kalau ada) hanya disentuh untuk SATU hal — regex keluarkan URL `<img src="...">`
+    PERTAMA sebagai thumbnail (`gambar_url`, nullable), setara ekstraksi `og:image` link
+    preview medsos (hotlink, BUKAN salinan teks). **Teks `content:encoded` itu sendiri tidak
+    pernah disimpan/diekspos.** ASAD malah tidak punya `content:encoded` sama sekali di
+    feed-nya — `gambar_url` otomatis selalu `null` untuk sumber ini, tidak ada mekanisme
+    thumbnail apapun.
+  - **Blogger (SENKOM)**: BEDA STRUKTURAL — `<description>` di Blogger BUKAN cuplikan, isinya
+    ARTIKEL LENGKAP (Blogger tidak punya mekanisme auto-excerpt terpisah seperti Yoast).
+    Ditemukan saat riset (panjang description 4.000–11.000+ karakter per item). Kalau
+    diperlakukan sama seperti LDII/ASAD (pakai field apa adanya), itu JUSTRU melanggar prinsip
+    "cuma cuplikan" — karena di sini description = isi lengkap. Solusinya: potong SENDIRI di
+    sisi kita ke `truncateRingkasan` karakter pertama (`potongRingkasan()`, default 280,
+    dipotong di batas kata terdekat + elipsis) — TIDAK PERNAH simpan lebih dari itu.
+    Thumbnail-nya pakai `<media:thumbnail url="...">` yang memang disediakan Blogger sebagai
+    field terpisah (hotlink resmi, bukan regex dari body).
+  - Field yang pernah dibaca (semua sumber): title/link/pubDate/description(ringkasan)/
+    category/guid. Ringkasan dibersihkan dari HTML entity mentah (`decodeHtmlEntities`,
+    dijalankan 2x — Blogger kadang double-escape entity di XML, mis. `&amp;nbsp;`
+    merepresentasikan `&nbsp;` asli) & boilerplate Yoast SEO (`bersihkanRingkasan` — regex
+    men-tolerir dua variasi kalimat "appeared first on"/"first appeared on" DAN marker `[…]`
+    yang OPSIONAL di depannya, karena tidak semua situs/artikel menyertakannya). Kalau
+    menambah sumber/field baru, evaluasi dulu platform-nya (WordPress? Blogger? lainnya) —
+    JANGAN asumsikan field description selalu aman dipakai apa adanya.
+  - Parser `XMLParser` dipanggil dengan `processEntities: false` — feed SENKOM (banyak entity
+    ter-embed di HTML description) melebihi batas pengaman "entity expansion" bawaan
+    `fast-xml-parser` (default 1000). Konsekuensinya: urutan wajib **decode entity dulu, baru
+    strip HTML tag** (`stripHtml(decodeHtmlEntities(...))`, BUKAN sebaliknya) — kalau
+    terbalik, tag `<p>` dsb masih dalam bentuk ter-escape (`&lt;p&gt;`) saat `stripHtml`
+    dijalankan, jadi tidak ke-strip sama sekali (bug nyata yang sempat kejadian saat build ini).
+  - Halaman frontend TIDAK PERNAH merender isi lengkap — seluruh kartu adalah link
+    `target="_blank"` ke artikel asli di situs sumber masing-masing.
+- **Tabel `berita_organisasi`**: kolom `sumber text check (sumber in ('ldii','asad','senkom'))`.
+  RLS SELECT untuk `authenticated` semua jenjang. Sengaja TANPA policy INSERT/UPDATE/DELETE —
+  hanya service role (dari Edge Function) yang menulis. **Catatan penting (masih berlaku,
+  diterapkan sejak awal di migrasi tabel ini)**: tabel baru TIDAK otomatis mewarisi default
+  privileges project seperti tabel lama (mis. `push_subscriptions`) — RLS policy saja tidak
+  cukup tanpa `GRANT SELECT/INSERT/UPDATE` eksplisit ke `authenticated`/`service_role`, dua
+  lapisan permission yang terpisah. Kalau membuat tabel baru lain, cek grants-nya juga
+  (`information_schema.role_table_grants`), jangan asumsikan otomatis sama seperti tabel lama.
+  Tabel `berita_ldii` (versi lama, khusus LDII) masih ada sementara sampai tabel baru
+  terverifikasi jalan lancar di production, baru akan di-drop di migrasi terpisah.
+- Menu ini pakai `menuKey: 'berita-organisasi'` (rename dari `berita-ldii`, fail-open by
+  design, lihat §6/`lib/feature-toggles.ts`) — tidak ada baris `feature_toggles` yang memakai
+  key lama (dicek dulu sebelum rename), jadi aman diganti langsung tanpa migrasi data. Menu ini
+  juga baru ditambahkan ke `MENU_GROUPS` di `app/(dashboard)/pengaturan-fitur/page.tsx` —
+  ternyata sejak awal dibuat (era masih "Berita LDII"), menu ini luput dari halaman toggle
+  Super Admin itu, jadi baru sekarang Super Admin punya UI untuk mematikannya per jenjang.
+- **Keaktifan sumber (per riset 28 Juli 2026)**: LDII update per jam (paling aktif), ASAD
+  update harian, SENKOM jauh lebih jarang & tidak teratur (jeda bisa 3-4 minggu) — bukan mati
+  seperti kasus lama forsgi.com (mati sejak 2022), tapi cadence-nya nyata berbeda. Kategori
+  ASAD saat ini selalu sama ("PERSINAS ASAD") di 10 artikel terbaru — filter kategori kurang
+  berguna untuk sumber itu dibanding LDII/SENKOM yang variatif.
 
 ## 13. Yang Belum Terdokumentasi / Perlu Update Berkala
 

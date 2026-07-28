@@ -4,7 +4,7 @@ import { useEffect, useState, type MouseEvent } from 'react'
 import { useUser } from '@/lib/user-context'
 import { supabase } from '@/lib/supabase'
 import { useFeatureAccess } from '@/lib/feature-toggles'
-import { BeritaLdii } from '@/lib/types'
+import { BeritaOrganisasi, SumberBeritaOrganisasi } from '@/lib/types'
 import { SkeletonCards } from '@/components/Skeleton'
 
 const WhatsappIcon = ({ className }: { className?: string }) => (
@@ -13,26 +13,31 @@ const WhatsappIcon = ({ className }: { className?: string }) => (
   </svg>
 )
 
-// Menu "Berita LDII" -- mirror ringkasan RSS feed publik ldii.or.id (organisasi induk),
-// diperbarui otomatis tiap 4 jam lewat pg_cron -> Edge Function fetch-berita-ldii (lihat
-// migrasi berita_ldii_rss_mirror & ARCHITECTURE.md §12). HANYA cuplikan + link ke sumber asli
-// yang pernah disimpan -- tombol/kartu SELALU buka tab baru ke ldii.or.id, TIDAK PERNAH
-// menampilkan isi artikel lengkap di dalam GENSITI (soal hak cipta). gambar_url juga cuma
-// hotlink URL (diregex dari <img> pertama di content:encoded), bukan salinan file/teks.
-//
-// Desain kartu (redesain -- permintaan Reno: "semenarik mungkin agar Generus mau membaca")
-// sengaja meniru pola artikel/majalah: kartu unggulan besar utk berita terbaru, grid galeri
-// utk sisanya, badge "Baru" utk yang dipublish <48 jam terakhir supaya terasa hidup/update.
+const SUMBER_LIST: SumberBeritaOrganisasi[] = ['ldii', 'asad', 'senkom']
+const SUMBER_LABEL: Record<SumberBeritaOrganisasi, string> = {
+  ldii: 'LDII',
+  asad: 'PERSINAS ASAD',
+  senkom: 'SENKOM Mitra Polri',
+}
+
+// Menu "Berita Organisasi" -- mirror ringkasan RSS/feed publik organisasi afiliasi (LDII,
+// PERSINAS ASAD, SENKOM Mitra Polri), diperbarui otomatis tiap 4 jam lewat pg_cron ->
+// Edge Function fetch-berita-organisasi (lihat migrasi berita_organisasi_generalisasi_multi_sumber
+// & ARCHITECTURE.md §12). HANYA cuplikan + link ke sumber asli yang pernah disimpan --
+// tombol/kartu SELALU buka tab baru ke situs sumber, TIDAK PERNAH menampilkan isi artikel
+// lengkap di dalam GENSITI (soal hak cipta). Awalnya menu ini khusus "Berita LDII" -- sudah
+// digeneralisasi jadi multi-sumber lewat tab pemilih di bawah, tanpa mengubah desain kartu.
 //
 // Kartu pakai pola "stretched link" (bukan <a> membungkus semua): satu <a> absolute inset-0
 // jadi target klik utama, konten di atasnya diberi pointer-events-none supaya klik tetap
 // tembus ke <a>, KECUALI tombol "Bagikan" yang di-pointer-events-auto sendiri -- ini supaya
 // tombol Bagikan bisa punya onClick sendiri tanpa nested <a> di dalam <a> (invalid HTML).
-export default function BeritaLdiiPage() {
+export default function BeritaOrganisasiPage() {
   const { user } = useUser()
-  const { enabled: featureEnabled, checking: featureChecking } = useFeatureAccess(user, 'berita-ldii')
-  const [data, setData] = useState<BeritaLdii[]>([])
+  const { enabled: featureEnabled, checking: featureChecking } = useFeatureAccess(user, 'berita-organisasi')
+  const [data, setData] = useState<BeritaOrganisasi[]>([])
   const [loading, setLoading] = useState(true)
+  const [activeSumber, setActiveSumber] = useState<SumberBeritaOrganisasi>('ldii')
   const [search, setSearch] = useState('')
   const [filterKategori, setFilterKategori] = useState('')
   // Snapshot waktu SEKALI saat mount (lazy initializer -- bukan dipanggil ulang tiap render)
@@ -43,12 +48,12 @@ export default function BeritaLdiiPage() {
   useEffect(() => {
     if (!user) return
     supabase
-      .from('berita_ldii')
-      .select('id, judul, ringkasan, link, tanggal_publish, kategori, gambar_url')
+      .from('berita_organisasi')
+      .select('id, sumber, judul, ringkasan, link, tanggal_publish, kategori, gambar_url')
       .order('tanggal_publish', { ascending: false })
-      .limit(50)
+      .limit(150)
       .then(({ data: rows, error }) => {
-        if (error) console.error('Gagal memuat berita LDII:', error.message)
+        if (error) console.error('Gagal memuat berita organisasi:', error.message)
         setData(rows || [])
         setLoading(false)
       })
@@ -59,7 +64,7 @@ export default function BeritaLdiiPage() {
       <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
         <div className="text-4xl mb-3">🚫</div>
         <p className="font-semibold text-slate-600">Fitur Dinonaktifkan</p>
-        <p className="text-sm mt-1">Menu Berita LDII saat ini dinonaktifkan oleh Super Admin untuk jenjang Anda.</p>
+        <p className="text-sm mt-1">Menu Berita Organisasi saat ini dinonaktifkan oleh Super Admin untuk jenjang Anda.</p>
       </div>
     )
   }
@@ -79,9 +84,18 @@ export default function BeritaLdiiPage() {
     window.open(`https://wa.me/?text=${encodeURIComponent(teks)}`, '_blank', 'noopener,noreferrer')
   }
 
-  const kategoriUnik = Array.from(new Set(data.flatMap(b => b.kategori))).sort((a, b) => a.localeCompare(b))
+  const gantiSumber = (s: SumberBeritaOrganisasi) => {
+    setActiveSumber(s)
+    // Reset filter saat ganti tab -- kategori per sumber beda-beda, filter lama bisa nyangkut
+    // ke kategori yang tidak ada di sumber baru dan bikin hasil kosong yang membingungkan.
+    setSearch('')
+    setFilterKategori('')
+  }
 
-  const filtered = data.filter(b => {
+  const dataSumber = data.filter(b => b.sumber === activeSumber)
+  const kategoriUnik = Array.from(new Set(dataSumber.flatMap(b => b.kategori))).sort((a, b) => a.localeCompare(b))
+
+  const filtered = dataSumber.filter(b => {
     const q = search.trim().toLowerCase()
     const matchSearch = !q || b.judul.toLowerCase().includes(q) || (b.ringkasan?.toLowerCase().includes(q) ?? false)
     const matchKategori = !filterKategori || b.kategori.includes(filterKategori)
@@ -98,12 +112,28 @@ export default function BeritaLdiiPage() {
       <div className="flex items-center gap-2.5">
         <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center text-lg shrink-0">📰</div>
         <div>
-          <h2 className="font-bold text-slate-800 dark:text-slate-100">Berita LDII</h2>
-          <p className="text-slate-400 text-xs">Kabar terkini dari ldii.or.id -- diperbarui otomatis tiap beberapa jam</p>
+          <h2 className="font-bold text-slate-800 dark:text-slate-100">Berita Organisasi</h2>
+          <p className="text-slate-400 text-xs">Kabar terkini dari organisasi afiliasi -- diperbarui otomatis tiap beberapa jam</p>
         </div>
       </div>
 
-      {!loading && data.length > 0 && (
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {SUMBER_LIST.map(s => (
+          <button
+            key={s}
+            onClick={() => gantiSumber(s)}
+            className={`px-3.5 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors ${
+              activeSumber === s
+                ? 'bg-indigo-600 text-white shadow'
+                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
+            }`}
+          >
+            {SUMBER_LABEL[s]}
+          </button>
+        ))}
+      </div>
+
+      {!loading && dataSumber.length > 0 && (
         <div className="flex flex-wrap gap-2">
           <input
             type="text"
@@ -125,10 +155,10 @@ export default function BeritaLdiiPage() {
 
       {loading ? (
         <SkeletonCards />
-      ) : data.length === 0 ? (
+      ) : dataSumber.length === 0 ? (
         <div className="bg-white dark:bg-slate-800 rounded-2xl p-12 text-center text-slate-400">
           <div className="text-4xl mb-2">📰</div>
-          <p>Belum ada berita nih</p>
+          <p>Belum ada berita dari {SUMBER_LABEL[activeSumber]} nih</p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="bg-white dark:bg-slate-800 rounded-2xl p-12 text-center text-slate-400">

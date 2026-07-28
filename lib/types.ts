@@ -160,18 +160,24 @@ export interface PengajuanReimbursement {
   pengaju?: { nama_lengkap: string } | null
 }
 
-// Cache ringkasan berita dari RSS feed publik ldii.or.id -- HANYA cuplikan + link ke sumber
-// asli, TIDAK PERNAH isi artikel lengkap (lihat komentar di migrasi & fetch-berita-ldii
-// Edge Function soal hak cipta).
-export interface BeritaLdii {
+// Cache ringkasan berita dari RSS/feed publik organisasi afiliasi (LDII, PERSINAS ASAD, SENKOM
+// Mitra Polri) -- HANYA cuplikan + link ke sumber asli, TIDAK PERNAH isi artikel lengkap (lihat
+// komentar di migrasi & fetch-berita-organisasi Edge Function soal hak cipta). Sebelumnya
+// tabel/tipe ini khusus LDII (berita_ldii/BeritaLdii) -- digeneralisasi jadi multi-sumber lewat
+// kolom `sumber`, lihat ARCHITECTURE.md §12.
+export type SumberBeritaOrganisasi = 'ldii' | 'asad' | 'senkom'
+
+export interface BeritaOrganisasi {
   id: string
+  sumber: SumberBeritaOrganisasi
   judul: string
   ringkasan: string | null
   link: string
   tanggal_publish: string | null
   kategori: string[]
-  // Hotlink URL gambar (diregex dari <img> pertama di content:encoded, bukan salinan file) --
-  // null kalau artikelnya tidak punya gambar terdeteksi.
+  // Hotlink URL gambar -- dari regex <img> pertama di content:encoded (LDII) atau
+  // <media:thumbnail> resmi (SENKOM). Selalu null utk ASAD (feed-nya tidak menyediakan gambar
+  // sama sekali).
   gambar_url: string | null
 }
 

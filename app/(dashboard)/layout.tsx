@@ -79,7 +79,11 @@ const navItems: NavItem[] = [
   { href: '/keuangan', label: 'Keuangan', icon: '💰', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, menuKey: 'keuangan' },
   { href: '/pengumuman', label: 'Pengumuman', icon: '📢', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], menuKey: 'pengumuman' },
   { href: '/dokumen', label: 'Dokumen', icon: '📁', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], menuKey: 'dokumen' },
-  { href: '/berita-ldii', label: 'Berita LDII', icon: '📰', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], menuKey: 'berita-ldii' },
+  // "Berita Organisasi" -- awalnya cuma Berita LDII, digeneralisasi jadi mirror multi-sumber
+  // (LDII, PERSINAS ASAD, SENKOM Mitra Polri) dengan tab pemilih di dalam halaman. Route lama
+  // /berita-ldii & menuKey lama 'berita-ldii' diganti -- tidak ada baris feature_toggles yang
+  // memakai key lama (dicek dulu sebelum rename), jadi aman diganti langsung tanpa migrasi data.
+  { href: '/berita', label: 'Berita Organisasi', icon: '📰', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], menuKey: 'berita-organisasi' },
   { href: '/notifikasi', label: 'Notifikasi', icon: '🔔', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'] },
   // Pengaturan -- konsolidasi preferensi tampilan/aksesibilitas aplikasi (Mode Gelap, Ukuran
   // Teks, Kontras Tinggi, Ganti Bahasa, Versi Aplikasi). Terbuka utk semua jenjang termasuk
