@@ -270,6 +270,21 @@ Test otomatis untuk semua fungsi ini ada di [lib/roles.test.ts](lib/roles.test.t
 `pengaturan-fitur` (toggle fitur per menu × jenjang). Reset password kini `app/lupa-password`
 (publik, self-service OTP) -- tidak lagi menu Super Admin.
 
+**Sidebar desktop -- "liquid glass" (Tahap 1, 2026-07-28):** sidebar di `app/(dashboard)/layout.tsx`
+sekarang glassmorphism di breakpoint `lg:` (semua kelas turunan pakai prefix `lg:`, MOBILE TIDAK
+DISENTUH -- masih drawer solid `bg-blue-900` persis seperti sebelumnya). Perubahan: kartu
+mengambang (`lg:ml-2 lg:top-2 lg:mb-2 lg:rounded-3xl`, bukan lagi edge-to-edge), semi-transparan +
+`backdrop-blur-xl backdrop-saturate-150` + `ring-inset` border highlight. Dua blob gradient biru
+`-z-10` (`isolate` di wrapper terluar) ditambah di background halaman -- tanpa ini blur nyaris
+tidak kelihatan bedanya dari warna solid, krn sidebar nempel di tepi (tidak overlay konten yang
+di-scroll seperti tab Berita). Ikon collapsed dapat tooltip hover: SATU instance `hoverTip` state
+dibagi bareng (bukan span per-item), posisi dihitung via `getBoundingClientRect()`, di-render DI
+LUAR `<nav>` -- percobaan awal pakai span absolute per-item ternyata ikut terpotong oleh `<nav>`
+sendiri (browser memaksa `overflow-x` ikut jadi `auto` begitu `overflow-y-auto` diset, walau
+`<aside>`-nya sudah `lg:overflow-visible` -- aturan CSS Overflow Module, dibuktikan lewat
+computed-style check saat testing). Tahap 2 (bottom nav mobile + pensiunkan drawer hamburger)
+belum dikerjakan, menyusul terpisah setelah Tahap 1 ini direview.
+
 ## 8. Restore Data (Darurat)
 
 `Backup Data` ([app/(dashboard)/backup-data/page.tsx](app/(dashboard)/backup-data/page.tsx))

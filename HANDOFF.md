@@ -61,6 +61,47 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 28 Juli 2026 (lanjutan 9) — Redesain navigasi Opsi C, Tahap 1: sidebar desktop jadi "liquid glass"
+
+Permintaan Reno: redesain navigasi hybrid -- sidebar desktop glassmorphism + tooltip hover saat
+collapsed, mobile pindah ke bottom nav (Tahap 2, belum dikerjakan). Mockup interaktif ditunjukkan
+dulu (Artifact + SendUserFile) dengan 3 poin keputusan sebelum coding, semua disetujui via "oke
+boleh gass":
+
+1. **Ambient glow** -- sidebar nempel di tepi kiri layar, tidak overlay konten yang di-scroll
+   (beda dari tab Berita), jadi `backdrop-blur` butuh "sesuatu" di baliknya biar kelihatan bedanya
+   dari warna solid. Ditambah 2 blob gradient biru blur besar di background halaman (`-z-10`,
+   `hidden lg:block`, wrapper terluar dikasih `isolate` biar stacking context-nya jelas).
+2. **Drawer hamburger mobile TIDAK dipensiunkan dulu** -- itu Tahap 2 terpisah, Tahap 1 ini murni
+   desktop saja, mobile drawer masih solid `bg-blue-900` apa adanya.
+3. **Flag `bottomNavSlot`** utk seleksi menu bottom nav (Tahap 2) -- baru diusulkan, belum
+   diimplementasi krn Tahap 1 belum menyentuh mobile sama sekali.
+
+Implementasi Tahap 1 (`app/(dashboard)/layout.tsx`, HANYA kelas ber-prefix `lg:` yang berubah):
+- `<aside>`: kartu mengambang (`lg:ml-2 lg:top-2 lg:mb-2 lg:rounded-3xl`), semi-transparan +
+  `backdrop-blur-xl backdrop-saturate-150` + `ring-inset` border highlight, `lg:overflow-visible`
+  (perlu supaya tooltip bisa "keluar", lihat poin bug di bawah).
+- Nav item: kelas turunan `collapsed` (yang sebelumnya UNCONDITIONAL, ikut aktif di mobile juga
+  kalau localStorage kebetulan simpan `collapsed=true` dari sesi desktop sebelumnya) sekarang
+  di-prefix `lg:` semua -- ditemukan insidental saat mengerjakan tooltip (user sendiri bilang
+  "collapsed" itu konsep desktop-only), bukan tugas terpisah, jadi sekalian dibenerin.
+- **Bug ditemukan & diperbaiki saat testing** (bukan cuma diklaim beres): tooltip hover awalnya
+  ditulis sbg `<span>` absolute di dalam tiap nav item (di dalam `<nav>`) -- tapi computed style
+  check nunjukkin `overflowX: 'auto'` pada `<nav>` padahal cuma `overflow-y-auto` yang ditulis di
+  kode (aturan CSS Overflow Module: kalau salah satu axis bukan `visible`, axis lain yg `visible`
+  DIPAKSA jadi `auto` juga) -- tooltip ikut kepotong walau `<aside>`-nya sendiri sudah
+  `lg:overflow-visible`. Diperbaiki dengan SATU instance tooltip dibagi bareng (state `hoverTip`),
+  posisi dihitung via `getBoundingClientRect()` saat `onMouseEnter`, di-render SEBAGAI SIBLING
+  `<nav>` (bukan di dalamnya) supaya tidak lagi kena potong.
+- Verifikasi: reproduksi PERSIS markup+className asli ditaruh di halaman preview sementara (di
+  luar auth gate `useUser()`, krn `layout.tsx` asli tidak bisa dites tanpa sesi Supabase nyata) +
+  Playwright -- confirmed `backdrop-filter: blur(24px) saturate(1.5)` genuinely applied, lebar
+  collapsed 64px, tooltip escape px-per-px dicek (`rect.left >= asideRight`), stacking ambient
+  blob dicek via `elementFromPoint` (konten tetap di atas blob, bukan ketutup). Screenshot light +
+  dark mode dicek manual. `tsc`/`eslint` bersih. Dihapus setelah selesai.
+- Tahap 2 (bottom nav mobile + pensiunkan drawer hamburger) MENYUSUL, belum dikerjakan sama
+  sekali di sesi ini.
+
 ### Sesi 28 Juli 2026 (lanjutan 8) — Bugfix kritis: keyboard HP menutup tiap 1 karakter di SEMUA form modal
 
 Laporan Reno: di PWA, pas nambah Generus dan ngetik di field Nama Lengkap, keyboard virtual

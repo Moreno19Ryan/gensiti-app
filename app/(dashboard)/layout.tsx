@@ -117,6 +117,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { user, loading } = useUser()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  // Tooltip hover ikon (saat collapsed) SENGAJA satu instance dibagi bareng (bukan span
+  // per-item) & posisinya dihitung lewat JS, bukan murni CSS `absolute` di dalam tiap item --
+  // <nav> di bawah butuh overflow-y-auto (list menu bisa panjang), dan browser MEMAKSA
+  // overflow-x ikut jadi 'auto' begitu overflow-y bukan 'visible' (aturan CSS Overflow Module:
+  // pasangan salah satu non-visible => yang visible dipaksa jadi auto juga) -- jadi tooltip
+  // yang cuma absolute di dalam <nav> akan ikut terpotong walau <aside>-nya sendiri sudah
+  // overflow-visible. Dibuktikan lewat computed style check saat testing (overflowX: 'auto'
+  // padahal cuma overflow-y-auto yang ditulis). Solusinya: render tooltip di LUAR <nav> (jadi
+  // ia tidak lagi kena potong), posisi dihitung dari getBoundingClientRect() item yang di-hover.
+  const [hoverTip, setHoverTip] = useState<{ label: string; top: number; left: number } | null>(null)
   const [darkMode, toggleDarkMode] = useDarkMode()
   // Text size & kontras tinggi TIDAK punya toggle di topbar (kontrolnya ada di halaman
   // /pengaturan) -- tapi hook-nya tetap dipanggil di sini supaya class-nya di <html>
@@ -254,7 +264,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const currentLabel = visibleNav.find(n => pathname.startsWith(n.href))?.label || ''
 
   return (
-    <div className="flex min-h-screen bg-slate-100 dark:bg-slate-900 transition-colors duration-200">
+    <div className="relative isolate flex min-h-screen bg-slate-100 dark:bg-slate-900 transition-colors duration-200">
+      {/* Ambient glow -- desktop only. Sidebar di lg: jadi kaca semi-transparan (lihat className
+          <aside> di bawah), tapi tanpa sesuatu di baliknya buat "diburamkan", backdrop-blur nyaris
+          tidak kelihatan bedanya dari warna solid biasa (beda dari tab Berita yang float di atas
+          KONTEN yang di-scroll -- sidebar ini nempel di tepi, tidak overlay apa-apa). Dua blob ini
+          cuma buat ngasih sidebar "sesuatu" utk diburamkan, murni dekoratif & -z-10 (lihat `isolate`
+          di atas -- bikin stacking context sendiri biar -z-10 dijamin di belakang SEMUA konten di
+          sini, bukan cuma di belakang elemen tanpa position). */}
+      <div className="hidden lg:block fixed -z-10 top-[-80px] left-[-100px] w-80 h-80 rounded-full bg-blue-500/20 dark:bg-blue-500/10 blur-[80px] pointer-events-none" />
+      <div className="hidden lg:block fixed -z-10 bottom-[-100px] left-10 w-72 h-72 rounded-full bg-blue-400/15 dark:bg-blue-400/10 blur-[80px] pointer-events-none" />
+
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/50 z-20 lg:hidden" onClick={() => setSidebarOpen(false)} />
@@ -283,10 +303,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar -- Tahap 1 dari redesain "liquid glass" (mockup direview & disetujui Reno
+          sebelum implementasi). Mobile (drawer geser via sidebarOpen) SENGAJA tidak disentuh
+          sama sekali di tahap ini -- masih solid bg-blue-900 persis seperti sebelumnya, bottom
+          nav mobile menyusul di tahap terpisah. Hanya kelas ber-prefix lg: di bawah yang baru. */}
       <aside className={[
         'fixed top-0 left-0 h-full bg-blue-900 text-white flex flex-col shadow-xl z-30 transition-all duration-300 ease-in-out overflow-hidden',
-        'lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 lg:shrink-0',
+        // lg:overflow-visible -- perlu supaya tooltip hover ikon (saat collapsed) bisa "keluar"
+        // ke kanan sidebar tanpa terpotong. Aman dilepas krn tidak ada child dgn background
+        // solid yang nempel edge-to-edge (semua section cuma border-b/border-t, transparan)
+        // yang bisa "nongol" lewat rounded corner kalau overflow tidak lagi di-hidden.
+        'lg:sticky lg:top-2 lg:mb-2 lg:ml-2 lg:h-[calc(100vh-1rem)] lg:translate-x-0 lg:shrink-0 lg:rounded-3xl lg:overflow-visible',
+        // Glass: semi-transparan + blur + saturate, border highlight tipis (ring-inset), shadow
+        // lembut menggantikan shadow-xl solid bawaan -- prinsip One UI di DESIGN_BRIEF_GENSITI.md.
+        'lg:bg-blue-900/75 lg:backdrop-blur-xl lg:backdrop-saturate-150 lg:ring-1 lg:ring-inset lg:ring-white/10 lg:shadow-2xl lg:shadow-blue-950/40',
         sidebarOpen ? 'translate-x-0 w-64' : '-translate-x-full w-64',
         collapsed ? 'lg:w-16' : 'lg:w-60',
       ].join(' ')}>
@@ -363,16 +393,41 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {visibleNav.map((item) => {
             const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
             return (
-              <Link key={item.href} href={item.href} title={collapsed ? item.label : undefined}
-                className={`flex items-center rounded-xl text-sm font-medium transition-all ${collapsed ? 'justify-center w-10 h-10 mx-auto' : 'gap-3 px-3 py-2.5'} ${
+              // "collapsed" konseptnya cuma ada di desktop (mobile selalu drawer lebar penuh,
+              // lihat komentar di <aside>) -- makanya semua kelas turunan collapsed di bawah
+              // sengaja di-prefix lg: supaya kalau localStorage kebetulan menyimpan collapsed=true
+              // saat window di-resize ke lebar mobile, label menu TETAP tampil (bukan cuma ikon
+              // tanpa keterangan). aria-label (bukan title) dipakai supaya tidak dobel sama
+              // tooltip custom di bawah, tapi screen reader tetap dapat nama menunya.
+              <Link key={item.href} href={item.href} aria-label={collapsed ? item.label : undefined}
+                onMouseEnter={e => {
+                  if (!collapsed) return
+                  const r = e.currentTarget.getBoundingClientRect()
+                  setHoverTip({ label: item.label, top: r.top + r.height / 2, left: r.right })
+                }}
+                onMouseLeave={() => setHoverTip(null)}
+                className={`flex items-center rounded-xl text-sm font-medium transition-all gap-3 px-3 py-2.5 ${
+                  collapsed ? 'lg:justify-center lg:gap-0 lg:px-0 lg:w-10 lg:h-10 lg:mx-auto' : ''
+                } ${
                   isActive ? 'bg-white text-blue-900 shadow-sm animate-nav-pop' : 'text-blue-100 hover:bg-blue-800 hover:text-white'
                 }`}>
                 <span className="text-base shrink-0">{item.icon}</span>
-                {!collapsed && item.label}
+                <span className={collapsed ? 'lg:hidden' : ''}>{item.label}</span>
               </Link>
             )
           })}
         </nav>
+
+        {/* Tooltip hover ikon collapsed -- satu instance dibagi bareng, DI LUAR <nav> di atas
+            (lihat catatan di deklarasi state hoverTip kenapa tidak bisa jadi span per-item). */}
+        {collapsed && hoverTip && (
+          <div
+            className="hidden lg:block fixed z-50 px-2.5 py-1.5 rounded-lg bg-blue-950 text-white text-xs font-semibold whitespace-nowrap pointer-events-none shadow-lg animate-fade-in"
+            style={{ top: hoverTip.top, left: hoverTip.left + 12, transform: 'translateY(-50%)' }}
+          >
+            {hoverTip.label}
+          </div>
+        )}
 
         {/* Toggle collapse - desktop only */}
         <div className="hidden lg:flex justify-center py-3 border-t border-blue-800 shrink-0">
