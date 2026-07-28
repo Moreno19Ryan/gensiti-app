@@ -12,6 +12,8 @@ import ExportPreviewModal from '@/components/ExportPreviewModal'
 import LaporanBulananModal from '@/components/LaporanBulananModal'
 import { toast } from '@/lib/toast'
 import { SkeletonCards, SkeletonRows } from '@/components/Skeleton'
+import { computeKegiatanStatus, isTepatWaktu } from '@/lib/kegiatan-status'
+import Modal from '@/components/Modal'
 
 const statusLabel: Record<string, { label: string; color: string }> = {
   upcoming: { label: 'Akan Datang', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
@@ -92,6 +94,14 @@ export default function AbsensiPage() {
   const [pengajuanIzinList, setPengajuanIzinList] = useState<PengajuanIzinPresensi[]>([])
   const [prosesIzinId, setProsesIzinId] = useState<string | null>(null)
 
+  // Koreksi manual WAJIB disertai alasan + catatan -- permintaan Reno: pengurus hanya boleh
+  // mengoreksi kehadiran Generus yang lupa absen/kendala teknis, bukan sembarang alasan tanpa
+  // jejak. Dropdown "Tandai" (di bawah) tidak langsung menyimpan lagi, cuma membuka modal ini
+  // dulu -- disimpan sungguhan lewat handleKonfirmasiKoreksi.
+  const [koreksiTarget, setKoreksiTarget] = useState<{ generusId: string; nama: string; statusBaru: Absensi['status'] } | null>(null)
+  const [koreksiAlasan, setKoreksiAlasan] = useState('')
+  const [koreksiCatatan, setKoreksiCatatan] = useState('')
+
   // Daftar desa/kelompok dipakai utk (1) label nama pada filter cetak & (2) menerjemahkan
   // desa_id/kelompok_id Generus jadi nama yang bisa dibaca manusia di daftar & export.
   const [desaList, setDesaList] = useState<{ id: string; nama_desa: string }[]>([])
@@ -114,6 +124,17 @@ export default function AbsensiPage() {
     if (err) { console.error('Gagal memuat daftar kegiatan:', err.message) }
     setKegiatanList(data || [])
     setLoadingKegiatan(false)
+
+    // Housekeeping ringan (sama seperti app/(dashboard)/kegiatan/page.tsx) -- sinkronkan
+    // status kegiatan yang sudah lewat tanggal_selesai supaya trigger auto-alpha database
+    // sempat jalan. Fire-and-forget, tidak memengaruhi tampilan.
+    ;(data || []).forEach(k => {
+      if (k.status !== 'selesai' && computeKegiatanStatus(k) === 'selesai') {
+        supabase.rpc('sinkron_status_kegiatan_jika_selesai', { p_kegiatan_id: k.id }).then(({ error: syncErr }) => {
+          if (syncErr) console.error('Gagal sinkron status kegiatan:', syncErr.message)
+        })
+      }
+    })
   }, [user])
 
   // Data-fetching on mount/dependency-change (bukan derived state) -- lihat catatan serupa
@@ -290,7 +311,7 @@ export default function AbsensiPage() {
     setLoadingDetail(false)
   }, [])
 
-  const updateStatus = async (generusId: string, status: Absensi['status']) => {
+  const updateStatus = async (generusId: string, status: Absensi['status'], keterangan: string) => {
     if (!selectedKegiatan || !status || !user) return
     setSavingId(generusId)
     try {
@@ -316,7 +337,7 @@ export default function AbsensiPage() {
             kegiatan_id: selectedKegiatan.id,
             generus_id: generusId,
             status,
-            keterangan: 'Koreksi manual pengurus',
+            keterangan,
             waktu_absen: new Date().toISOString(),
             ...(adalahKoreksi
               ? { dikoreksi_oleh: user.id, dikoreksi_at: new Date().toISOString(), status_sebelum_koreksi: statusSebelumnya }
@@ -339,13 +360,26 @@ export default function AbsensiPage() {
         'Absensi',
         selectedKegiatan.nama_kegiatan,
         adalahKoreksi
-          ? { generus_id: generusId, status, status_sebelum: statusSebelumnya, jenis: 'koreksi_manual' }
-          : { generus_id: generusId, status },
+          ? { generus_id: generusId, status, status_sebelum: statusSebelumnya, jenis: 'koreksi_manual', keterangan }
+          : { generus_id: generusId, status, keterangan },
         selectedKegiatan.id
       )
     } finally {
       setSavingId(null)
     }
+  }
+
+  // Dropdown "Tandai" (di bawah) tidak langsung memanggil updateStatus lagi -- cuma membuka
+  // modal alasan ini dulu. Wajib pilih alasan (Lupa Absen/Kendala Teknis/Lainnya) + isi
+  // catatan sebelum benar-benar tersimpan, supaya ada jejak akuntabel kenapa Pengurus
+  // mengoreksi kehadiran seseorang (bukan lagi teks generik "Koreksi manual pengurus").
+  const handleKonfirmasiKoreksi = async () => {
+    if (!koreksiTarget || !koreksiAlasan || !koreksiCatatan.trim()) return
+    const keterangan = `${koreksiAlasan}: ${koreksiCatatan.trim()}`
+    await updateStatus(koreksiTarget.generusId, koreksiTarget.statusBaru, keterangan)
+    setKoreksiTarget(null)
+    setKoreksiAlasan('')
+    setKoreksiCatatan('')
   }
 
   // Setuju/tolak pengajuan izin -- panggil RPC proses_izin_presensi (bukan update tabel
@@ -638,7 +672,10 @@ export default function AbsensiPage() {
                     <div>
                       <div className="flex items-center gap-2">
                         <h3 className="font-semibold text-slate-800">{k.nama_kegiatan}</h3>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusLabel[k.status]?.color}`}>{statusLabel[k.status]?.label}</span>
+                        {(() => {
+                          const statusKomputasi = statusLabel[computeKegiatanStatus(k)]
+                          return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusKomputasi.color}`}>{statusKomputasi.label}</span>
+                        })()}
                       </div>
                       {k.tanggal_mulai && (
                         <p className="text-xs text-slate-400 mt-1">{new Date(k.tanggal_mulai).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
@@ -751,9 +788,19 @@ export default function AbsensiPage() {
                         {a.jenis_kelamin ? ` · ${a.jenis_kelamin === 'laki-laki' ? 'L' : 'P'}` : ''}
                         {a.kelas_ngaji ? ` · ${kelasNgajiLabel[a.kelas_ngaji] || a.kelas_ngaji}` : ''}
                       </p>
-                      {currentStatus === 'hadir' && (
-                        <p className="text-xs text-slate-300 mt-0.5">Hadir pukul {jamHadir(a.id)}</p>
-                      )}
+                      {currentStatus === 'hadir' && (() => {
+                        const tepatWaktu = isTepatWaktu(absen?.waktu_absen ?? null, selectedKegiatan?.tanggal_mulai ?? null)
+                        return (
+                          <p className="text-xs text-slate-300 mt-0.5 flex items-center gap-1.5">
+                            Hadir pukul {jamHadir(a.id)}
+                            {tepatWaktu !== null && (
+                              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${tepatWaktu ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}`}>
+                                {tepatWaktu ? 'Tepat Waktu' : 'Terlambat'}
+                              </span>
+                            )}
+                          </p>
+                        )
+                      })()}
                       {/* Jejak audit koreksi manual -- hanya tampil untuk baris yang memang
                           pernah diubah statusnya oleh pengurus (bukan hasil self check-in
                           murni). Menampilkan siapa, kapan, dan status sebelum dikoreksi supaya
@@ -778,7 +825,13 @@ export default function AbsensiPage() {
                         <select
                           value={currentStatus || ''}
                           disabled={savingId === a.id}
-                          onChange={e => updateStatus(a.id, e.target.value as Absensi['status'])}
+                          onChange={e => {
+                            const statusBaru = e.target.value as Absensi['status']
+                            if (!statusBaru) return
+                            setKoreksiTarget({ generusId: a.id, nama: a.users?.nama_lengkap || '-', statusBaru })
+                            setKoreksiAlasan('')
+                            setKoreksiCatatan('')
+                          }}
                           className="px-2 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                         >
                           <option value="">-- Tandai --</option>
@@ -806,6 +859,45 @@ export default function AbsensiPage() {
         options={previewOptions}
         onExported={handleExported}
       />
+
+      {koreksiTarget && (
+        <Modal open={!!koreksiTarget} onClose={() => setKoreksiTarget(null)} title="Alasan Koreksi Kehadiran" size="sm">
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              Menandai <strong>{koreksiTarget.nama}</strong> sebagai <strong>{kehadiranLabel[koreksiTarget.statusBaru!]?.label}</strong>. Koreksi manual hanya untuk Generus yang lupa absen atau tidak bisa absen karena kendala teknis -- pilih alasannya:
+            </p>
+            <select
+              value={koreksiAlasan}
+              onChange={e => setKoreksiAlasan(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">-- Pilih alasan --</option>
+              <option value="Lupa Absen">Lupa Absen</option>
+              <option value="Kendala Teknis">Kendala Teknis</option>
+              <option value="Lainnya">Lainnya</option>
+            </select>
+            <textarea
+              value={koreksiCatatan}
+              onChange={e => setKoreksiCatatan(e.target.value)}
+              placeholder="Catatan tambahan (wajib diisi)..."
+              rows={3}
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            />
+            <div className="flex gap-3 pt-2 border-t border-slate-100 dark:border-slate-700">
+              <button onClick={() => setKoreksiTarget(null)} className="flex-1 py-2.5 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 rounded-xl text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition">
+                Batal
+              </button>
+              <button
+                onClick={handleKonfirmasiKoreksi}
+                disabled={!koreksiAlasan || !koreksiCatatan.trim() || savingId === koreksiTarget.generusId}
+                className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 transition"
+              >
+                {savingId === koreksiTarget.generusId ? 'Menyimpan...' : 'Simpan'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {canLihatLaporan && user && laporanScope && (
         <LaporanBulananModal

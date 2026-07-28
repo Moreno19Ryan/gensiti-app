@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ExportOptions, exportToPDF, exportToExcel, getPdfPreviewDataUrl } from '@/lib/export'
 
 interface Props {
@@ -20,6 +20,7 @@ interface Props {
 export default function ExportPreviewModal({ open, onClose, options, onExported }: Props) {
   const [exportingPdf, setExportingPdf] = useState(false)
   const [exportingExcel, setExportingExcel] = useState(false)
+  const iframeRef = useRef<HTMLIFrameElement>(null)
 
   useEffect(() => {
     if (open) document.body.style.overflow = 'hidden'
@@ -65,6 +66,19 @@ export default function ExportPreviewModal({ open, onClose, options, onExported 
     }
   }
 
+  // Cetak langsung dari PDF yang sudah tampil di iframe pratinjau -- TANPA lewat langkah
+  // unduh dulu. contentWindow.print() memicu dialog cetak native browser atas PDF yang
+  // sudah dimuat (viewer PDF bawaan Chrome/Edge/Firefox mendukung ini persis seperti buka
+  // file PDF lokal lalu Ctrl+P). Kalau gagal (mis. viewer PDF browser tidak mendukungnya),
+  // gagal senyap -- user masih punya opsi Export PDF/Excel sebagai cadangan.
+  const handlePrint = () => {
+    try {
+      iframeRef.current?.contentWindow?.print()
+    } catch (e) {
+      console.error('Gagal membuka dialog cetak:', e)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
@@ -95,6 +109,7 @@ export default function ExportPreviewModal({ open, onClose, options, onExported 
             </div>
           ) : previewUrl ? (
             <iframe
+              ref={iframeRef}
               src={previewUrl}
               title="Pratinjau Laporan PDF"
               className="w-full h-full rounded-xl border border-slate-200 bg-white"
@@ -117,6 +132,16 @@ export default function ExportPreviewModal({ open, onClose, options, onExported 
               className="px-4 py-2 border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition"
             >
               Tutup
+            </button>
+            {/* Cetak langsung -- TIDAK mewajibkan unduh dulu, beda dari 2 tombol Export di
+                sampingnya. Dibuat paling menonjol (warna solid) krn ini biasanya aksi utama
+                utk dokumen yang mau langsung dibagikan fisik (lembar absen, daftar Generus, dst). */}
+            <button
+              onClick={handlePrint}
+              disabled={!previewUrl}
+              className="px-4 py-2 bg-slate-800 text-white text-sm font-medium rounded-xl hover:bg-slate-900 transition disabled:opacity-50 flex items-center gap-1.5"
+            >
+              🖨️ Cetak
             </button>
             <button
               onClick={handleExportPDF}

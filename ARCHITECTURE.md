@@ -128,6 +128,8 @@ sesungguhnya" di komentar `lib/roles.ts`.
 **Presensi**: `generate_kode_presensi` (buka/rotasi kode 6-digit), `submit_presensi`
 (self check-in generus), `ajukan_izin_presensi`, `proses_izin_presensi`,
 `auto_alpha_generus_kegiatan_selesai` (trigger auto-alpha saat kegiatan selesai),
+`sinkron_status_kegiatan_jika_selesai` (dipanggil client saat kegiatan sudah lewat
+`tanggal_selesai` — lihat §10 untuk kenapa ini masih perlu ada meski status dihitung live),
 `submit_presensi_rfid`/`daftarkan_kartu_rfid`/`cabut_kartu_rfid` (kiosk RFID, struktur
 siap belum aktif — lihat §11). `submit_presensi` & `submit_presensi_rfid` menerima
 parameter opsional **`p_waktu_scan`** (ditambahkan 22 Juli 2026 — diverifikasi ulang
@@ -325,6 +327,53 @@ tertangani di client, server, dan edge runtime.
 Lapisan client di atas RPC presensi (§4 `generate_kode_presensi` / `submit_presensi`) —
 diimplementasikan di [components/PresensiPanel.tsx](components/PresensiPanel.tsx), dipasang
 per-kartu kegiatan di [app/(dashboard)/kegiatan/page.tsx](<app/(dashboard)/kegiatan/page.tsx>).
+
+### Status & jendela presensi dihitung LIVE, bukan lagi field manual (28 Juli 2026)
+
+Sampai migrasi `kegiatan_jendela_presensi_otomatis`, Pengurus harus MANUAL mengedit
+`kegiatan.status` ke `'ongoing'` dulu (dropdown di form) sebelum panel presensi bahkan
+muncul — gampang lupa, dan tidak ada cara "buka lebih awal" untuk Generus yang sudah di
+lokasi sebelum jam resmi. Sekarang:
+
+- Status tampilan (`Akan Datang`/`Berlangsung`/`Selesai`) dihitung LIVE dari
+  `tanggal_mulai`/`tanggal_selesai` lewat `computeKegiatanStatus()` di
+  [lib/kegiatan-status.ts](lib/kegiatan-status.ts) — dropdown status manual di form Kegiatan
+  **sudah dihapus**. Kolom `kegiatan.status` di database TETAP ada, tapi sekarang murni
+  housekeeping (lihat poin berikutnya), tidak pernah lagi jadi sumber kebenaran gating UI.
+- Jendela presensi (`isPresensiWindowOpen()`, fungsi sama) bisa terbuka LEBIH AWAL dari
+  `tanggal_mulai` sesuai `kegiatan.presensi_buka_lebih_awal_menit` (pilihan 0/15/30/60 menit
+  di form) — Generus yang sudah di lokasi bisa langsung absen tanpa menunggu jam pasti.
+  `PresensiPanel.tsx` memakai fungsi ini utk gate render (ganti dari cek
+  `kegiatan.status === 'ongoing'` lama).
+- **`submit_presensi`/`submit_presensi_rfid` (server, sumber kebenaran sesungguhnya)**
+  sekarang mengecek jendela waktu yang SAMA PERSIS (`tanggal_mulai -
+  presensi_buka_lebih_awal_menit` s/d `tanggal_selesai`), BUKAN lagi `status = 'ongoing'`.
+  `generate_kode_presensi` SENGAJA TIDAK ikut dibatasi jendela waktu (Pengurus tetap bisa
+  generate kode kapan saja kalau perlu) — batasan sesungguhnya ada di `submit_presensi`,
+  bukan di pembuatan kodenya.
+- **Auto-alpha tetap jalan seperti sebelumnya** — trigger database
+  `trg_auto_alpha_generus_kegiatan_selesai` (fungsi `auto_alpha_generus_kegiatan_selesai`,
+  TIDAK diubah sama sekali di migrasi ini) masih terpicu begitu `kegiatan.status` transisi ke
+  `'selesai'`. Yang berubah cuma SIAPA yang memicu transisi itu: dulu Pengurus manual lewat
+  dropdown, sekarang RPC baru **`sinkron_status_kegiatan_jika_selesai(p_kegiatan_id)`** —
+  dipanggil client (fire-and-forget) dari `loadData()`/`loadKegiatan()` di halaman Kegiatan &
+  Absensi setiap kali daftar kegiatan dimuat, kalau kegiatan itu computed-status-nya sudah
+  `'selesai'` tapi kolom `status` database belum. Idempotent (`WHERE status <> 'selesai'`).
+  **Konsekuensi yang disadari & diterima**: kalau tidak ada satupun yang membuka halaman
+  Kegiatan/Absensi tepat saat sebuah kegiatan selesai, auto-alpha baru benar-benar tersimpan
+  ke database saat SESEORANG berikutnya membuka salah satu halaman itu — bukan persis di
+  detik kegiatan selesai. Trade-off yang disengaja (bukan cron/background job) supaya tidak
+  perlu infrastruktur produksi baru.
+- **`kegiatan.lokasi_maps_url`** (text, opsional) — link Google Maps lokasi, ditampilkan
+  sebagai link "Buka Maps" di kartu kegiatan (`app/(dashboard)/kegiatan/page.tsx`) untuk
+  membantu Generus yang belum tahu lokasi acara.
+- **Badge "Tepat Waktu"/"Terlambat"** di rekap absensi (`app/(dashboard)/absensi/page.tsx`)
+  — `isTepatWaktu()` (fungsi sama di `lib/kegiatan-status.ts`) membandingkan `waktu_absen`
+  vs `tanggal_mulai`, murni tampilan (tidak ada kolom baru).
+- **Koreksi manual kehadiran wajib alasan + catatan** — dropdown "Tandai" di halaman Absensi
+  tidak langsung menyimpan lagi, membuka modal pemilihan alasan (Lupa Absen/Kendala
+  Teknis/Lainnya) + catatan wajib dulu, tersimpan ke `absensi.keterangan` menggantikan teks
+  generik lama `"Koreksi manual pengurus"`.
 
 - **Pengurus** (`canManagePresensi`, §6): tekan "Mulai Absensi" → memanggil
   `generate_kode_presensi` → kode 6-digit yang didapat di-encode jadi QR PNG di sisi client

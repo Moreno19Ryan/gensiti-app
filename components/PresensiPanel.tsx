@@ -10,6 +10,7 @@ import QrScanner from 'qr-scanner'
 import { RFID_PRESENSI_READY } from '@/lib/rfid'
 import RfidKioskInput from './RfidKioskInput'
 import { submitPresensiOffline, getJumlahAntrean } from '@/lib/offline-queue'
+import { isPresensiWindowOpen } from '@/lib/kegiatan-status'
 
 interface Props {
   kegiatan: Kegiatan
@@ -41,7 +42,9 @@ function parseQrPayload(raw: string): QrPayload | null {
   return null
 }
 
-// Panel presensi untuk kartu kegiatan yang sedang berlangsung (status = 'ongoing').
+// Panel presensi untuk kartu kegiatan yang jendela presensinya sedang terbuka (lihat
+// isPresensiWindowOpen di lib/kegiatan-status.ts -- mulai dari tanggal_mulai dikurangi opsi
+// "buka lebih awal", sampai tanggal_selesai).
 // - Ketua/Wakil Ketua & Sekretaris: bisa "Mulai Presensi" -> menampilkan QR code besar yang
 //   otomatis diperbarui (rotasi) setiap 5 menit sampai ditutup manual. Mereka sendiri juga
 //   wajib presensi (Ketua/Wapon/Sekretaris tetap Generus/pengurus muda-mudi) -- begitu kode
@@ -330,7 +333,9 @@ export default function PresensiPanel({ kegiatan, user, onUpdated }: Props) {
     }
   }
 
-  if (kegiatan.status !== 'ongoing') return null
+  // Jendela presensi dihitung LIVE dari tanggal_mulai/tanggal_selesai (+ opsi buka lebih awal)
+  // -- BUKAN lagi dari kegiatan.status tersimpan, lihat lib/kegiatan-status.ts.
+  if (!isPresensiWindowOpen(kegiatan)) return null
 
   const fmtMenitDetik = (total: number) => {
     const m = Math.floor(total / 60)

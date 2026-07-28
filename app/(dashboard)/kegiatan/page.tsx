@@ -11,10 +11,12 @@ import { RFID_PRESENSI_READY } from '@/lib/rfid'
 import Modal from '@/components/Modal'
 import PresensiPanel from '@/components/PresensiPanel'
 import PengajuanIzinPanel from '@/components/PengajuanIzinPanel'
-import { exportToPDF, exportToExcel } from '@/lib/export'
+import { ExportOptions } from '@/lib/export'
+import ExportPreviewModal from '@/components/ExportPreviewModal'
 import { toast } from '@/lib/toast'
 import { konfirmasi } from '@/lib/konfirmasi'
 import { SkeletonCards } from '@/components/Skeleton'
+import { computeKegiatanStatus } from '@/lib/kegiatan-status'
 
 interface DesaOpt { id: string; nama_desa: string }
 interface KelompokOpt { id: string; nama_kelompok: string; desa_id: string }
@@ -62,15 +64,34 @@ const emptyForm = {
   tanggal_mulai: '',
   tanggal_selesai: '',
   lokasi: '',
+  lokasi_maps_url: '',
   tingkatan: '',
   desa_id: '',
   kelompok_id: '',
-  status: 'upcoming',
   kategori_kegiatan: '',
   target_peserta: 'semua_generus',
   target_kelas_ngaji: '',
   presensi_metode_qr: true,
   presensi_metode_rfid: false,
+  // 0/15/30/60 -- disimpan sebagai string krn dipakai langsung sebagai value <select>,
+  // dikonversi ke integer saat dikirim ke payload (lihat handleSave).
+  presensi_buka_lebih_awal_menit: '0',
+}
+
+// Preset "Jenis Kegiatan" -- pre-fill field umum yang biasanya sama untuk jenis kegiatan
+// tertentu, TETAP bisa diedit manual sesudahnya (bukan dikunci). Sengaja tidak butuh
+// tabel/skema baru -- murni pemetaan di kode, mirip kategoriKegiatanLabel yang sudah ada
+// untuk kategori khusus tingkat Daerah. Hanya ditampilkan saat membuat kegiatan BARU (bukan
+// edit) supaya tidak menimpa data kegiatan yang sudah ada tanpa disadari.
+const PRESET_KEGIATAN_LABEL: Record<string, string> = {
+  pengajian_rutin: 'Pengajian Rutin',
+  rapat_pengurus: 'Rapat Pengurus',
+  kegiatan_khusus: 'Kegiatan Khusus / Acara Besar',
+}
+const PRESET_KEGIATAN: Record<string, Partial<typeof emptyForm>> = {
+  pengajian_rutin: { deskripsi: 'Pengajian rutin muda-mudi.', target_peserta: 'semua_generus', presensi_metode_qr: true },
+  rapat_pengurus: { deskripsi: 'Rapat koordinasi pengurus.', target_peserta: 'hanya_pengurus', presensi_metode_qr: true },
+  kegiatan_khusus: { deskripsi: 'Kegiatan/acara khusus muda-mudi.', target_peserta: 'semua_generus', presensi_metode_qr: true },
 }
 
 export default function KegiatanPage() {
@@ -91,7 +112,7 @@ export default function KegiatanPage() {
   const [saving, setSaving] = useState(false)
   const [desaList, setDesaList] = useState<DesaOpt[]>([])
   const [kelompokList, setKelompokList] = useState<KelompokOpt[]>([])
-  const [exporting, setExporting] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
   const [error, setError] = useState('')
   // Kelas ngaji milik Generus yang login -- dipakai utk filter tampilan kegiatan dengan
   // target_peserta='kelas_ngaji_tertentu' (mis. kegiatan Remaja Dewasa tidak boleh muncul
@@ -110,6 +131,19 @@ export default function KegiatanPage() {
     if (err) { console.error('Gagal memuat data kegiatan:', err.message) }
     setData(rows || [])
     setLoading(false)
+
+    // Housekeeping ringan: kegiatan yang sudah lewat tanggal_selesai tapi kolom status-nya
+    // (database) belum ikut 'selesai' -- sinkronkan sekali supaya trigger auto-alpha yang
+    // SUDAH ADA di database sempat jalan. Fire-and-forget & tidak memengaruhi tampilan (badge
+    // status di UI selalu dihitung LIVE lewat computeKegiatanStatus, lihat lib/kegiatan-status.ts),
+    // murni supaya data tersimpan permanen begitu ada yang membuka halaman ini.
+    ;(rows || []).forEach(k => {
+      if (k.status !== 'selesai' && computeKegiatanStatus(k) === 'selesai') {
+        supabase.rpc('sinkron_status_kegiatan_jika_selesai', { p_kegiatan_id: k.id }).then(({ error: syncErr }) => {
+          if (syncErr) console.error('Gagal sinkron status kegiatan:', syncErr.message)
+        })
+      }
+    })
   }, [user])
 
   // Data-fetching on mount/dependency-change (bukan derived state) -- lihat catatan serupa
@@ -164,13 +198,13 @@ export default function KegiatanPage() {
       tanggal_mulai: k.tanggal_mulai ? k.tanggal_mulai.slice(0, 16) : '',
       tanggal_selesai: k.tanggal_selesai ? k.tanggal_selesai.slice(0, 16) : '',
       lokasi: k.lokasi || '',
+      lokasi_maps_url: k.lokasi_maps_url || '',
       // Data lama (sebelum perbaikan ini) bisa saja tersimpan dengan tingkatan kosong --
       // tebak scope yg paling masuk akal dari desa_id/kelompok_id yg sudah ada, alih-alih
       // biarkan form terkirim ulang dengan tingkatan kosong.
       tingkatan: k.tingkatan || (k.kelompok_id ? 'kelompok' : k.desa_id ? 'desa' : 'daerah'),
       desa_id: k.desa_id || '',
       kelompok_id: k.kelompok_id || '',
-      status: k.status,
       kategori_kegiatan: k.kategori_kegiatan || '',
       target_peserta: k.target_peserta || 'semua_generus',
       target_kelas_ngaji: k.target_kelas_ngaji || '',
@@ -178,6 +212,7 @@ export default function KegiatanPage() {
       // (perilaku lama sebelum toggle ini ada) & RFID mati.
       presensi_metode_qr: k.presensi_metode_qr ?? true,
       presensi_metode_rfid: k.presensi_metode_rfid ?? false,
+      presensi_buka_lebih_awal_menit: String(k.presensi_buka_lebih_awal_menit ?? 0),
     })
     setModalOpen(true)
   }
@@ -192,6 +227,14 @@ export default function KegiatanPage() {
     if (!form.deskripsi.trim()) { setError('Deskripsi wajib diisi.'); return }
     if (!form.tanggal_mulai) { setError('Tanggal mulai wajib diisi.'); return }
     if (!form.tanggal_selesai) { setError('Tanggal selesai wajib diisi.'); return }
+    // Hanya dicek saat membuat kegiatan BARU -- mengedit kegiatan lama (mis. perbaiki
+    // deskripsi/lokasi) tetap harus bisa walau tanggalnya sudah lewat. Dibandingkan per
+    // TANGGAL (bukan jam persis) -- "hari ini" wajar berarti sepanjang hari ini, bukan cuma
+    // sisa jam yang belum lewat.
+    if (!editTarget && form.tanggal_mulai.slice(0, 10) < new Date().toISOString().slice(0, 10)) {
+      setError('Tanggal kegiatan tidak boleh sebelum hari ini.')
+      return
+    }
     if (new Date(form.tanggal_selesai) < new Date(form.tanggal_mulai)) { setError('Tanggal selesai tidak boleh sebelum tanggal mulai.'); return }
     if (!form.lokasi.trim()) { setError('Lokasi wajib diisi.'); return }
     // Kegiatan tingkat Daerah SENGAJA tidak terikat 1 desa/kelompok (lintas Se-Bekasi Timur),
@@ -230,10 +273,14 @@ export default function KegiatanPage() {
         tanggal_mulai: form.tanggal_mulai,
         tanggal_selesai: form.tanggal_selesai,
         lokasi: form.lokasi,
+        lokasi_maps_url: form.lokasi_maps_url.trim() || null,
         tingkatan: form.tingkatan,
         desa_id: isDaerah ? null : form.desa_id,
         kelompok_id: isDaerah ? null : form.kelompok_id,
-        status: form.status,
+        // status TIDAK PERNAH ditulis lagi dari form ini -- status kegiatan sekarang dihitung
+        // LIVE dari tanggal_mulai/tanggal_selesai (lib/kegiatan-status.ts), bukan field manual.
+        // Kolom `status` di database tetap ada tapi cuma disentuh oleh RPC
+        // sinkron_status_kegiatan_jika_selesai (housekeeping trigger auto-alpha).
         dibuat_oleh: user?.id,
         kategori_kegiatan: isDaerah ? (form.kategori_kegiatan || null) : null,
         target_peserta: form.target_peserta,
@@ -243,6 +290,7 @@ export default function KegiatanPage() {
         // dari state form, supaya toggle-nya tidak bisa "bocor" aktif lewat cara lain
         // selain lib/rfid.ts sendiri (mis. devtools mengubah state React manual).
         presensi_metode_rfid: RFID_PRESENSI_READY ? form.presensi_metode_rfid : false,
+        presensi_buka_lebih_awal_menit: parseInt(form.presensi_buka_lebih_awal_menit, 10) || 0,
       }
       // Pesan ramah utk constraint kegiatan_minimal_satu_metode_presensi (§ di atas) --
       // backstop DB seharusnya tidak pernah kena lewat form ini (sudah divalidasi di atas),
@@ -317,7 +365,7 @@ export default function KegiatanPage() {
 
   const filtered = data
     .filter(bisaLihatKegiatan)
-    .filter(k => filter === 'all' || k.status === filter)
+    .filter(k => filter === 'all' || computeKegiatanStatus(k) === filter)
     .filter(k => {
       if (!search) return true
       const q = search.toLowerCase()
@@ -349,7 +397,7 @@ export default function KegiatanPage() {
     selesai: k.tanggal_selesai ? new Date(k.tanggal_selesai).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-',
     lokasi: k.lokasi || '-',
     jenjang: k.tingkatan ? k.tingkatan.charAt(0).toUpperCase() + k.tingkatan.slice(1) : '-',
-    status: statusLabel[k.status]?.label || k.status,
+    status: statusLabel[computeKegiatanStatus(k)]?.label,
   }))
 
   const exportSubtitle = () => {
@@ -360,38 +408,22 @@ export default function KegiatanPage() {
     return `${scope} -- ${statusTxt} -- ${filtered.length} kegiatan`
   }
 
-  const handleExportPDF = async () => {
-    if (filtered.length === 0) { toast.info('Belum ada data yang bisa diexport.'); return }
-    setExporting(true)
-    try {
-      exportToPDF({
-        title: 'Daftar Kegiatan',
-        subtitle: exportSubtitle(),
-        columns: exportColumns,
-        rows: buildExportData(),
-        fileName: `Daftar-Kegiatan-${new Date().toISOString().slice(0, 10)}`,
-      })
-      if (user) await logAudit(user, 'EXPORT', 'Kegiatan', `PDF -- ${filtered.length} kegiatan`)
-    } finally {
-      setExporting(false)
-    }
+  const previewOptions: ExportOptions = {
+    title: 'Daftar Kegiatan',
+    subtitle: exportSubtitle(),
+    columns: exportColumns,
+    rows: buildExportData(),
+    fileName: `Daftar-Kegiatan-${new Date().toISOString().slice(0, 10)}`,
   }
 
-  const handleExportExcel = async () => {
-    if (filtered.length === 0) { toast.info('Belum ada data yang bisa diexport.'); return }
-    setExporting(true)
-    try {
-      await exportToExcel({
-        title: 'Daftar Kegiatan',
-        subtitle: exportSubtitle(),
-        columns: exportColumns,
-        rows: buildExportData(),
-        fileName: `Daftar-Kegiatan-${new Date().toISOString().slice(0, 10)}`,
-      })
-      if (user) await logAudit(user, 'EXPORT', 'Kegiatan', `Excel -- ${filtered.length} kegiatan`)
-    } finally {
-      setExporting(false)
-    }
+  const handleOpenPreview = () => {
+    if (previewOptions.rows.length === 0) { toast.info('Belum ada data yang bisa diexport.'); return }
+    setPreviewOpen(true)
+  }
+
+  const handleExported = async (format: 'pdf' | 'excel') => {
+    if (!user) return
+    await logAudit(user, 'EXPORT', 'Kegiatan', `${format === 'pdf' ? 'PDF' : 'Excel'} -- ${previewOptions.rows.length} kegiatan`)
   }
 
   if (!featureChecking && !featureEnabled) {
@@ -417,13 +449,9 @@ export default function KegiatanPage() {
               melihat daftar kegiatan tapi tidak perlu bisa export laporan ke PDF/Excel. */}
           {canManage && (
             <>
-              <button onClick={handleExportPDF} disabled={exporting}
+              <button onClick={handleOpenPreview}
                 className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
-                📄 PDF
-              </button>
-              <button onClick={handleExportExcel} disabled={exporting}
-                className="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5">
-                📊 Excel
+                🔍 Pratinjau & Export
               </button>
               <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
                 + Tambah Kegiatan
@@ -467,7 +495,10 @@ export default function KegiatanPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-semibold text-slate-800">{k.nama_kegiatan}</h3>
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusLabel[k.status]?.color}`}>{statusLabel[k.status]?.label}</span>
+                    {(() => {
+                      const statusKomputasi = statusLabel[computeKegiatanStatus(k)]
+                      return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusKomputasi.color}`}>{statusKomputasi.label}</span>
+                    })()}
                     {k.kode_kegiatan && (
                       <span className="px-2 py-0.5 rounded-full text-xs font-mono bg-slate-100 text-slate-500">{k.kode_kegiatan}</span>
                     )}
@@ -492,7 +523,18 @@ export default function KegiatanPage() {
                   {k.deskripsi && <p className="text-slate-500 text-sm mt-1 line-clamp-2">{k.deskripsi}</p>}
                   <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
                     {k.tanggal_mulai && <span>📅 {fmt(k.tanggal_mulai)}{k.tanggal_selesai ? ` – ${fmt(k.tanggal_selesai)}` : ''}</span>}
-                    {k.lokasi && <span>📍 {k.lokasi}</span>}
+                    {k.lokasi && (
+                      <span>
+                        📍 {k.lokasi}
+                        {k.lokasi_maps_url && (
+                          <a href={k.lokasi_maps_url} target="_blank" rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            className="ml-1.5 text-blue-600 dark:text-blue-400 hover:underline font-medium">
+                            Buka Maps
+                          </a>
+                        )}
+                      </span>
+                    )}
                   </div>
                   {k.tingkatan === 'daerah' && k.status_approval === 'ditolak' && k.catatan_ppg && (
                     <div className="mt-2 p-2 bg-red-50 border border-red-100 rounded-lg text-xs text-red-600 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
@@ -527,6 +569,25 @@ export default function KegiatanPage() {
               <span className="text-xs text-slate-400 ml-auto">Auto-generate</span>
             </div>
           )}
+          {!editTarget && (
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Jenis Kegiatan</label>
+              <select
+                defaultValue=""
+                onChange={e => {
+                  const preset = PRESET_KEGIATAN[e.target.value]
+                  if (preset) setForm(f => ({ ...f, ...preset }))
+                }}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">-- Isi Manual (Kosongkan) --</option>
+                {Object.entries(PRESET_KEGIATAN_LABEL).map(([key, label]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-400 mt-1">Mengisi otomatis deskripsi & target peserta -- tetap bisa diedit manual di bawah.</p>
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Nama Kegiatan *</label>
             <input value={form.nama_kegiatan} onChange={e => set('nama_kegiatan', e.target.value)}
@@ -545,6 +606,7 @@ export default function KegiatanPage() {
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Tanggal Mulai *</label>
               <input type="datetime-local" value={form.tanggal_mulai} onChange={e => set('tanggal_mulai', e.target.value)}
+                min={!editTarget ? `${new Date().toISOString().slice(0, 10)}T00:00` : undefined}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
             <div>
@@ -562,15 +624,32 @@ export default function KegiatanPage() {
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Status *</label>
-              <select value={form.status} onChange={e => set('status', e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="upcoming">Akan Datang</option>
-                <option value="ongoing">Berlangsung</option>
-                <option value="selesai">Selesai</option>
-              </select>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Link Google Maps</label>
+              <input value={form.lokasi_maps_url} onChange={e => set('lokasi_maps_url', e.target.value)}
+                type="url" placeholder="https://maps.app.goo.gl/..."
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
           </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Buka Presensi Lebih Awal</label>
+            <select value={form.presensi_buka_lebih_awal_menit} onChange={e => set('presensi_buka_lebih_awal_menit', e.target.value)}
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="0">Tepat saat kegiatan dimulai</option>
+              <option value="15">15 menit sebelum mulai</option>
+              <option value="30">30 menit sebelum mulai</option>
+              <option value="60">1 jam sebelum mulai</option>
+            </select>
+            <p className="text-xs text-slate-400 mt-1">Generus yang sudah di lokasi bisa langsung absen sebelum jadwal resmi dimulai.</p>
+          </div>
+
+          {/* Status TIDAK LAGI bisa diedit manual -- dihitung otomatis dari tanggal mulai/
+              selesai (lihat lib/kegiatan-status.ts). Ditampilkan read-only sekadar konteks. */}
+          {editTarget && (
+            <p className="text-xs text-slate-400">
+              Status kegiatan: <span className="font-medium text-slate-600">{statusLabel[computeKegiatanStatus(editTarget)]?.label}</span> (otomatis, mengikuti jadwal)
+            </p>
+          )}
 
           {canPickScope && (
             <div className="p-2.5 bg-amber-50 border border-amber-100 rounded-xl space-y-2 dark:bg-amber-900/20 dark:border-amber-800">
@@ -696,6 +775,13 @@ export default function KegiatanPage() {
           </div>
         </div>
       </Modal>
+
+      <ExportPreviewModal
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        options={previewOptions}
+        onExported={handleExported}
+      />
     </div>
   )
 }

@@ -61,6 +61,212 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 28 Juli 2026 — Redesain alur Tambah Kegiatan: jendela presensi otomatis berbasis waktu
+
+Permintaan besar langsung dari Reno, menyentuh alur otorisasi inti (`submit_presensi` dkk) --
+dikerjakan lewat 1 migrasi database (`kegiatan_jendela_presensi_otomatis`, diterapkan setelah
+"OK, jalankan" eksplisit) + perubahan frontend di 3 file. Sebelum eksekusi, RPC yang ada
+(`submit_presensi`, `submit_presensi_rfid`, `generate_kode_presensi`) dan trigger auto-alpha
+dibaca LANGSUNG dari `pg_proc` production (bukan ditebak) supaya perubahannya presisi.
+
+**Keputusan desain** (dikonfirmasi eksplisit dgn Reno lewat AskUserQuestion):
+1. "Templat kegiatan" = preset jenis kegiatan yang pre-fill field umum (bukan sistem
+   template tersimpan terpisah yang jauh lebih besar scope-nya)
+2. Status kegiatan & jendela presensi dihitung LIVE dari waktu (bukan job terjadwal
+   pg_cron) -- lebih sederhana, tanpa infrastruktur produksi baru, trade-off diterima:
+   auto-alpha baru tersimpan permanen saat ada yang membuka halaman berikutnya
+
+**Migrasi database** (`kegiatan_jendela_presensi_otomatis`):
+- Kolom baru `kegiatan.lokasi_maps_url` (text) & `kegiatan.presensi_buka_lebih_awal_menit`
+  (integer, default 0, CHECK IN (0,15,30,60))
+- `submit_presensi` & `submit_presensi_rfid`: cek `status = 'ongoing'` diganti cek jendela
+  waktu (`tanggal_mulai - presensi_buka_lebih_awal_menit` s/d `tanggal_selesai`)
+- RPC baru `sinkron_status_kegiatan_jika_selesai(p_kegiatan_id)` -- housekeeping idempotent,
+  dipanggil client saat kegiatan sudah lewat tanggal_selesai, cuma `UPDATE status='selesai'`
+  SEKALI supaya trigger `trg_auto_alpha_generus_kegiatan_selesai` yang **sudah ada** (TIDAK
+  disentuh sama sekali di migrasi ini) otomatis jalan dari situ
+- Diverifikasi: `get_advisors` tidak ada temuan baru (`sinkron_status_kegiatan_jika_selesai`
+  cuma executable oleh `authenticated`, bukan `anon` -- sesuai desain), functiondef dibaca
+  ulang dari `pg_proc` utk konfirmasi perubahan benar-benar diterapkan
+
+**Frontend:**
+- `lib/kegiatan-status.ts` (+ 15 test) -- `computeKegiatanStatus`, `isPresensiWindowOpen`,
+  `isTepatWaktu`, dipakai bersama oleh `kegiatan/page.tsx`, `PresensiPanel.tsx`,
+  `absensi/page.tsx`
+- `kegiatan/page.tsx`: dropdown "Jenis Kegiatan" (preset, hanya saat Tambah bukan Edit),
+  validasi tanggal tidak boleh sebelum hari ini (hanya saat Tambah), field Link G-Maps,
+  dropdown "Buka Presensi Lebih Awal", dropdown Status manual **dihapus** (jadi teks
+  read-only "otomatis, mengikuti jadwal"), badge status & filter & export kolom Status
+  semua pindah ke `computeKegiatanStatus()`, panggil RPC sync di `loadData()`
+- `PresensiPanel.tsx`: gate render ganti dari `kegiatan.status !== 'ongoing'` jadi
+  `!isPresensiWindowOpen(kegiatan)`
+- `absensi/page.tsx`: badge "Tepat Waktu"/"Terlambat" di baris hadir, modal wajib pilih
+  alasan (Lupa Absen/Kendala Teknis/Lainnya) + catatan sebelum koreksi kehadiran tersimpan
+  (dulu teks generik hardcoded), panggil RPC sync di `loadKegiatan()`
+- Visual diverifikasi lewat halaman preview sementara (dihapus lagi) + screenshot Playwright
+  utk 3 potongan UI baru (form preset+maps+buka-lebih-awal, badge Tepat Waktu/Terlambat,
+  modal alasan koreksi). `tsc`, `eslint`, `npm run test` (73 test), `npm run build` semua
+  sukses.
+
+### Sesi 27 Juli 2026 (lanjutan 5) — Pratinjau+Cetak langsung di semua export, filter jenis kelamin Data Generus
+
+Permintaan langsung dari Reno (bukan hasil audit): (1) konsistensikan pratinjau dokumen
+di SEMUA tempat yang bisa export, dan (2) opsi cetak langsung tanpa wajib unduh dulu, (3)
+Data Generus perlu bisa disaring per jenis kelamin -- kegiatan muda-mudi organisasi ini rutin
+memisahkan tempat laki-laki/perempuan (menghindari bersentuhan dgn bukan mahram), jadi
+Pengurus butuh bisa menarik data salah satu gender saja ATAU keduanya untuk rekap/kebutuhan
+pengurus.
+
+**Temuan awal**: pratinjau (`ExportPreviewModal`, PDF asli di iframe sebelum diunduh) TERNYATA
+sudah ada & dipakai di **Keuangan** dan **Absensi** -- tapi **Data Generus, Data Pembina,
+Kegiatan, dan Riwayat Absensi pribadi** masih pakai `exportToPDF`/`exportToExcel` LANGSUNG
+tanpa pratinjau (2 tombol terpisah "📄 PDF" / "📊 Excel", download langsung).
+
+**Dikerjakan:**
+- **`components/ExportPreviewModal.tsx`**: tambah tombol **"🖨️ Cetak"** (gelap, paling
+  menonjol) di antara Tutup dan Export PDF/Excel -- memicu `iframe.contentWindow.print()`
+  atas PDF yang SUDAH tampil di pratinjau, jadi user bisa langsung cetak tanpa unduh file
+  dulu. Karena komponen ini shared, **Keuangan & Absensi otomatis dapat tombol ini juga**
+  tanpa disentuh.
+- **4 halaman diubah dari 2-tombol-langsung-unduh jadi 1 tombol "🔍 Pratinjau & Export"**
+  yang membuka `ExportPreviewModal` (pola disalin persis dari `absensi/page.tsx`):
+  `generus/page.tsx` (Data Generus), `data-pembina/page.tsx` (Data Pembina),
+  `kegiatan/page.tsx`, `profil/riwayat-absensi/page.tsx`. Audit log export (`logAudit`)
+  dipindah ke callback `onExported` (dipanggil `ExportPreviewModal` setelah export
+  PDF/Excel beneran terjadi, BUKAN saat cetak -- cetak tidak menghasilkan file baru jadi
+  tidak perlu dicatat sbg "export").
+  - **Catatan teknis**: di `data-pembina/page.tsx`, `previewOptions` (objek biasa, beda
+    dari fungsi `buildExportData`/`exportSubtitle` yang dievaluasi belakangan lewat
+    closure) harus dipindah ke SETELAH deklarasi `const filtered` -- kalau tetap di posisi
+    lama (sebelum `filtered` dideklarasikan) akan kena *temporal dead zone* JS
+    ("Cannot access 'filtered' before initialization").
+- **Filter Jenis Kelamin di Data Generus**: dropdown baru "Laki-laki & Perempuan" (default,
+  tarik keduanya) / "Laki-laki Saja" / "Perempuan Saja", masuk ke rantai filter yang sama
+  dgn pencarian/role/status. Karena `buildExportData()` selalu ambil dari `filtered` (bukan
+  data mentah), filter ini otomatis ikut kepakai saat pratinjau/export/cetak -- tidak perlu
+  logic terpisah. Data Pembina/Kegiatan TIDAK diberi filter ini (di luar scope permintaan --
+  PPG bukan peserta kegiatan muda-mudi yang dipisah gender).
+- Visual diverifikasi lewat halaman preview sementara (dihapus lagi) + screenshot
+  Playwright: tombol Cetak baru tampil benar di pratinjau PDF ASLI (bukan tiruan, generated
+  via jsPDF sungguhan di iframe), dropdown filter jenis kelamin terbaca jelas.
+  `tsc --noEmit`, `eslint`, `npm run test` (58 test), `npm run build` semua sukses.
+
+### Sesi 27 Juli 2026 (lanjutan 4) — Audit fitur Notifikasi/push + banner ajakan aktifkan push
+
+Menindaklanjuti gap terakhir yang tercatat di §4B dokumen ini ("push notification
+sudah ada lib/push.ts + ServiceWorkerRegister.tsx -- perlu dicek status pemakaian
+nyata"). Hasil audit menyeluruh (kode + query production):
+
+- **Pipeline push TERNYATA lengkap & aktif end-to-end**, bukan setengah jalan
+  seperti dugaan awal: `lib/push.ts` (subscribe/unsubscribe browser) ->
+  `push_subscriptions` -> trigger DB `notify_push`/`notify_push_scope`
+  (dipanggil dari trigger kegiatan/pengumuman baru, approval reimbursement,
+  approval PPG, DAN 5 job `pg_cron` reminder) -> Edge Function `send-push`
+  (`web-push` + VAPID asli) -> service worker `public/sw.js`. Semua
+  dikonfirmasi lewat `pg_get_functiondef`/`pg_trigger` di database production,
+  bukan cuma baca kode.
+- **Masalah sebenarnya: adopsi, bukan kode.** Dari 83 akun aktif, cuma **2**
+  yang pernah mengaktifkan toggle push (baris `push_subscriptions`).
+  Kemungkinan besar karena togglenya "tersembunyi" di sub-halaman
+  `Profil -> Notifikasi`, bukan di halaman **Notifikasi** utama, dan tidak ada
+  ajakan apapun.
+- **Perbaikan yang dikerjakan**: banner ajakan "Aktifkan Notifikasi Push?" di
+  atas halaman `app/(dashboard)/notifikasi/page.tsx` (halaman utama, bukan
+  sub-profil) -- klik "Aktifkan" langsung memanggil `subscribeToPush` di
+  tempat (tidak perlu pindah halaman). Muncul HANYA kalau: browser mendukung,
+  izin belum ditolak permanen, belum ada subscription aktif di device ini, dan
+  belum pernah di-dismiss ("Nanti Saja" -> `localStorage`, dismiss permanen,
+  sengaja TIDAK muncul lagi otomatis supaya tidak nagging). Super Admin
+  dikecualikan (konsisten dengan `profil/notifikasi/page.tsx` yang sudah lebih
+  dulu redirect Super Admin keluar dari pengaturan push).
+- Visual diverifikasi lewat preview page sementara + screenshot Playwright
+  (Mode Terang & Gelap, termasuk state pesan error) -- halaman preview sudah
+  dihapus lagi, bukan bagian permanen kode. `tsc`, `eslint`, `npm run test`,
+  `npm run build` semua sukses.
+- **Item #6 (proteksi password bocor) masih pending** -- ternyata BUKAN
+  sekadar toggle gratis seperti dugaan awal audit: fitur "Prevent use of
+  leaked passwords" (Authentication -> Attack Protection) cuma tersedia di
+  **Supabase Pro plan ke atas** (project masih FREE plan). Jadi ini sekarang
+  keputusan upgrade berbayar berulang (~$25/bulan, cek angka pasti di
+  Billing), bukan cuma sakelar gratis -- ditunda dulu sampai Reno putuskan
+  worth it atau tidak.
+
+### Sesi 27 Juli 2026 (lanjutan 3) — Tabel usang §2d (no action) + B1 Gamifikasi v1 (badge personal)
+
+Melanjutkan diskusi prioritas pasca-batch DB di atas: 2 hal dari sisa
+`AUDIT_MENYELURUH_2026-07.md` yang belum diputuskan.
+
+- **§2d tabel usang `reset_password_requests`** -- dicek isinya (`execute_sql`,
+  read-only): cuma 1 baris historis (request Reno sendiri, 14 Juli, sudah
+  `processed`). **Keputusan: JANGAN di-drop** -- komentar di
+  `backup-data/page.tsx:9` sudah eksplisit bilang tabel ini sengaja dibiarkan
+  ada untuk histori, jadi rekomendasi audit "pertimbangkan drop" ternyata
+  bentrok dengan keputusan yang sudah diambil sebelumnya. Ditutup sebagai *no
+  action*.
+- **B1 Gamifikasi Ringan v1** -- didiskusikan dulu 2 keputusan non-teknis
+  sebelum nulis kode (sesuai catatan `WISHLIST_ASSESSMENT.md` §B1):
+  1. **Badge personal, BUKAN leaderboard** -- disetujui Reno, karena ranking
+     publik antar-orang/kelompok berisiko memicu kompetisi tidak sehat di
+     organisasi keagamaan/sosial begini.
+  2. **Pemicu: bertahap dari presensi dulu** (bukan poin datar atau
+     kegiatan-selesai/streak dari awal) -- badge dihitung dari pola presensi
+     yang sudah ada, bukan sistem poin baru.
+
+  Implementasi v1 (3 badge, kegiatan berjalan mingguan):
+  - 🔥 **Streak** -- hadir >=4x berturut-turut (izin/sakit dilewati/tidak
+    memutus, `tidak_hadir`/alpha memutus)
+  - 📅 **Rajin Bulan Ini** -- hadir >=75% dari minimal 3 kegiatan bulan berjalan
+  - 🌱 **Kontribusi Konsisten** -- 3 bulan KALENDER berturut-turut (bukan cuma
+    3 bulan yang kebetulan ada datanya) masing-masing >=75% hadir
+
+  **Sengaja TANPA tabel/RPC baru** -- semua badge dihitung on-the-fly di
+  client dari data `absensi` yang sudah ada (pola sama seperti
+  `profil/riwayat-absensi/page.tsx`, RLS sudah membatasi ke baris milik
+  generus sendiri), jadi tidak ada skema/RLS baru yang perlu didesain atau
+  di-review. Lihat `lib/badges.ts` (+ `lib/badges.test.ts`, 9 test) untuk
+  logikanya, ditampilkan di kartu hero `app/(dashboard)/profil/page.tsx`
+  (disembunyikan total kalau generus belum punya badge apapun -- menghindari
+  kesan "0 pencapaian").
+
+  **Catatan penting**: saat ini baru ada **1 kegiatan tercatat di database**
+  (24 Juli 2026, 79 baris absensi) -- threshold di atas cuma tebakan awal
+  berdasar asumsi kegiatan mingguan, belum tervalidasi dengan data multi-bulan
+  asli. Wajar dikalibrasi ulang setelah beberapa bulan berjalan kalau ternyata
+  terlalu gampang/susah dicapai. `tsc`, `eslint`, `npm run test` (58 test),
+  dan `npm run build` semua sukses tanpa error.
+
+### Sesi 27 Juli 2026 (lanjutan) — Beres-beres teknis DB pasca-A4 (item #5, #7, #8 audit)
+
+Setelah insiden deploy A4 tuntas (lihat entri sesi di bawah), Reno diajak diskusi
+soal prioritas kerja berikutnya (semua A1-A7 & B2-B5 sudah selesai, sisa hanya
+item hardening DB dari audit + B1 yang belum mulai). Reno pilih beres-beres
+teknis dulu -- 3 item dari `AUDIT_MENYELURUH_2026-07.md` §6, semuanya digabung
+jadi satu batch krn sama-sama perubahan DB tanpa efek perilaku aplikasi:
+
+- **#5** `SET search_path = public` pada `submit_presensi`/`submit_presensi_rfid`
+  (migrasi `fix_search_path_fungsi_presensi`) -- 2 fungsi ini anomali, semua
+  fungsi `SECURITY DEFINER` lain sudah konsisten pakai ini.
+- **#7** `(select auth.uid())` di 6 policy/7 klausul yang sebelumnya bare
+  `auth.uid()` (migrasi `optimasi_rls_select_auth_uid`) -- perf murni, logika
+  identik. Diverifikasi lewat `BEGIN...ROLLBACK` + `SET LOCAL role authenticated`:
+  user pemilik 1 baris `push_subscriptions` tetap cuma lihat persis 1 baris
+  miliknya pasca-rewrite (bukan 0/kebocoran tertutup, bukan 2/kebocoran ke user
+  lain). **Ketemu 1 kasus tambahan** saat verifikasi ulang lewat advisor:
+  `feature_toggles_select_all` pakai `auth.role()` (bukan `auth.uid()`) dan kena
+  initplan issue yang sama -- terlewat dari audit awal krn query pembuktian lama
+  cuma menyaring pola `auth.uid()`. Sempat salah tulis di percobaan pertama (lupa
+  benar-benar membungkus ekspresinya), ketahuan saat verifikasi ulang & langsung
+  diperbaiki (migrasi susulan `..._fix`).
+- **#8** Index baru utk 40 foreign key yang sebelumnya tanpa index pendukung
+  (migrasi `index_fk_tanpa_index`), termasuk `reset_password_requests` (tabel
+  usang, tetap diberi index demi kelengkapan). Diverifikasi: advisor performance
+  `unindexed_foreign_keys` 40 → 0.
+
+Item #6 (proteksi password bocor) masih pending -- itu sakelar di Supabase
+Dashboard Auth settings, harus Reno sendiri yang nyalain, bukan sesuatu yang
+bisa dikerjakan lewat migrasi/kode. Detail lengkap tiap item ada di
+`AUDIT_MENYELURUH_2026-07.md` §6-7.
+
 ### Sesi 27 Juli 2026 — Audit menyeluruh (keamanan+UX), fondasi toast/dialog, a11y Modal, skeleton loader, transisi navigasi, A4 (multi-device session)
 
 **PR #21** -- docs-only, catat penyelesaian B4 (menu Pengaturan) di HANDOFF/WISHLIST_ASSESSMENT yang sempat tertinggal dari sesi sebelumnya.
@@ -80,12 +286,15 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 - Permintaan langsung Reno ("kaku"). Highlight menu aktif sidebar dapat animasi "pop" (class `animate-nav-pop` HANYA disematkan saat item baru jadi aktif, sehingga `animation-name` berubah none→nav-pop dan browser otomatis memutar ulang -- tanpa perlu JS mengukur posisi elemen ala sliding-pill). Judul topbar (`currentLabel`) diberi `key={currentLabel}` supaya remount + fade tiap ganti menu (sebelumnya cuma meloncat, krn hidup di `layout.tsx` yang tidak remount antar halaman). Easing `animate-page-in` disamakan dgn toast/dialog.
 - Insiden proses: sempat salah cabang branch dari PR #23 yang belum merge -- ketahuan sebelum push, branch di-recreate dari `main` bersih.
 
-**A4 -- Redesain single-session → multi-device (belum ada nomor PR saat catatan ini ditulis)**
+**PR #25 -- A4: Redesain single-session → multi-device**
 - Diskusi eksplisit dgn Reno dulu (bukan asumsi): batas **maks 2 sesi aktif** per akun (bukan unlimited -- sengaja dipertahankan sbg "rem alami" terhadap sharing akun antar orang, sekaligus cukup utk kebutuhan harian mis. Super Admin pantau dari laptop+HP), DAN UI kelola/logout device **sejak versi pertama** (bukan menyusul).
 - Skema baru `user_sessions` (1 baris per device) menggantikan kolom tunggal `users.active_session_token`/`active_session_created_at` (di-DROP, sudah dicek tidak ada view/trigger/fungsi lain yg bergantung). RPC `claim_session` (`SECURITY DEFINER`, menggantikan `app/api/session/claim` -- sesuai rekomendasi lama NATIVE_READINESS_AUDIT.md §B.2) insert baris baru lalu tendang sesi TERTUA kalau sudah >2.
 - Diverifikasi lewat `BEGIN...ROLLBACK` di production (bukan Supabase database branch -- org masih plan Free, branching butuh billing yg belum terpasang, Reno pilih skip branch). **Bug ketemu saat testing:** eviksi awalnya salah tendang sesi TERBARU bukan TERTUA -- `created_at DEFAULT now()` ternyata SAMA sepanjang satu transaksi Postgres (bukan per-statement), jadi 3 login berturut dlm 1 transaksi test dapat timestamp identik & urutan jadi acak. Diganti `clock_timestamp()`. Total 8 skenario diverifikasi lolos (eviksi, RLS lintas-user, self-service, anon terkunci, agregat count, kolom lama benar-benar hilang) sebelum apply ke production.
 - Halaman baru `/profil/perangkat` (self-service lihat/keluarkan device sendiri, semua role) + tab Sesi Aktif Monitoring & Log dirombak total (1 baris = 1 SESI, bukan 1 user lagi -- "Sesi Ini" dicocokkan via `session_token`, bukan sekadar id user, krn 1 user kini bisa punya 2 baris).
 - `count_sesi_aktif()` RPC baru (agregat murni) menggantikan query langsung `users.active_session_token` di kartu Kesehatan Sistem -- sengaja dibuka utk semua `authenticated` (bukan cuma Super Admin/Team IT) krn cuma 1 angka total tanpa detail per-device.
+- **Insiden produksi pasca-merge PR #25 (self-inflicted, sudah tuntas):** migrasi men-DROP `users.active_session_token`/`active_session_created_at`, tapi kode FRONTEND lama (belum ter-deploy) masih men-select kolom itu di `getUserProfile()` -- setiap load halaman gagal utk SEMUA user selama jeda antara migrasi & deploy kode baru. Dimitigasi cepat dgn mengembalikan kedua kolom (nullable, additive) lewat migrasi darurat `mitigasi_darurat_restore_kolom_session_lama` sampai kode baru live.
+- **Vercel sempat tidak auto-deploy commit merge PR #25 ke production** (anomali -- biasanya instan, PR-PR sebelumnya semua auto-deploy normal). Root cause tidak pernah dipastikan (kemungkinan besar 1 event webhook GitHub→Vercel gagal terkirim/terproses); tombol "Redeploy" di dashboard Vercel terbukti TIDAK membantu krn cuma membangun ulang commit yang sama persis, bukan menarik HEAD terbaru. Diselesaikan dgn PR #26 (1 commit kosong ke `main`, disetujui eksplisit Reno) yg berhasil memicu build production baru dari kode terkini.
+- Setelah deployment production dikonfirmasi pindah ke kode A4 (commit `d9b94a1c`), kedua kolom mitigasi darurat di-DROP lagi (migrasi `bersihkan_kolom_mitigasi_darurat_sesi_lama`, dikonfirmasi izin eksplisit Reno, diverifikasi 0/84 baris terisi sebelum drop) -- skema kembali bersih sesuai desain A4 final.
 
 ### Sesi 26 Juli 2026 — Tone/voice, A6 (eskalasi approval), B3 (Mode Gelap rollout penuh), fix PPG di Data Generus, B4 (Aksesibilitas) + menu Pengaturan
 
@@ -620,9 +829,10 @@ prioritasnya bersama Reno**, tapi ini kandidat area lanjutan yang masuk akal:
   autocrlf berulang di masa depan.
 
 ### B. Fitur yang kemungkinan besar masih dibutuhkan
-- **Notifikasi**: menu `notifikasi` sudah ada, tapi belum diaudit mendalam sejauh mana
-  cakupannya (push notification web sudah ada `lib/push.ts` + `ServiceWorkerRegister.tsx` --
-  perlu dicek status pemakaian nyata).
+- ~~**Notifikasi**: menu `notifikasi` sudah ada, tapi belum diaudit mendalam sejauh mana
+  cakupannya~~ ✅ **Sudah diaudit** (Sesi 27 Juli 2026 lanjutan 4) -- pipeline push
+  end-to-end TERNYATA lengkap & aktif, gap-nya cuma adopsi (2/83 user). Banner ajakan
+  aktifkan push sudah ditambahkan di halaman Notifikasi utama.
 - **Backup data**: menu `backup-data` sudah ada -- perlu dipastikan alurnya (manual/terjadwal)
   dan diuji end-to-end kalau belum pernah dicoba pemulihan datanya.
 - **Laporan bulanan untuk jenjang PPG**: sejauh ini RPC laporan bulanan dibangun untuk
