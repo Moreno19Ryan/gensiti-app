@@ -21,6 +21,15 @@ export default function Modal({ open, onClose, title, children, size = 'md' }: M
   const panelRef = useRef<HTMLDivElement>(null)
   const fokusSebelumnya = useRef<HTMLElement | null>(null)
   const titleId = useId()
+  // `onClose` biasanya inline arrow function di pemanggil (referensi baru tiap render).
+  // Disimpan lewat ref supaya bisa dipanggil dari handler tanpa ikut jadi dependency
+  // effect di bawah -- kalau ikut, effect ini rerun tiap kali pemanggil re-render (misal
+  // tiap keystroke di form input), dan panelRef.current?.focus() di bawah akan merebut
+  // fokus dari input yang sedang diketik, bikin keyboard virtual di HP langsung menutup.
+  const onCloseRef = useRef(onClose)
+  useEffect(() => {
+    onCloseRef.current = onClose
+  })
 
   useEffect(() => {
     if (!open) return
@@ -33,7 +42,7 @@ export default function Modal({ open, onClose, title, children, size = 'md' }: M
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
-        onClose()
+        onCloseRef.current()
         return
       }
       if (e.key !== 'Tab') return
@@ -60,7 +69,7 @@ export default function Modal({ open, onClose, title, children, size = 'md' }: M
       document.body.style.overflow = ''
       fokusSebelumnya.current?.focus?.()
     }
-  }, [open, onClose])
+  }, [open])
 
   if (!open) return null
 

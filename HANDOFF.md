@@ -61,6 +61,38 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 28 Juli 2026 (lanjutan 8) — Bugfix kritis: keyboard HP menutup tiap 1 karakter di SEMUA form modal
+
+Laporan Reno: di PWA, pas nambah Generus dan ngetik di field Nama Lengkap, keyboard virtual
+langsung menutup setelah 1 huruf, berulang tiap karakter -- harus tap manual balik ke field
+tiap kali. Diminta cek juga halaman lain siapa tahu ada bug serupa.
+
+- **Root cause ditemukan di `components/Modal.tsx`** (komponen modal bersama, dipakai 13
+  halaman: Generus, Absensi, Kegiatan, Data Pembina, Profil, Monitoring, Keuangan, Pengumuman,
+  Dokumen, Organisasi, PPG, FAQ, `PengajuanIzinPanel`) -- BUKAN cuma bug di halaman Generus.
+  `useEffect` focus-trap punya dependency array `[open, onClose]`. Karena pemanggil hampir
+  selalu mengoper `onClose` sbg inline arrow function (`onClose={() => setModalOpen(false)}`),
+  referensinya baru tiap render induk. Tiap keystroke di form → state berubah → induk re-render
+  → `onClose` baru → effect ini dianggap "berubah" → re-run → `panelRef.current?.focus()`
+  merebut fokus dari input yang sedang diketik ke panel modal (`<div>` biasa) → browser
+  mobile langsung menutup keyboard virtual krn fokus pindah dari elemen teks.
+- **Fix**: `onClose` disimpan lewat `useRef` (di-update di `useEffect` terpisah tanpa dependency
+  array, BUKAN langsung di badan render -- lint `react-hooks/refs` versi baru melarang tulis
+  ref saat render), effect focus-trap utama diubah jadi cuma depend `[open]`. Pola ini meniru
+  persis `components/KonfirmasiHost.tsx` yang sudah benar dari awal (jadi referensi perbaikan,
+  sesuai komentar yang sudah ada di `Modal.tsx`).
+- **Dicek juga tempat lain** yang berpotensi bug serupa: `grep role="dialog"` di seluruh
+  codebase cuma kena `Modal.tsx` & `KonfirmasiHost.tsx` (KonfirmasiHost sudah benar).
+  `ExportPreviewModal.tsx` & `LaporanBulananModal.tsx` (modal custom lain yang match pola
+  `fixed inset-0 z-*`) TIDAK punya focus-trap/`.focus()` sama sekali, jadi tidak kena bug ini.
+  Jadi bug ini genuinely cuma di satu tempat, tapi berdampak ke hampir semua form di app.
+- **Verifikasi dgn bukti before/after** (bukan cuma klaim): halaman preview sementara
+  (`app/modal-bug-preview-temp`, dihapus setelah selesai) + Playwright ketik 4 karakter
+  berturut-turut sambil cek `document.activeElement` tiap keystroke. SEBELUM fix: fokus lompat
+  ke `<div>` panel modal setelah karakter pertama, karakter selanjutnya tidak masuk ke field
+  sama sekali (persis gejala yang dilaporkan Reno). SESUDAH fix: fokus tetap di `<input>` di
+  semua 4 keystroke, value ke-update benar. `tsc`/`eslint` bersih.
+
 ### Sesi 28 Juli 2026 (lanjutan 7) — Redesain nav tab Berita jadi "liquid glass"/glassmorphism
 
 Permintaan Reno: tab sumber di halaman Berita diubah jadi model kaca (terinspirasi iOS Liquid
