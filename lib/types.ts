@@ -161,11 +161,11 @@ export interface PengajuanReimbursement {
 }
 
 // Cache ringkasan berita dari RSS/feed publik organisasi afiliasi (LDII, PERSINAS ASAD, SENKOM
-// Mitra Polri) -- HANYA cuplikan + link ke sumber asli, TIDAK PERNAH isi artikel lengkap (lihat
-// komentar di migrasi & fetch-berita-organisasi Edge Function soal hak cipta). Sebelumnya
-// tabel/tipe ini khusus LDII (berita_ldii/BeritaLdii) -- digeneralisasi jadi multi-sumber lewat
-// kolom `sumber`, lihat ARCHITECTURE.md §12.
-export type SumberBeritaOrganisasi = 'ldii' | 'asad' | 'senkom'
+// Mitra Polri, DPD LDII Kota Bekasi) -- HANYA cuplikan + link ke sumber asli, TIDAK PERNAH isi
+// artikel lengkap (lihat komentar di migrasi & fetch-berita-organisasi Edge Function soal hak
+// cipta). Sebelumnya tabel/tipe ini khusus LDII (berita_ldii/BeritaLdii) -- digeneralisasi jadi
+// multi-sumber lewat kolom `sumber`, lihat ARCHITECTURE.md §12.
+export type SumberBeritaOrganisasi = 'ldii-bekasi' | 'ldii' | 'asad' | 'senkom'
 
 export interface BeritaOrganisasi {
   id: string

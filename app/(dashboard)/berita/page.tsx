@@ -13,20 +13,27 @@ const WhatsappIcon = ({ className }: { className?: string }) => (
   </svg>
 )
 
-const SUMBER_LIST: SumberBeritaOrganisasi[] = ['ldii', 'asad', 'senkom']
+// Urutan SENGAJA: LDII Kota Bekasi paling kiri & jadi tab default (lihat activeSumber di bawah)
+// -- ini sumber PALING relevan lokal buat Generus Bekasi Timur (bagian dari Kota Bekasi),
+// dibanding 3 sumber lain yang levelnya nasional/lintas daerah. Keputusan ini eksplisit
+// dikonfirmasi Reno (Opsi A dari 2 usulan tata letak: tab biasa tapi jadi default + badge,
+// bukan section terpisah -- supaya tidak menambah kompleksitas komponen baru).
+const SUMBER_LIST: SumberBeritaOrganisasi[] = ['ldii-bekasi', 'ldii', 'asad', 'senkom']
 const SUMBER_LABEL: Record<SumberBeritaOrganisasi, string> = {
+  'ldii-bekasi': 'LDII Kota Bekasi',
   ldii: 'LDII',
   asad: 'PERSINAS ASAD',
   senkom: 'SENKOM Mitra Polri',
 }
 
 // Menu "Berita Organisasi" -- mirror ringkasan RSS/feed publik organisasi afiliasi (LDII,
-// PERSINAS ASAD, SENKOM Mitra Polri), diperbarui otomatis tiap 4 jam lewat pg_cron ->
-// Edge Function fetch-berita-organisasi (lihat migrasi berita_organisasi_generalisasi_multi_sumber
-// & ARCHITECTURE.md §12). HANYA cuplikan + link ke sumber asli yang pernah disimpan --
-// tombol/kartu SELALU buka tab baru ke situs sumber, TIDAK PERNAH menampilkan isi artikel
-// lengkap di dalam GENSITI (soal hak cipta). Awalnya menu ini khusus "Berita LDII" -- sudah
-// digeneralisasi jadi multi-sumber lewat tab pemilih di bawah, tanpa mengubah desain kartu.
+// PERSINAS ASAD, SENKOM Mitra Polri, DPD LDII Kota Bekasi), diperbarui otomatis tiap 4 jam
+// lewat pg_cron -> Edge Function fetch-berita-organisasi (lihat migrasi
+// berita_organisasi_generalisasi_multi_sumber & ARCHITECTURE.md §12). HANYA cuplikan + link ke
+// sumber asli yang pernah disimpan -- tombol/kartu SELALU buka tab baru ke situs sumber, TIDAK
+// PERNAH menampilkan isi artikel lengkap di dalam GENSITI (soal hak cipta). Awalnya menu ini
+// khusus "Berita LDII" -- sudah digeneralisasi jadi multi-sumber lewat tab pemilih di bawah,
+// tanpa mengubah desain kartu.
 //
 // Kartu pakai pola "stretched link" (bukan <a> membungkus semua): satu <a> absolute inset-0
 // jadi target klik utama, konten di atasnya diberi pointer-events-none supaya klik tetap
@@ -37,7 +44,7 @@ export default function BeritaOrganisasiPage() {
   const { enabled: featureEnabled, checking: featureChecking } = useFeatureAccess(user, 'berita-organisasi')
   const [data, setData] = useState<BeritaOrganisasi[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeSumber, setActiveSumber] = useState<SumberBeritaOrganisasi>('ldii')
+  const [activeSumber, setActiveSumber] = useState<SumberBeritaOrganisasi>('ldii-bekasi')
   const [search, setSearch] = useState('')
   const [filterKategori, setFilterKategori] = useState('')
   // Snapshot waktu SEKALI saat mount (lazy initializer -- bukan dipanggil ulang tiap render)
@@ -122,12 +129,13 @@ export default function BeritaOrganisasiPage() {
           <button
             key={s}
             onClick={() => gantiSumber(s)}
-            className={`px-3.5 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors ${
+            className={`px-3.5 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors flex items-center gap-1 ${
               activeSumber === s
                 ? 'bg-indigo-600 text-white shadow'
                 : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
             }`}
           >
+            {s === 'ldii-bekasi' && <span>📍</span>}
             {SUMBER_LABEL[s]}
           </button>
         ))}

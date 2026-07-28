@@ -449,12 +449,21 @@ tidak perlu perubahan kode lain.
 ## 12. Berita Organisasi (Mirror RSS/Feed Publik Multi-Sumber)
 
 Menu "Berita Organisasi" (`app/(dashboard)/berita/page.tsx`) menampilkan ringkasan berita dari
-feed publik beberapa organisasi afiliasi — **LDII** (`https://www.ldii.or.id/feed/`),
+feed publik beberapa organisasi afiliasi — **DPD LDII Kota Bekasi**
+(`https://ldiibekasikota.or.id/feed/`), **LDII** nasional (`https://www.ldii.or.id/feed/`),
 **PERSINAS ASAD** (`https://official.asad.or.id/feed/`), dan **SENKOM Mitra Polri**
 (`https://www.senkom.or.id/feeds/posts/default?alt=rss`) — diperbarui otomatis, dipilih lewat
 tab di dalam halaman. Awalnya menu ini khusus LDII (`berita_ldii`/`fetch-berita-ldii`) — sudah
 digeneralisasi (28 Juli 2026) jadi satu tabel + satu Edge Function multi-sumber supaya
 menambah sumber baru nanti cukup 1 baris config, bukan duplikasi ~150 baris kode.
+
+**Prioritas tampilan LDII Kota Bekasi**: karena GENSITI untuk Generus Bekasi Timur (bagian dari
+Kota Bekasi), tab ini ditaruh **paling kiri & jadi tab default** saat halaman dibuka (`activeSumber`
+awal `'ldii-bekasi'`, bukan LDII nasional), plus ikon 📍 di label tab-nya — supaya berita paling
+relevan lokal (kegiatan PAC/PC spesifik wilayah Bekasi) langsung terlihat tanpa perlu klik.
+Keputusan ini (dari 2 opsi tata letak yang diajukan: tab biasa yang dijadikan default, vs section
+"Sorotan Lokal" terpisah di atas tab) dikonfirmasi eksplisit Reno — pilih opsi tab biasa supaya
+tidak menambah kompleksitas komponen baru.
 
 - **Alur**: pg_cron job (jadwal `0 */4 * * *`, tiap 4 jam) → fungsi tipis
   `public.fetch_berita_organisasi_cron()` (pola identik `notify_push`/`send_reminder_*`) →
@@ -465,14 +474,16 @@ menambah sumber baru nanti cukup 1 baris config, bukan duplikasi ~150 baris kode
   by `guid` (kolom `sumber` membedakan asalnya).
 - **Prinsip hak cipta (WAJIB dijaga kalau menyentuh kode ini)** — caranya beda per platform
   sumber, jangan asumsikan satu pola cocok semua:
-  - **WordPress (LDII, ASAD)**: `<description>` SUDAH otomatis dipotong jadi cuplikan pendek
-    oleh Yoast SEO/WordPress sendiri — aman dipakai langsung. `<content:encoded>` (isi artikel
-    LENGKAP, kalau ada) hanya disentuh untuk SATU hal — regex keluarkan URL `<img src="...">`
-    PERTAMA sebagai thumbnail (`gambar_url`, nullable), setara ekstraksi `og:image` link
-    preview medsos (hotlink, BUKAN salinan teks). **Teks `content:encoded` itu sendiri tidak
-    pernah disimpan/diekspos.** ASAD malah tidak punya `content:encoded` sama sekali di
-    feed-nya — `gambar_url` otomatis selalu `null` untuk sumber ini, tidak ada mekanisme
-    thumbnail apapun.
+  - **WordPress (LDII Kota Bekasi, LDII nasional, ASAD)**: `<description>` SUDAH otomatis
+    dipotong jadi cuplikan pendek oleh Yoast SEO/WordPress sendiri — aman dipakai langsung.
+    `<content:encoded>` (isi artikel LENGKAP, kalau ada) hanya disentuh untuk SATU hal — regex
+    keluarkan URL `<img src="...">` PERTAMA sebagai thumbnail (`gambar_url`, nullable), setara
+    ekstraksi `og:image` link preview medsos (hotlink, BUKAN salinan teks). **Teks
+    `content:encoded` itu sendiri tidak pernah disimpan/diekspos.** ASAD malah tidak punya
+    `content:encoded` sama sekali di feed-nya — `gambar_url` otomatis selalu `null` untuk
+    sumber ini, tidak ada mekanisme thumbnail apapun. LDII Kota Bekasi pola persis sama dengan
+    LDII nasional (termasuk wording boilerplate Yoast "appeared first on"), tidak butuh
+    penanganan khusus.
   - **Blogger (SENKOM)**: BEDA STRUKTURAL — `<description>` di Blogger BUKAN cuplikan, isinya
     ARTIKEL LENGKAP (Blogger tidak punya mekanisme auto-excerpt terpisah seperti Yoast).
     Ditemukan saat riset (panjang description 4.000–11.000+ karakter per item). Kalau
@@ -498,7 +509,8 @@ menambah sumber baru nanti cukup 1 baris config, bukan duplikasi ~150 baris kode
     dijalankan, jadi tidak ke-strip sama sekali (bug nyata yang sempat kejadian saat build ini).
   - Halaman frontend TIDAK PERNAH merender isi lengkap — seluruh kartu adalah link
     `target="_blank"` ke artikel asli di situs sumber masing-masing.
-- **Tabel `berita_organisasi`**: kolom `sumber text check (sumber in ('ldii','asad','senkom'))`.
+- **Tabel `berita_organisasi`**: kolom
+  `sumber text check (sumber in ('ldii','asad','senkom','ldii-bekasi'))`.
   RLS SELECT untuk `authenticated` semua jenjang. Sengaja TANPA policy INSERT/UPDATE/DELETE —
   hanya service role (dari Edge Function) yang menulis. **Catatan penting (masih berlaku,
   diterapkan sejak awal di migrasi tabel ini)**: tabel baru TIDAK otomatis mewarisi default
@@ -514,11 +526,12 @@ menambah sumber baru nanti cukup 1 baris config, bukan duplikasi ~150 baris kode
   juga baru ditambahkan ke `MENU_GROUPS` di `app/(dashboard)/pengaturan-fitur/page.tsx` —
   ternyata sejak awal dibuat (era masih "Berita LDII"), menu ini luput dari halaman toggle
   Super Admin itu, jadi baru sekarang Super Admin punya UI untuk mematikannya per jenjang.
-- **Keaktifan sumber (per riset 28 Juli 2026)**: LDII update per jam (paling aktif), ASAD
-  update harian, SENKOM jauh lebih jarang & tidak teratur (jeda bisa 3-4 minggu) — bukan mati
-  seperti kasus lama forsgi.com (mati sejak 2022), tapi cadence-nya nyata berbeda. Kategori
-  ASAD saat ini selalu sama ("PERSINAS ASAD") di 10 artikel terbaru — filter kategori kurang
-  berguna untuk sumber itu dibanding LDII/SENKOM yang variatif.
+- **Keaktifan sumber (per riset 28 Juli 2026)**: LDII nasional update per jam (paling aktif),
+  LDII Kota Bekasi & ASAD update harian-mingguan, SENKOM jauh lebih jarang & tidak teratur
+  (jeda bisa 3-4 minggu) — bukan mati seperti kasus lama forsgi.com (mati sejak 2022), tapi
+  cadence-nya nyata berbeda. Kategori ASAD saat ini selalu sama ("PERSINAS ASAD") di 10 artikel
+  terbaru — filter kategori kurang berguna untuk sumber itu dibanding LDII/LDII Kota
+  Bekasi/SENKOM yang variatif.
 
 ## 13. Yang Belum Terdokumentasi / Perlu Update Berkala
 
