@@ -457,11 +457,16 @@ RSS feed publik organisasi induk (`https://www.ldii.or.id/feed/`), diperbarui ot
   keluar ke situs pihak ketiga) → Edge Function `fetch-berita-ldii` (Deno, `fast-xml-parser`)
   → fetch feed, parse RSS 2.0, upsert ke tabel `berita_ldii` by `guid`.
 - **Prinsip hak cipta (WAJIB dijaga kalau menyentuh kode ini)**: field `<content:encoded>`
-  (isi artikel lengkap milik LDII) **secara sengaja tidak pernah dibaca sama sekali** di Edge
-  Function — hanya title/link/pubDate/description (ringkasan yang SUDAH dipotong otomatis
-  oleh WordPress)/category/guid. Kalau menambah field baru dari feed, JANGAN sertakan
-  `content:encoded`. Halaman frontend juga TIDAK PERNAH merender isi lengkap — tombol "Baca
-  Selengkapnya" selalu `target="_blank"` ke artikel asli di ldii.or.id.
+  (isi artikel lengkap milik LDII) hanya disentuh untuk SATU hal — regex keluarkan URL
+  `<img src="...">` PERTAMA (kolom `gambar_url`, nullable) sebagai thumbnail, setara
+  ekstraksi `og:image` pada link preview media sosial (hotlink ke gambar yang sudah
+  di-hosting publik di server LDII, BUKAN salinan file/teks). **Teks `content:encoded` itu
+  sendiri tidak pernah disimpan/diekspos ke field manapun.** Selain itu, field yang pernah
+  dibaca hanya title/link/pubDate/description (ringkasan yang SUDAH dipotong otomatis oleh
+  WordPress, dibersihkan dari HTML entity mentah & boilerplate Yoast SEO "appeared first
+  on...")/category/guid. Kalau menambah field baru dari feed, JANGAN sertakan teks
+  `content:encoded`. Halaman frontend TIDAK PERNAH merender isi lengkap — seluruh kartu
+  adalah link `target="_blank"` ke artikel asli di ldii.or.id.
 - **Tabel `berita_ldii`**: RLS SELECT untuk `authenticated` semua jenjang (termasuk Generus —
   berita organisasi induk relevan buat semua). Sengaja TANPA policy INSERT/UPDATE/DELETE —
   hanya service role (dari Edge Function) yang menulis. **Catatan penting**: tabel baru

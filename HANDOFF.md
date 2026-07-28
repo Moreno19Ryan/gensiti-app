@@ -61,6 +61,43 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 28 Juli 2026 (lanjutan 2) — Berita LDII: bersihkan teks feed, tambah gambar, redesain kartu
+
+Feedback langsung dari Reno setelah lihat halaman live: tampilannya "kurang menarik" (tidak
+ada gambar) dan ternyata ada sisa teks kotor di ringkasan.
+
+- **Ditemukan lewat cek langsung ke feed mentah** (`net.http_get` dari database, bukan
+  tebakan): (1) entity HTML `&#8230;` tidak ke-decode, tampil harfiah sebagai `[&#8230;]`;
+  (2) plugin Yoast SEO di situs sumber nempelin boilerplate otomatis `"The post X appeared
+  first on Lembaga Dakwah Islam Indonesia."` di ekor tiap ringkasan; (3) feed TIDAK punya
+  field gambar terpisah (`<enclosure>`/`media:content` tidak ada) — satu-satunya gambar ada
+  di dalam `<content:encoded>`, field yang tadinya dijanjikan "tidak pernah disentuh sama
+  sekali".
+- **Keputusan hak cipta (dikonfirmasi ulang eksplisit dgn Reno)**: boleh regex keluarkan URL
+  `<img src="...">` PERTAMA dari `content:encoded` sebagai thumbnail -- setara ekstraksi
+  `og:image` pada link preview media sosial (hotlink ke gambar yang sudah di-hosting publik
+  di server LDII, BUKAN salinan teks/konten). Teks `content:encoded` itu sendiri tetap TIDAK
+  PERNAH disimpan/diekspos ke field manapun -- cuma satu string URL yang diambil, sisanya
+  langsung dibuang.
+- Migrasi `berita_ldii_tambah_gambar_url` (kolom baru `gambar_url text`, nullable), Edge
+  Function `fetch-berita-ldii` di-update (decode HTML entity, potong boilerplate Yoast,
+  ekstrak gambar), dipanggil ulang manual utk backfill 10 baris yang sudah ada -- **2 dari 10
+  artikel** ternyata punya gambar terdeteksi (wajar, tidak semua artikel LDII ada foto).
+- **Redesain kartu** (`app/(dashboard)/berita-ldii/page.tsx`) -- gaya majalah: 1 kartu
+  unggulan besar (berita terbaru, gambar 16:9/21:9) + grid galeri 1-2 kolom utk sisanya
+  (gambar 24x24/28x28 thumbnail), badge "🔥 Baru" merah utk artikel <48 jam, placeholder
+  gradient + ikon 📰 kalau tidak ada gambar (bukan kotak kosong), seluruh kartu jadi link
+  yang bisa diklik (bukan cuma teks "Baca Selengkapnya"-nya).
+- **Catatan jujur soal verifikasi visual**: gambar hotlink ke ldii.or.id TIDAK bisa saya lihat
+  render sungguhan dari sandbox Claude Code ini (jaringan sandbox diblokir ke domain luar,
+  sama seperti riset RSS sebelumnya) -- layout/struktur/badge sudah dicek lewat screenshot
+  Playwright, tapi gambar aslinya baru bisa dipastikan tampil benar lewat preview Vercel
+  (akses internet penuh), perlu dicek langsung oleh Reno.
+- `tsc`, `eslint` (sempat ketangkap 1 error murni: `Date.now()` dipanggil langsung di badan
+  render melanggar aturan purity komponen, diperbaiki pakai lazy `useState` snapshot sekali
+  saat mount — pola sama seperti `sisaDetik` di `PresensiPanel.tsx`), `npm run test`,
+  `npm run build` semua sukses.
+
 ### Sesi 28 Juli 2026 (lanjutan) — Menu "Berita LDII": mirror RSS feed publik ldii.or.id
 
 Ide dari Reno (dikonfirmasi ada RSS feed valid via sesi Claude.ai terpisah yang punya akses
