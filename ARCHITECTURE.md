@@ -533,7 +533,52 @@ tidak menambah kompleksitas komponen baru.
   terbaru — filter kategori kurang berguna untuk sumber itu dibanding LDII/LDII Kota
   Bekasi/SENKOM yang variatif.
 
-## 13. Yang Belum Terdokumentasi / Perlu Update Berkala
+## 13. Bookmark Berita (`berita_disimpan`)
+
+User bisa menyimpan artikel dari Berita Organisasi (§12) untuk dibaca lagi nanti — ikon 🔖 di
+tiap kartu (`app/(dashboard)/berita/page.tsx`) toggle simpan/hapus, halaman
+`app/(dashboard)/berita/tersimpan/page.tsx` (nested route, bukan menu sidebar terpisah — pola
+sama seperti `profil/*`) menampilkan daftarnya.
+
+- **Tabel `berita_disimpan`**: `user_id` (FK `public.users`) + `link` (identifier unik artikel
+  eksternal — RSS tidak punya PK yang stabil selain URL) + snapshot metadata (`judul`, `sumber`,
+  `tanggal_publish`, `gambar_url`). **Sengaja BUKAN FK ke `berita_organisasi.id`** — baris
+  `berita_organisasi` murni cache RSS yang bisa berubah/dibersihkan kapan saja, snapshot di sini
+  memastikan bookmark tidak ikut rusak kalau itu terjadi. `unique(user_id, link)` mencegah
+  bookmark dobel.
+- **RLS**: satu policy `for all` dengan `user_id = (select auth.uid())` untuk qual dan
+  with_check — pola identik `push_subscriptions` (data milik sendiri, tidak ada akses
+  admin/lintas-user sama sekali, termasuk Super Admin).
+- Frontend fetch `link` yang sudah tersimpan sekali saat mount (`Set<string>`), dipakai untuk
+  render ikon terisi/kosong per kartu tanpa query berulang per item.
+
+## 14. FAQ / Panduan Dalam-App (`faq`)
+
+Menu "FAQ / Panduan" (`app/(dashboard)/faq/page.tsx`) — accordion pertanyaan-jawaban seputar
+penggunaan GENSITI (absensi, reset password, ajukan izin, dll), terbuka untuk SEMUA jenjang
+termasuk Generus biasa (tidak ada `hideForGenerus` — ini justru paling berguna buat mereka).
+
+- **Tabel `faq`**: `pertanyaan`, `jawaban`, `kategori` (opsional, teks bebas + `<datalist>`
+  saran dari kategori yang sudah ada), `urutan` (integer, diatur manual lewat input angka biasa
+  di form — SENGAJA tidak drag-and-drop, supaya tidak over-engineer untuk kebutuhan yang
+  mungkin cuma belasan FAQ), `is_active` (bisa "disembunyikan" tanpa hapus permanen).
+- **RLS**: SELECT terbuka untuk `authenticated` kalau `is_active = true`, ATAU kalau
+  `get_user_role() = 'super_admin'` (supaya Super Admin tetap bisa lihat & kelola FAQ non-aktif
+  di halaman yang sama). INSERT/UPDATE/DELETE dibatasi `get_user_role() = 'super_admin'` saja —
+  fungsi `get_user_role()` di-reuse dari pola yang sudah ada di `feature_toggles`/`system_config`,
+  bukan ditulis ulang.
+- **Satu halaman untuk publik + admin** (bukan halaman terpisah) — tombol "+ Tambah FAQ" dan
+  aksi Edit/Hapus per item cuma muncul kalau `user.role.tingkatan === 'super_admin'`, memakai
+  `components/Modal.tsx` + `lib/toast.ts` + `lib/konfirmasi.ts` + `lib/audit.ts` (`logAudit`) —
+  toolkit CRUD-admin yang sama persis dipakai `Dokumen`/`Pengumuman`, bukan pola baru.
+- Accordion single-open (`expandedId` state) — bukan multi-expand, konsisten dengan makna
+  "accordion" pada umumnya. Pencarian & filter kategori client-side, pola sama dengan halaman
+  Berita/Dokumen/Kegiatan.
+- Menu ini (`menuKey: 'faq'`) langsung ditambahkan ke `MENU_GROUPS` di
+  `app/(dashboard)/pengaturan-fitur/page.tsx` sejak awal dibuat — pelajaran dari kelalaian
+  serupa di menu Berita (lihat §12).
+
+## 15. Yang Belum Terdokumentasi / Perlu Update Berkala
 
 - Dokumen ini snapshot per tanggal di atas — RPC & tabel baru harus ditambahkan ke §3/§4
   saat migrasi baru diterapkan lewat Supabase MCP (`apply_migration`).

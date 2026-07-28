@@ -181,6 +181,33 @@ export interface BeritaOrganisasi {
   gambar_url: string | null
 }
 
+// Bookmark artikel berita eksternal per user -- link sebagai identifier unik (bukan FK ke
+// BeritaOrganisasi.id, murni snapshot metadata biar tidak ikut rusak kalau baris sumbernya
+// nanti berubah/dibersihkan). Lihat ARCHITECTURE.md §12.
+export interface BeritaDisimpan {
+  id: string
+  link: string
+  judul: string
+  sumber: SumberBeritaOrganisasi
+  tanggal_publish: string | null
+  gambar_url: string | null
+  created_at: string
+}
+
+// FAQ/Panduan dalam-app -- dikelola Super Admin (tambah/edit/hapus tanpa deploy kode baru),
+// ditampilkan sebagai accordion di halaman publik utk semua jenjang. Lihat ARCHITECTURE.md §13.
+export interface Faq {
+  id: string
+  pertanyaan: string
+  jawaban: string
+  kategori: string | null
+  urutan: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  updated_by: string | null
+}
+
 export interface Pengumuman {
   id: string
   judul: string

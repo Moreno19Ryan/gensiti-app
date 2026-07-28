@@ -61,6 +61,38 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 28 Juli 2026 (lanjutan 6) — Dua fitur baru: Bookmark Berita & FAQ/Panduan
+
+Sebelum coding, dicek dulu pola reusable di codebase: tidak ada accordion/bookmark sebelumnya,
+tapi pola RLS "data milik sendiri" (`push_subscriptions`) dan toolkit CRUD-admin
+(`Modal`+`toast`+`konfirmasi`+`logAudit`, dipakai Dokumen/Pengumuman) sudah established dan
+di-reuse langsung, bukan dibuat ulang.
+
+- **Bookmark Berita** (`berita_disimpan`): ikon 🔖 toggle di tiap kartu Berita Organisasi (semua
+  4 sumber), halaman baru `app/(dashboard)/berita/tersimpan/page.tsx` (nested route, bukan menu
+  sidebar baru). Tabel pakai `link` sebagai identifier + snapshot metadata (judul/sumber/
+  tanggal/gambar) -- BUKAN FK ke `berita_organisasi.id`, supaya bookmark tidak ikut rusak kalau
+  baris cache RSS-nya berubah. RLS: satu policy `user_id = (select auth.uid())`, pola identik
+  `push_subscriptions`.
+- **FAQ/Panduan** (`faq`): accordion pertanyaan-jawaban, terbuka semua jenjang termasuk Generus
+  biasa. **Keputusan desain yang diubah dari rencana awal** (dikonfirmasi implisit lewat "jalankan
+  keduanya" setelah proposal ditunjukkan): SATU halaman (bukan 2 halaman publik+admin terpisah
+  seperti diminta awal) — tombol +Tambah/Edit/Hapus cuma muncul kalau Super Admin, persis pola
+  Dokumen/Pengumuman yang sudah established di app ini. RLS pakai `get_user_role()` (fungsi yang
+  sudah ada, dipakai `feature_toggles`/`system_config`) -- bukan tulis ulang subquery join.
+  `urutan` FAQ diatur lewat input angka biasa (bukan drag-and-drop) supaya tidak over-engineer.
+- Menu FAQ (`menuKey: 'faq'`) langsung dimasukkan ke `MENU_GROUPS` di halaman Pengaturan Fitur
+  sejak awal dibuat -- pelajaran dari kelalaian yang sama persis terjadi di menu Berita
+  sebelumnya (baru ketahuan & diperbaiki belakangan).
+- Verifikasi: `tsc`/`eslint` bersih di semua file yang diubah/ditambah, grants+RLS kedua tabel
+  dicek via `information_schema.role_table_grants` (pelajaran dari bug grants `berita_ldii`
+  lama, diterapkan sejak awal migrasi kali ini), halaman preview sementara + Playwright utk
+  kedua fitur (toggle bookmark, accordion single-open, search/filter kategori, visibility
+  tombol admin) -- dihapus setelah selesai. Sempat ketemu artefak false-positive saat cek dark
+  mode (`addInitScript` men-set class sebelum hydration React lalu ke-reset root layout `<html>`
+  JSX-nya) -- bukan bug aplikasi, cuma metode testing yang salah, diperbaiki dengan
+  `page.evaluate()` SETELAH `networkidle` (pola yang sudah terbukti benar di sesi-sesi sebelumnya).
+
 ### Sesi 28 Juli 2026 (lanjutan 5) — Tambah sumber ke-4: DPD LDII Kota Bekasi (paling relevan lokal, jadi tab default)
 
 Temuan Reno: `ldiibekasikota.or.id` adalah situs resmi DPD LDII Kota Bekasi (sudah pernah ada di
