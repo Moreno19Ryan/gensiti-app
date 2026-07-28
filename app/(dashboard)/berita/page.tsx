@@ -21,17 +21,45 @@ const BookmarkIcon = ({ className, filled }: { className?: string; filled?: bool
   </svg>
 )
 
+// Tab "Semua" -- gabungan lintas sumber, bukan nilai `sumber` yang valid di database. Dipisah
+// jadi union type sendiri di level UI (bukan diikutkan ke SumberBeritaOrganisasi di lib/types.ts)
+// supaya tipe kolom `sumber` di database tetap ketat/bersih.
+type TabSumber = SumberBeritaOrganisasi | 'semua'
+
 // Urutan SENGAJA: LDII Kota Bekasi paling kiri & jadi tab default (lihat activeSumber di bawah)
 // -- ini sumber PALING relevan lokal buat Generus Bekasi Timur (bagian dari Kota Bekasi),
 // dibanding 3 sumber lain yang levelnya nasional/lintas daerah. Keputusan ini eksplisit
 // dikonfirmasi Reno (Opsi A dari 2 usulan tata letak: tab biasa tapi jadi default + badge,
-// bukan section terpisah -- supaya tidak menambah kompleksitas komponen baru).
-const SUMBER_LIST: SumberBeritaOrganisasi[] = ['ldii-bekasi', 'ldii', 'asad', 'senkom']
-const SUMBER_LABEL: Record<SumberBeritaOrganisasi, string> = {
+// bukan section terpisah -- supaya tidak menambah kompleksitas komponen baru). Tab "Semua"
+// SENGAJA ditaruh PALING KANAN (bukan jadi default) -- supaya keputusan prioritas lokal itu
+// tidak diam-diam berubah saat tab ini ditambahkan.
+const TAB_LIST: TabSumber[] = ['ldii-bekasi', 'ldii', 'asad', 'senkom', 'semua']
+const SUMBER_LABEL: Record<TabSumber, string> = {
   'ldii-bekasi': 'LDII Kota Bekasi',
   ldii: 'LDII',
   asad: 'PERSINAS ASAD',
   senkom: 'SENKOM Mitra Polri',
+  semua: 'Semua',
+}
+
+// Favicon RESMI tiap situs sumber -- diambil apa adanya (hotlink langsung, TIDAK di-crop/
+// diwarnai ulang/didistorsi), sama seperti pola hotlink gambar_url artikel. Sumber URL-nya:
+// tag <image><url> di RSS feed masing-masing (LDII/ASAD/LDII Kota Bekasi) atau favicon.ico
+// standar (SENKOM, Blogger tidak menyertakan <image> channel).
+const FAVICON_URL: Record<SumberBeritaOrganisasi, string> = {
+  'ldii-bekasi': 'https://i0.wp.com/ldiibekasikota.or.id/wp-content/uploads/2023/02/Logo-LDII-Kota-Bekasi-favicon-rev.png?fit=32%2C30&ssl=1',
+  ldii: 'https://www.ldii.or.id/wp-content/uploads/2020/04/cropped-ldii_logi-32x32.png',
+  asad: 'https://official.asad.or.id/wp-content/uploads/2022/02/cropped-Logo-Persinas-Asad-Asli-32x32.jpg',
+  senkom: 'https://www.senkom.or.id/favicon.ico',
+}
+
+// Fallback kalau favicon gagal dimuat (lihat state iconGagal) -- inisial, bukan menggambar
+// ulang logo.
+const SUMBER_INISIAL: Record<SumberBeritaOrganisasi, string> = {
+  'ldii-bekasi': 'LB',
+  ldii: 'L',
+  asad: 'A',
+  senkom: 'S',
 }
 
 // Menu "Berita Organisasi" -- mirror ringkasan RSS/feed publik organisasi afiliasi (LDII,
@@ -52,9 +80,12 @@ export default function BeritaOrganisasiPage() {
   const { enabled: featureEnabled, checking: featureChecking } = useFeatureAccess(user, 'berita-organisasi')
   const [data, setData] = useState<BeritaOrganisasi[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeSumber, setActiveSumber] = useState<SumberBeritaOrganisasi>('ldii-bekasi')
+  const [activeSumber, setActiveSumber] = useState<TabSumber>('ldii-bekasi')
   const [search, setSearch] = useState('')
   const [filterKategori, setFilterKategori] = useState('')
+  // Favicon yang gagal dimuat per sumber -- fallback ke lencana inisial (SUMBER_INISIAL)
+  // daripada ikon patah/kosong.
+  const [iconGagal, setIconGagal] = useState<Partial<Record<SumberBeritaOrganisasi, boolean>>>({})
   // Link artikel yang sudah di-bookmark user ini (bukan array BeritaDisimpan penuh -- cukup
   // link-nya saja utk cek cepat status tersimpan/belum per kartu).
   const [savedLinks, setSavedLinks] = useState<Set<string>>(new Set())
@@ -140,7 +171,7 @@ export default function BeritaOrganisasiPage() {
     }
   }
 
-  const gantiSumber = (s: SumberBeritaOrganisasi) => {
+  const gantiSumber = (s: TabSumber) => {
     setActiveSumber(s)
     // Reset filter saat ganti tab -- kategori per sumber beda-beda, filter lama bisa nyangkut
     // ke kategori yang tidak ada di sumber baru dan bikin hasil kosong yang membingungkan.
@@ -148,7 +179,7 @@ export default function BeritaOrganisasiPage() {
     setFilterKategori('')
   }
 
-  const dataSumber = data.filter(b => b.sumber === activeSumber)
+  const dataSumber = activeSumber === 'semua' ? data : data.filter(b => b.sumber === activeSumber)
   const kategoriUnik = Array.from(new Set(dataSumber.flatMap(b => b.kategori))).sort((a, b) => a.localeCompare(b))
 
   const filtered = dataSumber.filter(b => {
@@ -174,17 +205,40 @@ export default function BeritaOrganisasiPage() {
       </div>
 
       <div className="flex items-center justify-between gap-2">
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {SUMBER_LIST.map(s => (
+        {/* Nav tab bergaya "liquid glass" -- track semi-transparan + blur (backdrop-blur),
+            border tipis dgn highlight, chip aktif mengambang (shadow) di dalamnya. Pola
+            struktur (track + chip mengambang) SAMA dgn segmented control Akun/Biodata di
+            generus/page.tsx -- cuma treatment-nya diganti kaca, bukan pola baru. Transisi
+            cross-fade sederhana (bukan indikator yang "meluncur" presisi antar posisi) --
+            konsisten dgn pola cross-fade yang sudah dipakai di seluruh app ini. */}
+        <div className="flex gap-1 p-1.5 rounded-full bg-white/50 dark:bg-slate-800/45 backdrop-blur-xl backdrop-saturate-150 border border-white/70 dark:border-white/10 shadow-lg shadow-slate-900/10 dark:shadow-black/30 overflow-x-auto">
+          {TAB_LIST.map(s => (
             <button
               key={s}
               onClick={() => gantiSumber(s)}
-              className={`px-3.5 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors flex items-center gap-1 ${
+              className={`shrink-0 flex items-center gap-1.5 pl-1 pr-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors duration-300 ${
                 activeSumber === s
-                  ? 'bg-indigo-600 text-white shadow'
-                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
+                  ? 'bg-white/90 dark:bg-slate-700/90 text-blue-600 dark:text-blue-400 shadow-md ring-1 ring-white/70 dark:ring-white/10'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
               }`}
             >
+              {s === 'semua' ? (
+                <span className="w-5 h-5 rounded-full bg-blue-50 dark:bg-blue-900/40 flex items-center justify-center text-xs shrink-0">✦</span>
+              ) : (
+                <span className="w-5 h-5 rounded-full bg-white ring-1 ring-black/5 flex items-center justify-center overflow-hidden shrink-0">
+                  {iconGagal[s] ? (
+                    <span className="text-[9px] font-bold text-slate-500">{SUMBER_INISIAL[s]}</span>
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={FAVICON_URL[s]}
+                      alt=""
+                      className="w-full h-full object-contain"
+                      onError={() => setIconGagal(prev => ({ ...prev, [s]: true }))}
+                    />
+                  )}
+                </span>
+              )}
               {s === 'ldii-bekasi' && <span>📍</span>}
               {SUMBER_LABEL[s]}
             </button>
@@ -224,7 +278,7 @@ export default function BeritaOrganisasiPage() {
       ) : dataSumber.length === 0 ? (
         <div className="bg-white dark:bg-slate-800 rounded-2xl p-12 text-center text-slate-400">
           <div className="text-4xl mb-2">📰</div>
-          <p>Belum ada berita dari {SUMBER_LABEL[activeSumber]} nih</p>
+          <p>{activeSumber === 'semua' ? 'Belum ada berita nih' : `Belum ada berita dari ${SUMBER_LABEL[activeSumber]} nih`}</p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="bg-white dark:bg-slate-800 rounded-2xl p-12 text-center text-slate-400">

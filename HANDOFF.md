@@ -61,6 +61,38 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 28 Juli 2026 (lanjutan 7) — Redesain nav tab Berita jadi "liquid glass"/glassmorphism
+
+Permintaan Reno: tab sumber di halaman Berita diubah jadi model kaca (terinspirasi iOS Liquid
+Glass & Samsung One UI), ikon tiap tab pakai favicon resmi tiap situs, + tab "Semua". Murni
+redesain visual, tidak menyentuh Edge Function/pg_cron.
+
+- **Riset dulu sebelum coding** (sesuai instruksi Reno): dicek pola tab yang sudah ada
+  (segmented-control Akun/Biodata di `generus/page.tsx` — dipakai sebagai basis struktur,
+  bukan bikin baru), dicek keamanan `backdrop-filter` (aman sejak lama di Chrome/Safari/
+  Firefox modern), dan dicek ketersediaan favicon resmi tiap 4 sumber lewat `net.http_get`
+  langsung ke tag `<image>` RSS feed / `favicon.ico` — semua 4 ternyata ada & bisa di-hotlink
+  apa adanya.
+- **Mockup ditunjukkan dulu** sebagai HTML interaktif (dipublish sbg Artifact) sebelum coding,
+  sesuai instruksi "tunjukkan rencana/mockup dulu" -- pakai lencana inisial placeholder krn
+  Artifact API tidak bisa memuat gambar dari domain luar (CSP), dijelaskan eksplisit ke Reno.
+  3 poin keputusan desain ditanyakan lewat mockup ini (posisi tab "Semua", bentuk bingkai
+  ikon, jenis animasi) -- semua dijawab "gas lanjutkan" (setuju rekomendasi default).
+- Implementasi: track tab jadi `backdrop-blur-xl` + semi-transparan + `rounded-full` + border
+  highlight, chip aktif mengambang (shadow+ring). Tab "Semua" ditambah sbg union type
+  `TabSumber` khusus UI (bukan nilai valid kolom `sumber` di database), ditaruh PALING KANAN
+  (bukan default) supaya tidak diam-diam mengubah keputusan lama (LDII Kota Bekasi = default).
+  Fallback lencana inisial (`SUMBER_INISIAL`) kalau favicon gagal dimuat.
+- **Verifikasi favicon nyata TIDAK bisa dipastikan render dari sandbox ini** -- dicek lewat
+  Playwright, 3 dari 4 favicon eksplisit gagal dimuat (`net::ERR_TUNNEL_CONNECTION_FAILED`,
+  sandbox ini memang blokir domain eksternal, sudah berkali-kali dikonfirmasi sepanjang sesi
+  ini) dan fallback ke lencana inisial terlihat rapi. Sudah dipastikan lewat `net.http_get`
+  dari database bahwa keempat URL favicon itu VALID (200 OK) -- tinggal Reno cek preview
+  Vercel (akses internet penuh) utk pastikan favicon asli tampil benar, bukan cuma lencana
+  inisial fallback.
+- `tsc`/`eslint` bersih, logic tab-switching (termasuk "Semua" menggabungkan data lintas
+  sumber) diverifikasi lewat halaman preview sementara + Playwright, dihapus setelah selesai.
+
 ### Sesi 28 Juli 2026 (lanjutan 6) — Dua fitur baru: Bookmark Berita & FAQ/Panduan
 
 Sebelum coding, dicek dulu pola reusable di codebase: tidak ada accordion/bookmark sebelumnya,
