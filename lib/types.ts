@@ -170,6 +170,9 @@ export interface BeritaLdii {
   link: string
   tanggal_publish: string | null
   kategori: string[]
+  // Hotlink URL gambar (diregex dari <img> pertama di content:encoded, bukan salinan file) --
+  // null kalau artikelnya tidak punya gambar terdeteksi.
+  gambar_url: string | null
 }
 
 export interface Pengumuman {
