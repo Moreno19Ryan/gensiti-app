@@ -14,6 +14,16 @@ lewat aplikasi GENSITI itu sendiri — memang sengaja begitu, karena kalau akun
 Super Admin sendiri yang bermasalah, aplikasi bukan lagi jalur yang bisa
 diandalkan.
 
+Catatan penting: Runbook ini berasumsi Reno tetap punya akses ke Supabase
+Dashboard sebagai project owner. Kalau akses itu SENDIRI yang hilang (akun
+Supabase ke-lock, 2FA hilang, dll), seluruh runbook ini tidak bisa
+dieksekusi — ini di luar cakupan dokumen. Mitigasi alami: setelah migrasi
+ownership project ke akun generusbekasitimur@gmail.com selesai (dua akun
+jadi Owner sejajar), akun kedua ini bisa jadi jalur akses cadangan kalau
+akun utama bermasalah. Sampai migrasi itu selesai, akses tunggal lewat akun
+Reno adalah titik rawan yang perlu disadari, bukan diasumsikan aman begitu
+saja.
+
 ---
 
 ## Kenapa ini aman dilakukan langsung lewat Dashboard
