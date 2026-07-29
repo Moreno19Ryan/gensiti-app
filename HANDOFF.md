@@ -61,6 +61,62 @@ Praktik yang sudah berjalan dan sebaiknya diteruskan:
 
 ## 2. Yang Baru Saja Dikerjakan
 
+### Sesi 29 Juli 2026 (lanjutan) — A3 selesai: backup otomatis ke Storage (Opsi C) + restorability diverifikasi nyata
+
+⚠️ **TINDAK LANJUT MANUAL DIPERLUKAN DARI RENO**: project Supabase throwaway
+`gensiti-a3-restore-verification-throwaway` (ref `zlzmhvazvwarontzqune`) dipakai utk
+verifikasi restore, sudah di-**pause** tapi **BELUM terhapus tuntas** — MCP tools yang
+tersedia tidak punya `delete_project` (cuma `pause_project`). Tolong hapus manual lewat
+Supabase Dashboard → Project Settings → General → Delete Project, supaya tidak menggantung
+selamanya di organisasi.
+
+Opsi B (reminder mingguan) sudah selesai sesi sebelumnya. Sesi ini mengerjakan Opsi C yang
+sempat ditunda (assessment awal: "red flag" soal siapa boleh akses file backup otomatis,
+krn `keuangan` sengaja dikecualikan dari wewenang Super Admin). Rencana ditunjukkan dulu +
+disetujui dgn 4 catatan sebelum eksekusi (lihat percakapan): approve penuh model akses,
+sertakan status line in-app, TAMBAH verifikasi restorability nyata (bukan cuma asumsi),
+catat retensi 8 minggu sbg trade-off sadar.
+
+- **Storage & akses** (menyelesaikan red flag awal): bucket `backups` PRIVATE, SENGAJA
+  tanpa satu pun storage policy — nol akses lewat aplikasi (beda dari backup manual yang
+  didownload Super Admin sendiri), cuma service role yang bisa tulis, cuma Reno via
+  Supabase Dashboard yang bisa baca. Diverifikasi eksplisit (`pg_policies` query) tetap nol
+  setelah upload/delete beroperasi.
+- **Edge Function `scheduled-backup`** (pola sama `fetch-berita-organisasi`): query 10 tabel
+  sama persis backup manual (list jadi 3-arah manual-sync: `app/api/backup/route.ts` ↔
+  `backup-data/page.tsx` ↔ Edge Function baru), upload JSON timestamped ke bucket, catat
+  hasil ke `system_config.last_auto_backup_at`/`last_auto_backup_error` (kolom baru, TERPISAH
+  dari `last_backup_at` yang melacak backup manual), retensi 8 file terbaru.
+- **Cron**: job lama `reminder-backup-belum-dilakukan` (premisnya jadi menyesatkan begitu
+  ada backup otomatis) di-drop, diganti 2 job baru -- `scheduled-backup` (pemicu, Senin
+  01:00 UTC) & `alert-auto-backup-bermasalah` (cek hasil 2 jam kemudian, grace period 9 hari
+  sebelum alert, 3 channel notifikasi/push/email meniru pola fungsi reminder lama).
+- **Status in-app**: baris read-only di halaman Backup Data ("Backup otomatis terakhir: ...")
+  — TANPA link download apa pun, murni ketenangan pikiran, sesuai keputusan.
+- **Verifikasi end-to-end sebelum lanjut ke restorability**: dipanggil manual lewat
+  `trigger_scheduled_backup()` (exercise jalur pg_cron asli persis), dikonfirmasi file
+  genuinely masuk bucket (~198KB), `system_config` ter-update benar.
+- **Verifikasi restorability (poin tambahan dari Reno) -- BENAR-BENAR dieksekusi, bukan cuma
+  divalidasi bentuknya**: `create_branch` GAGAL (`PaymentRequiredException` — project ini
+  Free plan, database branching eksklusif Pro, temuan baru dicatat luas di CLAUDE.md &
+  PLAN_MIGRASI_OTORISASI_RPC.md §4, lihat di bawah). Dialihkan ke **project Supabase
+  throwaway terpisah** ($0/bulan) sbg gantinya — skema 10 tabel disalin manual dari
+  production (FK ke `auth.users` sengaja dilepas, di luar cakupan yang diuji), file backup
+  ASLI (bukan data tiruan, diambil dari bucket privat lewat jalur Edge Function yg sama +
+  `x-internal-secret`, sempat pakai debug GET sementara yang dihapus lagi setelah dipakai)
+  direstore mengikuti PERSIS prosedur ARCHITECTURE.md §8. Hasil: **10/10 tabel cocok jumlah
+  barisnya persis** dgn `tableStatus` di file (desa 10, kelompok 50, roles 19, users 85,
+  generus 84, kegiatan 2, absensi 80, pengumuman 0, dokumen 0, notifikasi 133), nol error FK.
+- **Dampak lebih luas ditemukan & didokumentasikan** (poin ke-2 dari Reno, bukan cuma soal
+  A3): CLAUDE.md guardrail soal `create_branch` dikoreksi (Free plan tidak support,
+  2 opsi alternatif dicatat: upgrade Pro / project throwaway, plus catatan MCP tidak punya
+  `delete_project`). `PLAN_MIGRASI_OTORISASI_RPC.md` §4 & `NATIVE_READINESS_AUDIT.md`
+  Prioritas #2 ditambah peringatan eksplisit: **Fase 4 (Edge Function GoTrue) belum boleh
+  mulai sebelum strategi testing diputuskan** — beda kelas risiko dari Fase 0-3 yang sudah
+  selesai (Fase 0-3 aditif murni & reversibel, Fase 4 menyentuh alur auth yang salah
+  eksekusi bisa mengunci semua user keluar).
+- `tsc`/`eslint` bersih di `backup-data/page.tsx`.
+
 ### Sesi 29 Juli 2026 — A1 selesai (runbook recovery Super Admin) + Redesain navigasi Opsi C, Tahap 2: bottom nav mobile "liquid glass"
 
 **A1 (docs, PR #38):** `RUNBOOK_RECOVERY_SUPER_ADMIN.md` (draf sudah ada dari sesi sebelumnya)

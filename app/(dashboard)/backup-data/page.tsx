@@ -66,6 +66,11 @@ export default function BackupDataPage() {
     BACKUP_TABLES.map(t => ({ key: t.key, label: t.label, status: 'pending' }))
   )
   const [lastBackup, setLastBackup] = useState<{ time: string; totalRows: number; fileName: string } | null>(null)
+  // Status backup OTOMATIS (A3 Opsi C) -- read-only, murni ketenangan pikiran. TIDAK ada link
+  // download di sini sama sekali (beda dari backup manual di atas) -- file-nya ada di bucket
+  // Storage privat tanpa satu pun policy akses klien, satu-satunya jalur baca adalah Supabase
+  // Dashboard sebagai project owner. Lihat migrasi a3_backup_otomatis_schema & ARCHITECTURE.md.
+  const [autoBackup, setAutoBackup] = useState<{ at: string | null; error: string | null } | 'loading'>('loading')
 
   useEffect(() => {
     if (!user) return
@@ -73,6 +78,12 @@ export default function BackupDataPage() {
       router.replace('/dashboard')
     }
   }, [user, router])
+
+  useEffect(() => {
+    if (!user || user.role?.tingkatan !== 'super_admin') return
+    supabase.from('system_config').select('last_auto_backup_at, last_auto_backup_error').eq('id', true).maybeSingle()
+      .then(({ data }) => setAutoBackup({ at: data?.last_auto_backup_at ?? null, error: data?.last_auto_backup_error ?? null }))
+  }, [user])
 
   if (!user || user.role?.tingkatan !== 'super_admin') return null
 
@@ -173,6 +184,30 @@ export default function BackupDataPage() {
         <h2 className="font-bold text-slate-800">Backup Data</h2>
         <p className="text-slate-400 text-sm">Ekspor seluruh data organisasi ke satu file JSON untuk cadangan manual</p>
       </div>
+
+      {/* Status backup otomatis -- read-only, tidak ada tombol/link download apa pun (lihat
+          catatan di deklarasi state autoBackup). Tabel & pengecualiannya sama persis dgn
+          backup manual di bawah, jadwal mingguan lewat pg_cron (ARCHITECTURE.md). */}
+      {autoBackup !== 'loading' && (
+        <div className={`rounded-2xl border p-4 flex items-start gap-3 text-sm ${
+          autoBackup.error
+            ? 'bg-amber-50 border-amber-100 dark:bg-amber-900/20 dark:border-amber-800'
+            : 'bg-white border-slate-100 dark:bg-slate-800 dark:border-slate-700'
+        }`}>
+          <span className="text-lg shrink-0">{autoBackup.error ? '⚠️' : '🔄'}</span>
+          <div>
+            <p className="font-medium text-slate-700 dark:text-slate-200">
+              Backup otomatis {autoBackup.error ? 'bermasalah' : 'aktif'}
+            </p>
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+              {autoBackup.at
+                ? `Terakhir berhasil: ${new Date(autoBackup.at).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })}`
+                : 'Belum pernah tercatat ada backup otomatis yang berhasil.'}
+              {autoBackup.error && ` -- ${autoBackup.error}`}
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
         <div className="flex items-start gap-3 mb-4 p-3 bg-amber-50 border border-amber-100 rounded-xl dark:bg-amber-900/20 dark:border-amber-800">
