@@ -33,6 +33,16 @@ interface NavItem {
   // Menu yang tidak relevan untuk Generus biasa (bukan pengurus) — mis. Keuangan, Pengguna, Organisasi.
   // Generus biasa hanya perlu melihat Kegiatan, Pengumuman, Dokumen, Notifikasi, dan Profil sendiri.
   hideForGenerus?: boolean
+  // Kebalikan hideForGenerus -- item yang CUMA relevan buat Generus biasa (pengurus di tingkatan
+  // yang sama tidak perlu lihat ini, mereka punya menu setara sendiri). SAAT INI cuma dipakai
+  // '/profil/riwayat-absensi' (lihat komentar di baris itu) -- ditambahkan bareng bottom nav
+  // mobile (Tahap 2 redesain navigasi), bukan berdiri sendiri.
+  showOnlyForGenerus?: boolean
+  // Item bottom-nav-mobile-ONLY (Tahap 2) -- tidak pernah muncul di sidebar desktop, walau lolos
+  // semua filter roles/hideForGenerus di atas. Dipakai utk item yang sengaja tidak dinaikkan ke
+  // sidebar (mis. shortcut riwayat presensi Generus) supaya scope desktop dari Tahap 1 tidak
+  // ikut berubah diam-diam.
+  hideFromSidebar?: boolean
   // Kunci pencocokan ke tabel feature_toggles (lib/feature-toggles.ts) -- HANYA menu yang
   // di-seed di migrasi create_feature_toggles yang punya field ini. Menu tanpa menuKey (mis.
   // Dashboard, Notifikasi, dan semua menu eksklusif Super Admin) selalu tampil, tidak pernah
@@ -76,6 +86,14 @@ const navItems: NavItem[] = [
   { href: '/generus', label: 'Data Generus', icon: '👥', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], hideForGenerus: true, menuKey: 'generus' },
   { href: '/kegiatan', label: 'Kegiatan', icon: '📅', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], menuKey: 'kegiatan' },
   { href: '/absensi', label: 'Absensi', icon: '✅', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, requiresPresensiAccess: true, menuKey: 'absensi' },
+  // Absensi (Generus) -- shortcut bottom nav mobile (Tahap 2) ke riwayat presensi milik sendiri.
+  // Halaman /profil/riwayat-absensi SUDAH ADA (dulu tab "Presensi" di Profil), tapi belum pernah
+  // jadi menu top-level -- cuma dinaikkan jadi shortcut di sini, BUKAN perubahan akses (dicek
+  // eksplisit ke Reno sebelum dikerjakan). showOnlyForGenerus supaya pengurus di tingkatan yang
+  // sama (yang juga lolos filter roles di bawah) TIDAK ikut lihat -- mereka punya /absensi
+  // sendiri (baris di atas) yang beda tujuannya (kelola, bukan lihat riwayat sendiri).
+  // hideFromSidebar: Tahap 2 scope-nya mobile saja, desktop dari Tahap 1 sengaja tidak diubah.
+  { href: '/profil/riwayat-absensi', label: 'Absensi', icon: '✅', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], showOnlyForGenerus: true, hideFromSidebar: true },
   { href: '/keuangan', label: 'Keuangan', icon: '💰', roles: ['super_admin', 'daerah', 'desa', 'kelompok'], hideForGenerus: true, menuKey: 'keuangan' },
   { href: '/pengumuman', label: 'Pengumuman', icon: '📢', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], menuKey: 'pengumuman' },
   { href: '/dokumen', label: 'Dokumen', icon: '📁', roles: ['super_admin', 'daerah', 'desa', 'kelompok', 'ppg'], menuKey: 'dokumen' },
@@ -111,11 +129,34 @@ const navItems: NavItem[] = [
   { href: '/pengaturan-fitur', label: 'Pengaturan Fitur', icon: '🎛️', roles: ['super_admin'] },
 ]
 
+// Bottom nav mobile (Tahap 2) -- 4 menu utama per kelompok peran, sisanya masuk sheet
+// "Lainnya". SENGAJA daftar manual per peran (bukan "ambil N pertama dari urutan navItems
+// di atas") -- urutan navItems disusun utk alasan lain (mis. cluster PPG berurutan), belum
+// tentu representasi "paling sering dipakai" per peran. Dikonfirmasi via mockup interaktif
+// sebelum implementasi (redesain navigasi Opsi C, Tahap 2). Notifikasi SENGAJA tidak diberi
+// slot di peran manapun -- sudah ada lonceng permanen di topbar, tidak perlu dobel-alokasikan.
+const BOTTOM_NAV_GENERUS = ['/dashboard', '/kegiatan', '/profil/riwayat-absensi', '/pengumuman']
+const BOTTOM_NAV_PPG = ['/dashboard', '/ppg', '/catatan-pembinaan', '/kegiatan']
+const BOTTOM_NAV_PENGURUS = ['/dashboard', '/absensi', '/generus', '/keuangan']
+const BOTTOM_NAV_SUPER_ADMIN = ['/dashboard', '/generus', '/keuangan', '/monitoring']
+
+// isGenerus dicek DULU sebelum tingkatan -- Generus biasa tingkatannya bisa kelompok/desa/daerah
+// (ikut struktur tempatnya terdaftar), bukan nilai tingkatan tersendiri; yang membedakan dia dari
+// pengurus beneran di tingkatan yang sama adalah isGenerusBiasa(), bukan tingkatan.
+function getBottomNavHrefs(tingkatan: string | undefined, isGenerus: boolean): string[] {
+  if (isGenerus) return BOTTOM_NAV_GENERUS
+  if (tingkatan === 'ppg') return BOTTOM_NAV_PPG
+  if (tingkatan === 'super_admin') return BOTTOM_NAV_SUPER_ADMIN
+  return BOTTOM_NAV_PENGURUS
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const { user, loading } = useUser()
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  // Sheet "Lainnya" (Tahap 2, mobile) -- menggantikan drawer hamburger lama sepenuhnya
+  // (drawer & tombol hamburger-nya sudah dihapus, lihat catatan di <aside> & topbar di bawah).
+  const [bottomSheetOpen, setBottomSheetOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   // Tooltip hover ikon (saat collapsed) SENGAJA satu instance dibagi bareng (bukan span
   // per-item) & posisinya dihitung lewat JS, bukan murni CSS `absolute` di dalam tiap item --
@@ -214,11 +255,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => { cancelled = true; clearInterval(interval) }
   }, [user, router])
 
-  // Tutup sidebar mobile tiap kali route berganti -- reaksi ke perubahan `pathname`
+  // Tutup sheet "Lainnya" tiap kali route berganti -- reaksi ke perubahan `pathname`
   // (external signal dari router), bukan derived state dari props/state React lain.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSidebarOpen(false)
+    setBottomSheetOpen(false)
   }, [pathname])
 
   const toggleCollapsed = () => {
@@ -252,16 +293,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const isGenerus = isGenerusBiasa(user)
   const avatarUrl = user.avatar_url || user.foto_url
 
-  const visibleNav = navItems.filter(item => {
+  // Predikat dasar dibagi bareng sidebar desktop & bottom nav mobile (Tahap 2) supaya aturan
+  // roles/toggle-fitur tidak ditulis dua kali dan berisiko ketinggalan sinkron -- satu-satunya
+  // beda ANTARA dua permukaan itu adalah hideFromSidebar (lihat pemakaiannya di bawah).
+  const isNavItemVisible = (item: NavItem) => {
     if (!tingkatan || !item.roles.includes(tingkatan)) return false
     if (item.requiresKvs && !canManageMembers && !(item.allowTeamIT && isTeamIT(user))) return false
     if (item.requiresPresensiAccess && !canManagePresensi) return false
     if (item.hideForGenerus && isGenerus) return false
+    if (item.showOnlyForGenerus && !isGenerus) return false
     if (item.menuKey && !isFeatureEnabled(featureToggles, item.menuKey, tingkatan)) return false
     return true
-  })
+  }
 
-  const currentLabel = visibleNav.find(n => pathname.startsWith(n.href))?.label || ''
+  const visibleNav = navItems.filter(item => isNavItemVisible(item) && !item.hideFromSidebar)
+  const visibleNavMobile = navItems.filter(isNavItemVisible)
+
+  const bottomNavHrefs = getBottomNavHrefs(tingkatan, isGenerus)
+  const bottomNavItems = bottomNavHrefs
+    .map(href => visibleNavMobile.find(n => n.href === href))
+    .filter((n): n is NavItem => !!n)
+  const lainnyaItems = visibleNavMobile.filter(n => !bottomNavHrefs.includes(n.href))
+
+  const currentLabel = visibleNavMobile.find(n => pathname.startsWith(n.href))?.label || ''
 
   return (
     <div className="relative isolate flex min-h-screen bg-slate-100 dark:bg-slate-900 transition-colors duration-200">
@@ -274,11 +328,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           sini, bukan cuma di belakang elemen tanpa position). */}
       <div className="hidden lg:block fixed -z-10 top-[-80px] left-[-100px] w-80 h-80 rounded-full bg-blue-500/20 dark:bg-blue-500/10 blur-[80px] pointer-events-none" />
       <div className="hidden lg:block fixed -z-10 bottom-[-100px] left-10 w-72 h-72 rounded-full bg-blue-400/15 dark:bg-blue-400/10 blur-[80px] pointer-events-none" />
-
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/50 z-20 lg:hidden" onClick={() => setSidebarOpen(false)} />
-      )}
 
       {/* Konfirmasi Logout */}
       {confirmLogout && (
@@ -303,21 +352,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       )}
 
-      {/* Sidebar -- Tahap 1 dari redesain "liquid glass" (mockup direview & disetujui Reno
-          sebelum implementasi). Mobile (drawer geser via sidebarOpen) SENGAJA tidak disentuh
-          sama sekali di tahap ini -- masih solid bg-blue-900 persis seperti sebelumnya, bottom
-          nav mobile menyusul di tahap terpisah. Hanya kelas ber-prefix lg: di bawah yang baru. */}
+      {/* Sidebar -- desktop only sejak Tahap 2 (redesain navigasi Opsi C). Drawer mobile lama
+          (geser dari kiri, trigger hamburger) sudah DIHAPUS TOTAL -- digantikan bottom nav +
+          sheet "Lainnya" di bawah (lihat sebelum </main>). Makanya elemen ini sekarang `hidden
+          lg:flex`, tidak lagi merender apa pun di mobile sama sekali. */}
       <aside className={[
-        'fixed top-0 left-0 h-full bg-blue-900 text-white flex flex-col shadow-xl z-30 transition-all duration-300 ease-in-out overflow-hidden',
+        'hidden lg:flex flex-col bg-blue-900 text-white shadow-xl z-30 transition-all duration-300 ease-in-out',
         // lg:overflow-visible -- perlu supaya tooltip hover ikon (saat collapsed) bisa "keluar"
         // ke kanan sidebar tanpa terpotong. Aman dilepas krn tidak ada child dgn background
         // solid yang nempel edge-to-edge (semua section cuma border-b/border-t, transparan)
         // yang bisa "nongol" lewat rounded corner kalau overflow tidak lagi di-hidden.
-        'lg:sticky lg:top-2 lg:mb-2 lg:ml-2 lg:h-[calc(100vh-1rem)] lg:translate-x-0 lg:shrink-0 lg:rounded-3xl lg:overflow-visible',
+        'lg:sticky lg:top-2 lg:mb-2 lg:ml-2 lg:h-[calc(100vh-1rem)] lg:shrink-0 lg:rounded-3xl lg:overflow-visible',
         // Glass: semi-transparan + blur + saturate, border highlight tipis (ring-inset), shadow
         // lembut menggantikan shadow-xl solid bawaan -- prinsip One UI di DESIGN_BRIEF_GENSITI.md.
         'lg:bg-blue-900/75 lg:backdrop-blur-xl lg:backdrop-saturate-150 lg:ring-1 lg:ring-inset lg:ring-white/10 lg:shadow-2xl lg:shadow-blue-950/40',
-        sidebarOpen ? 'translate-x-0 w-64' : '-translate-x-full w-64',
         collapsed ? 'lg:w-16' : 'lg:w-60',
       ].join(' ')}>
 
@@ -393,12 +441,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {visibleNav.map((item) => {
             const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
             return (
-              // "collapsed" konseptnya cuma ada di desktop (mobile selalu drawer lebar penuh,
-              // lihat komentar di <aside>) -- makanya semua kelas turunan collapsed di bawah
-              // sengaja di-prefix lg: supaya kalau localStorage kebetulan menyimpan collapsed=true
-              // saat window di-resize ke lebar mobile, label menu TETAP tampil (bukan cuma ikon
-              // tanpa keterangan). aria-label (bukan title) dipakai supaya tidak dobel sama
-              // tooltip custom di bawah, tapi screen reader tetap dapat nama menunya.
+              // Sejak <aside> jadi `hidden lg:flex` (Tahap 2, lihat catatan di atasnya), blok ini
+              // TIDAK PERNAH dirender di mobile sama sekali -- kelas collapsed di bawah aman polos
+              // tanpa prefix lg: (beda dari sebelumnya). aria-label (bukan title) dipakai supaya
+              // tidak dobel sama tooltip custom di bawah, tapi screen reader tetap dapat nama menunya.
               <Link key={item.href} href={item.href} aria-label={collapsed ? item.label : undefined}
                 onMouseEnter={e => {
                   if (!collapsed) return
@@ -406,13 +452,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   setHoverTip({ label: item.label, top: r.top + r.height / 2, left: r.right })
                 }}
                 onMouseLeave={() => setHoverTip(null)}
-                className={`flex items-center rounded-xl text-sm font-medium transition-all gap-3 px-3 py-2.5 ${
-                  collapsed ? 'lg:justify-center lg:gap-0 lg:px-0 lg:w-10 lg:h-10 lg:mx-auto' : ''
+                className={`flex items-center rounded-xl text-sm font-medium transition-all ${
+                  collapsed ? 'justify-center w-10 h-10 mx-auto' : 'gap-3 px-3 py-2.5'
                 } ${
                   isActive ? 'bg-white text-blue-900 shadow-sm animate-nav-pop' : 'text-blue-100 hover:bg-blue-800 hover:text-white'
                 }`}>
                 <span className="text-base shrink-0">{item.icon}</span>
-                <span className={collapsed ? 'lg:hidden' : ''}>{item.label}</span>
+                {!collapsed && item.label}
               </Link>
             )
           })}
@@ -445,12 +491,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* Topbar */}
         <header className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 py-3 flex items-center justify-between shrink-0 sticky top-0 z-10 transition-colors duration-200">
           <div className="flex items-center gap-3">
-            <button onClick={() => setSidebarOpen(true)}
-              className="lg:hidden p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition text-slate-600 dark:text-slate-300" aria-label="Buka menu">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
+            {/* Tombol hamburger lama sudah dihapus (Tahap 2) -- navigasi mobile sepenuhnya
+                lewat bottom nav + sheet "Lainnya" di bawah, tidak ada lagi drawer geser. */}
             <div>
               {/* key={currentLabel} SENGAJA dipasang -- h1 ini hidup di layout.tsx yang TIDAK
                   remount antar halaman (beda dari konten via template.tsx), jadi teks di
@@ -487,11 +529,88 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </header>
 
-        {/* Page Content */}
-        <div className="flex-1 p-3 sm:p-6 overflow-auto">
+        {/* Page Content -- pb-24 di mobile ngasih ruang supaya konten paling bawah tidak
+            ketutup bottom nav yang fixed (lihat di bawah); lg: kembali ke padding biasa krn
+            bottom nav cuma dirender di mobile. */}
+        <div className="flex-1 p-3 pb-24 sm:p-6 lg:pb-6 overflow-auto">
           {children}
         </div>
       </main>
+
+      {/* Bottom Nav + sheet "Lainnya" -- mobile only (Tahap 2 redesain navigasi Opsi C),
+          menggantikan drawer hamburger lama SEPENUHNYA. Treatment glass SAMA PERSIS dengan
+          sidebar desktop (background semi-transparan + backdrop-blur + border highlight) --
+          bedanya di sini kacanya genuinely membutakan konten yang di-scroll di baliknya (bukan
+          cuma background halaman polos kayak sidebar), krn bottom nav mengambang DI ATAS
+          konten, bukan nempel di tepi kosong -- makanya tidak perlu ambient-glow blob buatan
+          seperti punya desktop. Label SELALU tampil (tidak disembunyikan di balik hover) --
+          beda sengaja dari sidebar desktop krn mobile tidak punya mouse. */}
+      <nav
+        className="lg:hidden fixed left-2 right-2 z-40 flex items-stretch gap-1 rounded-3xl bg-blue-900/80 backdrop-blur-xl backdrop-saturate-150 ring-1 ring-inset ring-white/10 shadow-2xl shadow-blue-950/40 px-1.5 py-1.5"
+        style={{ bottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
+      >
+        {bottomNavItems.map(item => {
+          const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
+          return (
+            <Link key={item.href} href={item.href}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-2xl text-[10px] font-semibold transition-colors ${
+                isActive ? 'bg-white text-blue-900' : 'text-blue-100'
+              }`}>
+              <span className="text-base leading-none">{item.icon}</span>
+              <span className="truncate max-w-full px-0.5">{item.label}</span>
+            </Link>
+          )
+        })}
+        <button onClick={() => setBottomSheetOpen(true)}
+          className="flex-1 flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-2xl text-[10px] font-semibold text-blue-100">
+          <span className="text-base leading-none">⋯</span>
+          <span>Lainnya</span>
+        </button>
+      </nav>
+
+      {/* Sheet "Lainnya" -- backdrop + panel, mobile only */}
+      {bottomSheetOpen && (
+        <div className="lg:hidden fixed inset-0 bg-black/50 z-40 animate-fade-in" onClick={() => setBottomSheetOpen(false)} />
+      )}
+      <div
+        className={`lg:hidden fixed left-0 right-0 bottom-0 z-[45] rounded-t-3xl bg-white/90 dark:bg-slate-800/85 backdrop-blur-xl backdrop-saturate-150 ring-1 ring-inset ring-white/40 dark:ring-white/10 shadow-2xl max-h-[75vh] flex flex-col transition-transform duration-300 ease-out ${
+          bottomSheetOpen ? 'translate-y-0' : 'translate-y-full'
+        }`}
+        style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+      >
+        <div className="w-9 h-1 rounded-full bg-slate-300 dark:bg-slate-600 mx-auto mt-3 mb-1 shrink-0" />
+
+        {/* Profil + Keluar -- dulu ada di header drawer lama, sekarang pindah ke sini */}
+        <div className="flex items-center gap-3 px-5 py-3 border-b border-slate-100 dark:border-slate-700 shrink-0">
+          <Link href="/profil" onClick={() => setBottomSheetOpen(false)}
+            className="shrink-0 w-11 h-11 rounded-full bg-blue-600 flex items-center justify-center text-base font-bold text-white overflow-hidden ring-2 ring-blue-100 dark:ring-blue-900">
+            {avatarUrl
+              ? <img src={avatarUrl} alt={user.nama_lengkap} className="w-full h-full object-cover" />
+              : <span>{user.nama_lengkap?.charAt(0).toUpperCase()}</span>
+            }
+          </Link>
+          <Link href="/profil" onClick={() => setBottomSheetOpen(false)} className="flex-1 min-w-0">
+            <div className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate">{user.nama_lengkap}</div>
+            <div className="text-xs text-slate-400 dark:text-slate-500 truncate">{user.role?.nama_role}</div>
+          </Link>
+          <button onClick={() => { setBottomSheetOpen(false); setConfirmLogout(true) }} title="Keluar"
+            className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition">
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-4 gap-1 p-3 overflow-y-auto">
+          {lainnyaItems.map(item => (
+            <Link key={item.href} href={item.href} onClick={() => setBottomSheetOpen(false)}
+              className="flex flex-col items-center gap-1.5 py-3 px-1 rounded-2xl text-center text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition">
+              <span className="text-xl leading-none">{item.icon}</span>
+              <span className="text-[10.5px] font-medium leading-tight">{item.label}</span>
+            </Link>
+          ))}
+        </div>
+      </div>
 
       {/* Dipasang sekali di sini -- semua halaman cukup memanggil toast.*() dari
           lib/toast.ts dan konfirmasi() dari lib/konfirmasi.ts, tanpa perlu provider
