@@ -282,8 +282,36 @@ dibagi bareng (bukan span per-item), posisi dihitung via `getBoundingClientRect(
 LUAR `<nav>` -- percobaan awal pakai span absolute per-item ternyata ikut terpotong oleh `<nav>`
 sendiri (browser memaksa `overflow-x` ikut jadi `auto` begitu `overflow-y-auto` diset, walau
 `<aside>`-nya sudah `lg:overflow-visible` -- aturan CSS Overflow Module, dibuktikan lewat
-computed-style check saat testing). Tahap 2 (bottom nav mobile + pensiunkan drawer hamburger)
-belum dikerjakan, menyusul terpisah setelah Tahap 1 ini direview.
+computed-style check saat testing).
+
+**Bottom nav mobile -- "liquid glass" (Tahap 2, 2026-07-29):** drawer hamburger mobile lama
+DIHAPUS TOTAL (tombolnya di topbar & elemen `<aside>` mobile-nya) -- digantikan bottom nav fixed
+(`fixed left-2 right-2`, `bottom: max(0.5rem, env(safe-area-inset-bottom))` utk safe-area PWA)
+dengan treatment glass SAMA PERSIS kelasnya dgn sidebar desktop. Beda dari sidebar: bottom nav
+genuinely overlay konten yang di-scroll (bukan nempel di tepi kosong), jadi TIDAK perlu blob
+ambient-glow buatan seperti sidebar. Label SELALU tampil (bukan disembunyikan di balik hover,
+beda sengaja dari sidebar krn mobile tidak punya mouse).
+
+4 menu utama per kelompok peran (bukan diambil otomatis dari urutan `navItems` -- urutan itu
+disusun utk alasan lain mis. cluster PPG, dikonfirmasi manual lewat mockup sebelum implementasi):
+```
+Generus        : Dashboard, Kegiatan, Absensi (self-view), Pengumuman
+PPG             : Dashboard, Dashboard PPG, Catatan Pembinaan, Kegiatan
+Daerah/Desa/Kelompok (bukan Generus) : Dashboard, Absensi (kelola), Data Generus, Keuangan
+Super Admin     : Dashboard, Data Generus, Keuangan, Monitoring & Log
+```
+Notifikasi sengaja tidak diberi slot di peran manapun -- sudah ada lonceng permanen di topbar.
+Sisanya (termasuk avatar/nama/role/tombol Keluar yang dulu ada di header drawer) masuk sheet
+"Lainnya" yang slide-up dari bawah, grid 4 kolom.
+
+Dua flag baru opsional di `NavItem` (additive, tidak ubah struktur lama): `showOnlyForGenerus`
+(kebalikan `hideForGenerus`) dan `hideFromSidebar` (item bottom-nav-mobile-only, TIDAK pernah
+muncul di sidebar desktop -- Tahap 2 scope-nya mobile saja). Dipakai utk 1 entry baru:
+`/profil/riwayat-absensi` dinaikkan jadi shortcut bottom nav Generus (halaman self-view riwayat
+presensi sudah ada sejak lama, cuma belum pernah jadi menu top-level) -- **BUKAN** perubahan
+akses, dicek eksplisit ke Reno dulu sebelum dikerjakan krn sempat ambigu dgn `/absensi` (menu
+kelola milik pengurus, tetap `hideForGenerus`, tidak disentuh). Filter role/feature-toggle
+lama (`isNavItemVisible`, dipakai bareng sidebar & bottom nav) tidak diubah logikanya.
 
 ## 8. Restore Data (Darurat)
 
