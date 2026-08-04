@@ -35,9 +35,26 @@ Prinsip kerja yang diharapkan:
      data/skema, atau push ke branch `main` tanpa Reno bilang "OK, jalankan"
      secara eksplisit untuk masing-masing perubahan
    - Kerjakan perubahan besar di branch Git terpisah, bukan langsung di `main`
-   - Kalau perlu testing migrasi, pakai Supabase database branch
-     (`create_branch`) dulu, BUKAN project production
-     (`ccyqgcfjmzgkmkczuydv`) langsung
+   - Kalau perlu testing migrasi yang berisiko (mis. eksekusi restore data
+     nyata, bukan sekadar `ALTER TABLE` ringan): project Supabase ini ada di
+     **Free plan**, yang **TIDAK mendukung `create_branch`** (fitur database
+     branch itu eksklusif Pro plan ke atas — ditemukan & dikonfirmasi
+     langsung 29 Juli 2026 saat verifikasi A3, `create_branch` gagal dengan
+     `PaymentRequiredException`). Jangan asumsikan `create_branch` akan
+     jalan begitu saja. Untuk pekerjaan berisiko tinggi, pilih salah satu
+     LEBIH DULU (tanya Reno kalau ragu mana yang cocok):
+     - **Project Supabase throwaway terpisah** (`create_project`, $0/bulan
+       di Free plan) — isolasi paling lengkap (instance benar-benar
+       terpisah, bukan cuma branch copy-on-write), tapi butuh menyalin
+       ulang skema tabel yang relevan secara manual (tidak otomatis
+       mewarisi migrasi project utama seperti branch). **WAJIB dihapus**
+       lagi setelah selesai dipakai supaya tidak menggantung — Reno perlu
+       tahu bahwa MCP tools yang tersedia **tidak punya `delete_project`**,
+       jadi penghapusan FINAL harus manual lewat Supabase Dashboard (MCP
+       cuma bisa `pause_project`, bukan hapus tuntas).
+     - **Upgrade project production ke Pro plan** — keputusan biaya
+       berulang bulanan, murni keputusan Reno, jangan pernah diasumsikan/
+       dijalankan sendiri.
    - Pakai alur Pull Request untuk perubahan kode yang signifikan, supaya
      ada kesempatan cek preview deployment Vercel sebelum merge
 

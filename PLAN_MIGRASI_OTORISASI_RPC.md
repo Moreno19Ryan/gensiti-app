@@ -272,6 +272,20 @@ Pindahkan `create-member` & `set-user-password` ke Edge Function. Pindahkan `res
 `password-reset` ke Edge Function (rate limit sudah di DB, tinggal panggil). Retire route Vercel
 terkait.
 
+> **Strategi testing PERLU DIPIKIRKAN ULANG sebelum Fase 4 mulai dieksekusi** (dicatat 29 Juli
+> 2026, setelah verifikasi A3 di WISHLIST_ASSESSMENT.md menemukan `create_branch` gagal --
+> project ini masih Free plan, database branching eksklusif Pro plan ke atas, lihat CLAUDE.md).
+> Fase 0-3 di atas aman diuji langsung di production krn sifatnya aditif murni & reversibel
+> penuh (`DROP FUNCTION`, lihat §0 baris 41-44) -- **Fase 4 beda kelas risiko**: menyentuh alur
+> GoTrue (buat akun, ganti password, resolve-login) yang salah eksekusi bisa mengunci SEMUA
+> user keluar dari aplikasi, bukan cuma fungsi murni yang gampang di-drop. Sebelum mulai Fase 4,
+> putuskan dulu salah satu: (a) upgrade project ke Pro plan supaya `create_branch` bisa dipakai
+> (biaya berulang, keputusan Reno), atau (b) pakai project Supabase throwaway terpisah
+> (`create_project`, $0/bulan) sebagai lingkungan uji -- pola & keterbatasannya (perlu salin
+> skema manual, MCP tidak punya `delete_project` jadi penghapusan akhir manual lewat Dashboard)
+> sudah dipraktikkan & didokumentasikan di HANDOFF.md sesi 29 Juli 2026 (verifikasi restorability
+> A3). Jangan mulai Fase 4 sebelum salah satu opsi ini diputuskan eksplisit.
+
 **Fase 5 — Native tinggal panggil.**
 Flutter/desktop memanggil RPC & Edge Function yang sama. **Nol** aturan otorisasi ditulis ulang
 di Dart — hanya panggil + render.

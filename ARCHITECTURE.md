@@ -345,6 +345,47 @@ Kalau restore benar-benar dibutuhkan (mis. data korup/terhapus tidak sengaja):
    `email_preferensi` — lihat `EXCLUDED_TABLES` di kode) tidak bisa direstore dari file
    ini sama sekali — di luar wewenang Super Admin secara desain.
 
+### Backup Otomatis ke Storage (A3 Opsi C, 29 Juli 2026)
+
+Melengkapi backup manual di atas (bukan menggantikan) — Edge Function `scheduled-backup`
+dipanggil pg_cron tiap Senin 01:00 UTC (`public.trigger_scheduled_backup()`, pola sama
+`fetch_berita_organisasi_cron`), query 10 tabel yang SAMA PERSIS dengan backup manual
+(3 arah manual-sync sekarang: `app/api/backup/route.ts` ↔ `app/(dashboard)/backup-data/page.tsx`
+↔ Edge Function `scheduled-backup`) dan upload JSON ke bucket Storage `backups`.
+
+**Akses file**: bucket PRIVATE, SENGAJA tanpa satu pun storage policy — tidak ada jalur
+akses lewat aplikasi sama sekali (beda dari backup manual yang didownload Super Admin
+sendiri). Cuma service role (Edge Function) yang bisa tulis, cuma project owner (Reno)
+yang bisa baca lewat Supabase Dashboard → Storage. Ini yang menyelesaikan tensi
+"siapa boleh akses file backup otomatis" dari assessment awal A3 — jawabannya tidak ada
+siapa pun lewat app.
+
+**Retensi**: 8 file terbaru (~2 bulan pada kadensi mingguan) — **trade-off sadar** antara
+biaya storage vs kedalaman recovery, bukan angka default yang tidak dipikir. Boleh
+direvisit kalau kelak terasa kurang (lihat komentar `RETENSI_JUMLAH_FILE` di kode Edge
+Function).
+
+**Status & alert**: `system_config.last_auto_backup_at`/`last_auto_backup_error` melacak
+hasil tiap percobaan (beda dari `last_backup_at` yang melacak backup MANUAL). Fungsi
+`alert_auto_backup_bermasalah()` (menggantikan `send_reminder_backup_belum_dilakukan` yang
+sudah tidak relevan begitu ada backup otomatis) jalan 2 jam setelah jadwal backup, kirim
+notifikasi+push+email ke Super Admin kalau backup terakhir gagal atau sudah >9 hari (grace
+period) sejak sukses terakhir. Status ringkas (read-only, tanpa link download) tampil di
+halaman Backup Data.
+
+**Restorability SUDAH DIVERIFIKASI** (29 Juli 2026, bukan cuma diasumsikan kompatibel) —
+`create_branch` gagal krn project ini masih Free plan (database branching eksklusif Pro,
+lihat CLAUDE.md), jadi verifikasi dilakukan pakai **project Supabase throwaway terpisah**
+(`gensiti-a3-restore-verification-throwaway`, $0/bulan): skema 10 tabel disalin manual
+(FK ke `auth.users` sengaja dilepas — di luar cakupan yang diuji), file backup otomatis
+asli (bukan data tiruan) direstore mengikuti PERSIS prosedur §8 di atas. Hasil: 10/10 tabel
+cocok jumlah barisnya persis dengan `tableStatus` di file (desa 10, kelompok 50, roles 19,
+users 85, generus 84, kegiatan 2, absensi 80, pengumuman 0, dokumen 0, notifikasi 133),
+nol error FK — urutan `BACKUP_TABLES` di §8 terbukti benar terhadap data real. Project
+throwaway di-pause setelah selesai (MCP tidak punya `delete_project`, penghapusan tuntas
+perlu manual lewat Supabase Dashboard — lihat CLAUDE.md & PLAN_MIGRASI_OTORISASI_RPC.md §4
+utk implikasi lebih luas temuan keterbatasan Free plan ini).
+
 ## 9. Error Monitoring (Sentry)
 
 Sentry (`@sentry/nextjs`, tier gratis) dipasang untuk menangkap error tak
